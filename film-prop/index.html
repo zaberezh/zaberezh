@@ -1,0 +1,233 @@
+<!doctype html>
+<!--
+  РЕКВИЗИТ ДЛЯ ФИЛЬМА. Вымышленный магазин «Klaudio AI».
+  Страница не принимает оплату и не собирает данные: кнопка покупки
+  открывает экран разоблачения схемы серых перепродавцов подписок.
+-->
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Klaudio AI — премиум дешевле всех</title>
+  <style>
+    :root {
+      --bg: #0f0b1e;
+      --surface: #1b1433;
+      --text: #f5f3ff;
+      --muted: #b7b0d4;
+      --border: #33295a;
+      --accent: #ff3d7f;
+      --accent-2: #ffd23d;
+      --ok: #3ddc97;
+      --danger: #ff4d4d;
+      --reveal-bg: #ffffff;
+      --reveal-text: #1d1d1b;
+      --reveal-muted: #5c5b56;
+      --reveal-border: #e3e2dc;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; }
+    body {
+      background: var(--bg);
+      background-image: radial-gradient(circle at 20% 0%, #3a1d6e 0, transparent 45%),
+                        radial-gradient(circle at 90% 20%, #5a1440 0, transparent 40%);
+      color: var(--text);
+      font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    }
+    .wrap { max-width: 1000px; margin: 0 auto; padding: 0 16px; }
+
+    .ticker {
+      background: var(--accent-2); color: #1a1200; font-weight: 700; font-size: 14px;
+      text-align: center; padding: 8px 16px;
+    }
+    header .wrap { display: flex; align-items: center; justify-content: space-between; height: 64px; gap: 12px; }
+    .logo { font-weight: 800; font-size: 22px; letter-spacing: -.02em; }
+    .logo span { color: var(--accent); }
+    .partner {
+      display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600;
+      border: 1px solid var(--ok); color: var(--ok); border-radius: 999px; padding: 4px 12px;
+    }
+
+    .hero { text-align: center; padding: 48px 0 24px; }
+    .hero h1 { font-size: clamp(30px, 6vw, 54px); line-height: 1.1; margin: 0 0 16px; letter-spacing: -.02em; }
+    .hero h1 em { font-style: normal; color: var(--accent); }
+    .hero p { color: var(--muted); font-size: 18px; max-width: 600px; margin: 0 auto; }
+    .timer {
+      display: inline-flex; gap: 10px; align-items: center; margin-top: 24px;
+      background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 10px 16px;
+    }
+    .timer b { font-variant-numeric: tabular-nums; color: var(--accent-2); font-size: 20px; }
+
+    .plans { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 20px; padding: 32px 0; max-width: 760px; margin: 0 auto; }
+    .plan { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 24px; display: flex; flex-direction: column; }
+    .plan.hot { border: 2px solid var(--accent); }
+    .plan h3 { margin: 0 0 4px; font-size: 20px; }
+    .old { color: var(--muted); text-decoration: line-through; font-size: 15px; }
+    .price { font-size: 38px; font-weight: 800; margin: 4px 0 0; }
+    .price small { font-size: 15px; font-weight: 400; color: var(--muted); }
+    .plan ul { list-style: none; padding: 0; margin: 16px 0 20px; flex: 1; }
+    .plan li { padding: 5px 0; }
+    .plan li::before { content: "✓ "; color: var(--ok); font-weight: 700; }
+    .left { font-size: 13px; color: var(--accent-2); margin: 0 0 10px; }
+    .buy {
+      border: 0; border-radius: 12px; padding: 14px; font: inherit; font-weight: 700; cursor: pointer;
+      background: var(--accent); color: #fff;
+    }
+    .buy:focus-visible, .close:focus-visible { outline: 3px solid var(--accent-2); outline-offset: 2px; }
+
+    .how { padding: 16px 0 48px; }
+    .how h2 { font-size: 26px; margin: 0 0 16px; }
+    .steps { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 14px; }
+    .step { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 16px; }
+    .step b { color: var(--accent-2); }
+    footer { border-top: 1px solid var(--border); padding: 24px 0; color: var(--muted); font-size: 13px; text-align: center; }
+
+    /* Экран разоблачения */
+    .reveal {
+      position: fixed; inset: 0; z-index: 50; overflow-y: auto;
+      background: var(--reveal-bg); color: var(--reveal-text);
+      display: none;
+    }
+    .reveal.open { display: block; }
+    .reveal .inner { max-width: 720px; margin: 0 auto; padding: 48px 16px 64px; }
+    .stamp {
+      display: inline-block; border: 3px solid var(--danger); color: var(--danger);
+      font-weight: 800; letter-spacing: .08em; text-transform: uppercase;
+      padding: 6px 14px; border-radius: 8px; transform: rotate(-3deg); margin-bottom: 20px;
+    }
+    .reveal h2 { font-size: clamp(26px, 5vw, 38px); line-height: 1.15; margin: 0 0 12px; }
+    .reveal .lead { color: var(--reveal-muted); font-size: 18px; margin: 0 0 28px; }
+    .reveal h3 { font-size: 19px; margin: 28px 0 10px; }
+    .flag { border: 1px solid var(--reveal-border); border-radius: 12px; padding: 14px 16px; margin-bottom: 10px; }
+    .flag b { display: block; margin-bottom: 2px; }
+    .flag span { color: var(--reveal-muted); font-size: 15px; }
+    .reveal ol { padding-left: 20px; }
+    .reveal li { margin-bottom: 8px; }
+    .close {
+      margin-top: 28px; border: 1px solid var(--reveal-border); background: transparent; color: var(--reveal-text);
+      border-radius: 10px; padding: 10px 16px; font: inherit; cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+  <div class="ticker">🔥 Только сегодня: −70% на премиум-доступ + аккаунт в подарок!</div>
+
+  <header>
+    <div class="wrap">
+      <div class="logo">Klaudio<span>AI</span></div>
+      <span class="partner">✔ Официальный партнёр</span>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <section class="hero">
+      <h1>Премиум-нейросеть <em>в 5 раз дешевле</em> официальной цены</h1>
+      <p>Готовый аккаунт за 5 минут. Без VPN, без зарубежной карты, без ограничений.</p>
+      <div class="timer">Акция закончится через <b id="timer">14:59</b></div>
+    </section>
+
+    <section class="plans">
+      <article class="plan">
+        <h3>Старт</h3>
+        <div class="old">35 BYN</div>
+        <div class="price">9 BYN <small>/ мес</small></div>
+        <ul>
+          <li>Общий аккаунт</li>
+          <li>Доступ за 5 минут</li>
+          <li>Поддержка в Telegram</li>
+        </ul>
+        <p class="left">Осталось мест: <b id="left1">3</b></p>
+        <button class="buy" data-buy>Купить</button>
+      </article>
+      <article class="plan hot">
+        <h3>Премиум</h3>
+        <div class="old">180 BYN</div>
+        <div class="price">55 BYN <small>/ мес</small></div>
+        <ul>
+          <li>Личный аккаунт «навсегда»</li>
+          <li>Без лимитов</li>
+          <li>Гарантия замены</li>
+          <li>Аккаунт в подарок другу</li>
+        </ul>
+        <p class="left">Осталось мест: <b id="left2">2</b></p>
+        <button class="buy" data-buy>Купить</button>
+      </article>
+    </section>
+
+    <section class="how">
+      <h2>Как купить</h2>
+      <div class="steps">
+        <div class="step"><b>1.</b> Нажмите «Купить» и напишите менеджеру в Telegram</div>
+        <div class="step"><b>2.</b> Переведите оплату на карту менеджера</div>
+        <div class="step"><b>3.</b> Получите логин и пароль от готового аккаунта</div>
+      </div>
+    </section>
+  </main>
+
+  <footer>© Klaudio AI. Вымышленный сайт, реквизит для фильма.</footer>
+
+  <div class="reveal" id="reveal" role="dialog" aria-modal="true" aria-labelledby="revealTitle">
+    <div class="inner">
+      <div class="stamp">Это схема</div>
+      <h2 id="revealTitle">Вы только что чуть не заплатили серому перепродавцу</h2>
+      <p class="lead">Такие сайты продают доступ к популярным AI-сервисам в обход их правил. Деньги уходят продавцу, а риски остаются у покупателя.</p>
+
+      <h3>Признаки, которые были на этой странице</h3>
+      <div class="flag"><b>«Официальный партнёр» без подтверждения</b><span>Настоящих партнёров можно проверить на сайте самого сервиса. Значок на странице ничего не доказывает.</span></div>
+      <div class="flag"><b>Цена в несколько раз ниже официальной</b><span>Продавец не может продавать дешевле производителя легально. Разницу покрывают общие, краденые или купленные по чужим картам аккаунты.</span></div>
+      <div class="flag"><b>«Готовый аккаунт» и «общий аккаунт»</b><span>Передача аккаунтов запрещена правилами сервисов. Такие аккаунты блокируют, обычно без возврата денег.</span></div>
+      <div class="flag"><b>Таймер и «осталось 3 места»</b><span>Искусственная срочность нужна, чтобы вы не успели подумать и проверить продавца.</span></div>
+      <div class="flag"><b>Оплата на карту менеджера</b><span>Перевод физлицу не даёт ни чека, ни защиты покупателя. Вернуть такие деньги почти невозможно.</span></div>
+      <div class="flag"><b>«Навсегда» и «гарантия замены»</b><span>Продавец не контролирует аккаунт: его может заблокировать сервис или забрать тот, кто его зарегистрировал.</span></div>
+
+      <h3>Что происходит с покупателем</h3>
+      <ol>
+        <li>Аккаунт работает несколько дней или недель, потом его блокируют.</li>
+        <li>Менеджер перестаёт отвечать или предлагает «замену» за доплату.</li>
+        <li>Переписка, запросы и файлы в общем аккаунте видны другим людям.</li>
+      </ol>
+
+      <h3>Как покупать безопасно</h3>
+      <ol>
+        <li>Оформляйте подписку только на официальном сайте сервиса.</li>
+        <li>Проверяйте партнёрство на сайте самого производителя.</li>
+        <li>Не платите переводом на карту физлица и не берите чужие аккаунты.</li>
+      </ol>
+
+      <button class="close" id="closeReveal">Вернуться на сайт</button>
+    </div>
+  </div>
+
+  <script>
+    // Таймер «акции» перезапускается по кругу, как на настоящих таких сайтах.
+    let seconds = 15 * 60 - 1;
+    const timer = document.getElementById("timer");
+    setInterval(() => {
+      seconds = seconds > 0 ? seconds - 1 : 15 * 60 - 1;
+      const m = String(Math.floor(seconds / 60)).padStart(2, "0");
+      const s = String(seconds % 60).padStart(2, "0");
+      timer.textContent = m + ":" + s;
+    }, 1000);
+
+    const reveal = document.getElementById("reveal");
+    const closeBtn = document.getElementById("closeReveal");
+    let lastFocus = null;
+
+    document.querySelectorAll("[data-buy]").forEach(btn => {
+      btn.addEventListener("click", () => {
+        lastFocus = btn;
+        reveal.classList.add("open");
+        reveal.scrollTop = 0;
+        closeBtn.focus({ preventScroll: true });
+      });
+    });
+
+    function closeReveal() {
+      reveal.classList.remove("open");
+      if (lastFocus) lastFocus.focus();
+    }
+    closeBtn.addEventListener("click", closeReveal);
+    document.addEventListener("keydown", e => { if (e.key === "Escape") closeReveal(); });
+  </script>
+</body>
+</html>
