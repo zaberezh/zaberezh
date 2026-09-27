@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>iaTop — подписки</title>
-  <meta name="description" content="iaTop: тарифы, корзина, FAQ.">
+  <title>iaTop — AI-чат-бот</title>
+  <meta name="description" content="iaTop — AI-чат-бот на сайте: тарифы, FAQ.">
   <style>
     :root {
       --bg: #f7f7f5;
@@ -180,8 +180,8 @@
 
   <main>
     <section class="hero wrap">
-      <h1>Подписка, которая растёт вместе с вами</h1>
-      <p>Выберите тариф, оплатите удобным способом и начните пользоваться сразу. Отмена в любой момент.</p>
+      <h1>AI-чат-бот iaTop для работы и учёбы</h1>
+      <p>Задавайте вопросы, пишите и редактируйте тексты прямо на сайте. Выберите тариф и начните сразу. Отмена в любой момент.</p>
       <div class="toggle" role="group" aria-label="Период оплаты">
         <button type="button" data-period="month" aria-pressed="true">Помесячно</button>
         <button type="button" data-period="year" aria-pressed="false">Годовая <span class="save">−10%</span></button>
@@ -208,7 +208,7 @@
       <details><summary>Можно ли сменить тариф?</summary><p>Да, в любой момент. Разница пересчитывается пропорционально оставшимся дням.</p></details>
       <details><summary>Какие способы оплаты доступны?</summary><p>Банковские карты, ЕРИП и безналичный расчёт для организаций.</p></details>
       <details><summary>Есть ли возврат?</summary><p>Да. При отказе от подписки возвращаем оплату за неиспользованный период — подробнее в <a href="oferta.html">оферте</a>.</p></details>
-      <details><summary>Это подписка на Claude?</summary><p>Нет. Подписка iaTop не является платной подпиской на Claude. iaTop не связан с Anthropic и не является его официальным партнёром.</p></details>
+      <details><summary>Это подписка на Claude?</summary><p>Нет. iaTop — собственный чат-бот на другой языковой модели. Он не является Claude, не связан с Anthropic и не является его официальным партнёром.</p></details>
     </section>
   </main>
 
@@ -238,10 +238,10 @@
   <script>
     // Замените на свои тарифы. Цены в белорусских рублях за месяц.
     const PLANS = [
-      { id: "basic", name: "Базовый", desc: "Для личного использования и знакомства с сервисом.", price: 9,
-        features: ["1 пользователь", "Основные функции", "Поддержка по почте"] },
-      { id: "pro", name: "Про", desc: "Для тех, кто пользуется сервисом каждый день.", price: 55, featured: true,
-        features: ["1 пользователь", "Все функции", "Приоритетная поддержка", "Расширенные лимиты"] }
+      { id: "basic", name: "Базовый", desc: "Чтобы познакомиться с чат-ботом и пользоваться им время от времени.", price: 9,
+        features: ["Чат-бот на сайте", "Базовый лимит сообщений", "Поддержка по почте"] },
+      { id: "pro", name: "Про", desc: "Для тех, кто работает с чат-ботом каждый день.", price: 55, featured: true,
+        features: ["Чат-бот на сайте", "Увеличенный лимит сообщений", "Все функции", "Приоритетная поддержка"] }
     ];
     const YEAR_DISCOUNT = 0.1;
     // Ссылка на страницу оплаты вашего платёжного провайдера.
