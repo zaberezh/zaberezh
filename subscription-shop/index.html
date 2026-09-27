@@ -1,0 +1,367 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Магазин подписок</title>
+  <meta name="description" content="Шаблон витрины подписок: тарифы, корзина, FAQ.">
+  <style>
+    :root {
+      --bg: #f7f7f5;
+      --surface: #ffffff;
+      --text: #1d1d1b;
+      --muted: #6b6b66;
+      --border: #e3e2dc;
+      --accent: #2f5bd3;
+      --accent-text: #ffffff;
+      --accent-soft: #e8eefc;
+      --radius: 14px;
+      --shadow: 0 1px 2px rgba(0,0,0,.04), 0 8px 24px rgba(0,0,0,.06);
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #141413;
+        --surface: #1f1f1d;
+        --text: #f0efe9;
+        --muted: #a3a29b;
+        --border: #34332f;
+        --accent: #7c9cf5;
+        --accent-text: #0e1320;
+        --accent-soft: #232c45;
+        --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 24px rgba(0,0,0,.35);
+      }
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font: 16px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    }
+    a { color: var(--accent); }
+    .wrap { max-width: 1080px; margin: 0 auto; padding: 0 16px; }
+
+    header {
+      position: sticky; top: 0; z-index: 10;
+      background: color-mix(in srgb, var(--bg) 88%, transparent);
+      backdrop-filter: blur(8px);
+      border-bottom: 1px solid var(--border);
+    }
+    .nav { display: flex; align-items: center; justify-content: space-between; height: 60px; gap: 12px; }
+    .logo { font-weight: 700; font-size: 18px; text-decoration: none; color: var(--text); }
+    .nav-links { display: flex; gap: 20px; }
+    .nav-links a { color: var(--muted); text-decoration: none; font-size: 15px; }
+    .nav-links a:hover { color: var(--text); }
+    .cart-btn {
+      display: inline-flex; align-items: center; gap: 8px;
+      border: 1px solid var(--border); background: var(--surface); color: var(--text);
+      border-radius: 999px; padding: 7px 14px; font: inherit; font-size: 14px; cursor: pointer;
+    }
+    .badge {
+      min-width: 20px; height: 20px; padding: 0 6px; border-radius: 999px;
+      background: var(--accent); color: var(--accent-text);
+      font-size: 12px; font-weight: 600; display: inline-grid; place-items: center;
+    }
+
+    .hero { padding: 72px 0 40px; text-align: center; }
+    .hero h1 { font-size: clamp(30px, 5vw, 48px); line-height: 1.15; margin: 0 0 16px; letter-spacing: -.02em; }
+    .hero p { color: var(--muted); font-size: 18px; max-width: 620px; margin: 0 auto; }
+
+    .toggle {
+      display: inline-flex; margin: 32px auto 0; padding: 4px;
+      background: var(--surface); border: 1px solid var(--border); border-radius: 999px;
+    }
+    .toggle button {
+      border: 0; background: transparent; color: var(--muted);
+      padding: 8px 18px; border-radius: 999px; font: inherit; font-size: 14px; cursor: pointer;
+    }
+    .toggle button[aria-pressed="true"] { background: var(--accent); color: var(--accent-text); }
+    .save { font-size: 12px; opacity: .85; }
+
+    .plans {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 20px; padding: 24px 0 64px;
+    }
+    .plan {
+      background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+      padding: 28px 24px; display: flex; flex-direction: column; box-shadow: var(--shadow);
+    }
+    .plan.featured { border: 2px solid var(--accent); position: relative; }
+    .plan.featured::before {
+      content: "Популярный"; position: absolute; top: -12px; left: 24px;
+      background: var(--accent); color: var(--accent-text);
+      font-size: 12px; font-weight: 600; padding: 3px 10px; border-radius: 999px;
+    }
+    .plan h3 { margin: 0 0 6px; font-size: 20px; }
+    .plan .desc { color: var(--muted); font-size: 14px; margin: 0 0 20px; min-height: 44px; }
+    .price { font-size: 36px; font-weight: 700; letter-spacing: -.02em; }
+    .price small { font-size: 15px; font-weight: 400; color: var(--muted); }
+    .plan ul { list-style: none; padding: 0; margin: 20px 0 24px; flex: 1; }
+    .plan li { padding: 6px 0 6px 26px; position: relative; font-size: 15px; }
+    .plan li::before {
+      content: ""; position: absolute; left: 2px; top: 12px; width: 12px; height: 7px;
+      border-left: 2px solid var(--accent); border-bottom: 2px solid var(--accent); transform: rotate(-45deg);
+    }
+    .btn {
+      display: block; width: 100%; text-align: center; border-radius: 10px;
+      padding: 12px 16px; font: inherit; font-weight: 600; cursor: pointer;
+      border: 1px solid var(--accent); background: var(--accent); color: var(--accent-text);
+    }
+    .btn.secondary { background: var(--accent-soft); color: var(--text); border-color: transparent; }
+    .btn:focus-visible, .cart-btn:focus-visible, .toggle button:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+
+    section h2 { font-size: 28px; margin: 0 0 20px; letter-spacing: -.01em; }
+    .features { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; padding-bottom: 64px; }
+    .feature { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; }
+    .feature h4 { margin: 0 0 6px; font-size: 16px; }
+    .feature p { margin: 0; color: var(--muted); font-size: 14px; }
+
+    .faq { padding-bottom: 64px; }
+    details { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 0 18px; margin-bottom: 10px; }
+    summary { cursor: pointer; padding: 16px 0; font-weight: 600; list-style: none; }
+    summary::-webkit-details-marker { display: none; }
+    summary::after { content: "+"; float: right; color: var(--muted); }
+    details[open] summary::after { content: "–"; }
+    details p { margin: 0 0 16px; color: var(--muted); }
+
+    footer { border-top: 1px solid var(--border); padding: 28px 0; color: var(--muted); font-size: 14px; }
+    footer .wrap { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px; }
+
+    /* Корзина */
+    .overlay { position: fixed; inset: 0; background: rgba(0,0,0,.4); opacity: 0; pointer-events: none; transition: opacity .2s; z-index: 20; }
+    .overlay.open { opacity: 1; pointer-events: auto; }
+    .drawer {
+      position: fixed; top: 0; right: 0; height: 100%; width: min(400px, 100%);
+      background: var(--surface); border-left: 1px solid var(--border); z-index: 21;
+      transform: translateX(100%); transition: transform .25s ease; display: flex; flex-direction: column;
+    }
+    .drawer.open { transform: none; }
+    .drawer-head { display: flex; justify-content: space-between; align-items: center; padding: 18px 20px; border-bottom: 1px solid var(--border); }
+    .drawer-head h3 { margin: 0; }
+    .close { border: 0; background: transparent; color: var(--muted); font-size: 24px; cursor: pointer; line-height: 1; }
+    .items { flex: 1; overflow-y: auto; padding: 8px 20px; }
+    .item { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 14px 0; border-bottom: 1px solid var(--border); }
+    .item-name { font-weight: 600; }
+    .item-meta { color: var(--muted); font-size: 13px; }
+    .qty { display: inline-flex; align-items: center; gap: 8px; }
+    .qty button { width: 28px; height: 28px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg); color: var(--text); cursor: pointer; font: inherit; }
+    .empty { color: var(--muted); text-align: center; padding: 40px 0; }
+    .drawer-foot { padding: 18px 20px; border-top: 1px solid var(--border); }
+    .total { display: flex; justify-content: space-between; font-size: 18px; font-weight: 700; margin-bottom: 14px; }
+    .note { font-size: 13px; color: var(--muted); margin: 10px 0 0; }
+
+    .toast {
+      position: fixed; bottom: 20px; left: 50%; transform: translate(-50%, 20px);
+      background: var(--text); color: var(--bg); padding: 10px 18px; border-radius: 10px;
+      font-size: 14px; opacity: 0; transition: .2s; z-index: 30; pointer-events: none; max-width: calc(100% - 32px);
+    }
+    .toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+    @media (max-width: 640px) {
+      .nav-links { display: none; }
+      .hero { padding-top: 48px; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="wrap nav">
+      <a class="logo" href="#">ВашБренд</a>
+      <nav class="nav-links">
+        <a href="#plans">Тарифы</a>
+        <a href="#features">Преимущества</a>
+        <a href="#faq">Вопросы</a>
+      </nav>
+      <button class="cart-btn" id="openCart" aria-label="Открыть корзину">
+        Корзина <span class="badge" id="cartCount">0</span>
+      </button>
+    </div>
+  </header>
+
+  <main>
+    <section class="hero wrap">
+      <h1>Подписка, которая растёт вместе с вами</h1>
+      <p>Выберите тариф, оплатите удобным способом и начните пользоваться сразу. Отмена в любой момент.</p>
+      <div class="toggle" role="group" aria-label="Период оплаты">
+        <button type="button" data-period="month" aria-pressed="true">Помесячно</button>
+        <button type="button" data-period="year" aria-pressed="false">Годовая <span class="save">−20%</span></button>
+      </div>
+    </section>
+
+    <section id="plans" class="wrap">
+      <div class="plans" id="planList"></div>
+    </section>
+
+    <section id="features" class="wrap">
+      <h2>Почему выбирают нас</h2>
+      <div class="features">
+        <div class="feature"><h4>Мгновенная активация</h4><p>Доступ открывается сразу после подтверждения оплаты.</p></div>
+        <div class="feature"><h4>Прозрачные цены</h4><p>Без скрытых комиссий: вы платите ровно ту сумму, что видите.</p></div>
+        <div class="feature"><h4>Поддержка 24/7</h4><p>Отвечаем в чате и по почте в течение нескольких часов.</p></div>
+        <div class="feature"><h4>Чеки и документы</h4><p>Закрывающие документы для юрлиц и ИП по запросу.</p></div>
+      </div>
+    </section>
+
+    <section id="faq" class="wrap faq">
+      <h2>Частые вопросы</h2>
+      <details><summary>Как отменить подписку?</summary><p>В личном кабинете в разделе «Подписка». Доступ сохранится до конца оплаченного периода.</p></details>
+      <details><summary>Можно ли сменить тариф?</summary><p>Да, в любой момент. Разница пересчитывается пропорционально оставшимся дням.</p></details>
+      <details><summary>Какие способы оплаты доступны?</summary><p>Банковские карты, СБП и безналичный расчёт для организаций.</p></details>
+      <details><summary>Есть ли возврат?</summary><p>Да, в течение 14 дней с момента первой оплаты, если сервисом не пользовались.</p></details>
+    </section>
+  </main>
+
+  <footer>
+    <div class="wrap">
+      <span>© <span id="year"></span> ВашБренд. Все права защищены.</span>
+      <span><a href="#">Оферта</a> · <a href="#">Политика конфиденциальности</a> · <a href="mailto:support@example.com">support@example.com</a></span>
+    </div>
+  </footer>
+
+  <div class="overlay" id="overlay"></div>
+  <aside class="drawer" id="drawer" aria-label="Корзина" aria-hidden="true">
+    <div class="drawer-head">
+      <h3>Корзина</h3>
+      <button class="close" id="closeCart" aria-label="Закрыть">×</button>
+    </div>
+    <div class="items" id="cartItems"></div>
+    <div class="drawer-foot">
+      <div class="total"><span>Итого</span><span id="cartTotal">0 ₽</span></div>
+      <button class="btn" id="checkout">Перейти к оплате</button>
+      <p class="note">Оплата проходит на стороне платёжного провайдера.</p>
+    </div>
+  </aside>
+
+  <div class="toast" id="toast" role="status"></div>
+
+  <script>
+    // Замените на свои тарифы. Цены в рублях за месяц.
+    const PLANS = [
+      { id: "basic", name: "Базовый", desc: "Для личного использования и знакомства с сервисом.", price: 490,
+        features: ["1 пользователь", "Основные функции", "Поддержка по почте"] },
+      { id: "pro", name: "Про", desc: "Для тех, кто пользуется сервисом каждый день.", price: 1490, featured: true,
+        features: ["1 пользователь", "Все функции", "Приоритетная поддержка", "Расширенные лимиты"] },
+      { id: "team", name: "Команда", desc: "Для небольших команд с общим управлением.", price: 3990,
+        features: ["До 10 пользователей", "Все функции Про", "Админ-панель", "Счета для юрлиц"] }
+    ];
+    const YEAR_DISCOUNT = 0.2;
+    // Ссылка на страницу оплаты вашего платёжного провайдера.
+    const CHECKOUT_URL = "";
+
+    let period = "month";
+    let cart = load();
+
+    const $ = (id) => document.getElementById(id);
+    const fmt = (n) => n.toLocaleString("ru-RU") + " ₽";
+
+    function priceFor(plan, p) {
+      return p === "year" ? Math.round(plan.price * 12 * (1 - YEAR_DISCOUNT)) : plan.price;
+    }
+
+    function renderPlans() {
+      $("planList").innerHTML = PLANS.map(plan => `
+        <article class="plan${plan.featured ? " featured" : ""}">
+          <h3>${plan.name}</h3>
+          <p class="desc">${plan.desc}</p>
+          <div class="price">${fmt(priceFor(plan, period))} <small>/ ${period === "year" ? "год" : "мес"}</small></div>
+          <ul>${plan.features.map(f => `<li>${f}</li>`).join("")}</ul>
+          <button class="btn${plan.featured ? "" : " secondary"}" data-add="${plan.id}">В корзину</button>
+        </article>`).join("");
+    }
+
+    function renderCart() {
+      const keys = Object.keys(cart);
+      $("cartCount").textContent = keys.reduce((s, k) => s + cart[k], 0);
+      if (!keys.length) {
+        $("cartItems").innerHTML = '<p class="empty">Корзина пуста</p>';
+        $("cartTotal").textContent = fmt(0);
+        $("checkout").disabled = true;
+        return;
+      }
+      let total = 0;
+      $("cartItems").innerHTML = keys.map(key => {
+        const [id, p] = key.split(":");
+        const plan = PLANS.find(x => x.id === id);
+        if (!plan) return "";
+        const sum = priceFor(plan, p) * cart[key];
+        total += sum;
+        return `
+          <div class="item">
+            <div>
+              <div class="item-name">${plan.name}</div>
+              <div class="item-meta">${p === "year" ? "Год" : "Месяц"} · ${fmt(sum)}</div>
+            </div>
+            <div class="qty">
+              <button data-dec="${key}" aria-label="Уменьшить">−</button>
+              <span>${cart[key]}</span>
+              <button data-inc="${key}" aria-label="Увеличить">+</button>
+            </div>
+          </div>`;
+      }).join("");
+      $("cartTotal").textContent = fmt(total);
+      $("checkout").disabled = false;
+    }
+
+    function save() { try { localStorage.setItem("cart", JSON.stringify(cart)); } catch (e) {} }
+    function load() { try { return JSON.parse(localStorage.getItem("cart")) || {}; } catch (e) { return {}; } }
+
+    function toast(msg) {
+      const t = $("toast");
+      t.textContent = msg;
+      t.classList.add("show");
+      clearTimeout(toast.timer);
+      toast.timer = setTimeout(() => t.classList.remove("show"), 2200);
+    }
+
+    function setDrawer(open) {
+      $("drawer").classList.toggle("open", open);
+      $("overlay").classList.toggle("open", open);
+      $("drawer").setAttribute("aria-hidden", String(!open));
+    }
+
+    document.querySelectorAll(".toggle button").forEach(btn => {
+      btn.addEventListener("click", () => {
+        period = btn.dataset.period;
+        document.querySelectorAll(".toggle button").forEach(b => b.setAttribute("aria-pressed", String(b === btn)));
+        renderPlans();
+      });
+    });
+
+    document.addEventListener("click", (e) => {
+      const add = e.target.closest("[data-add]");
+      const inc = e.target.closest("[data-inc]");
+      const dec = e.target.closest("[data-dec]");
+      if (add) {
+        const key = add.dataset.add + ":" + period;
+        cart[key] = (cart[key] || 0) + 1;
+        toast("Добавлено в корзину");
+      } else if (inc) {
+        cart[inc.dataset.inc]++;
+      } else if (dec) {
+        if (--cart[dec.dataset.dec] <= 0) delete cart[dec.dataset.dec];
+      } else {
+        return;
+      }
+      save();
+      renderCart();
+    });
+
+    $("openCart").addEventListener("click", () => setDrawer(true));
+    $("closeCart").addEventListener("click", () => setDrawer(false));
+    $("overlay").addEventListener("click", () => setDrawer(false));
+    document.addEventListener("keydown", (e) => { if (e.key === "Escape") setDrawer(false); });
+
+    $("checkout").addEventListener("click", () => {
+      if (CHECKOUT_URL) {
+        window.location.href = CHECKOUT_URL;
+      } else {
+        toast("Укажите CHECKOUT_URL платёжного провайдера в коде страницы");
+      }
+    });
+
+    $("year").textContent = new Date().getFullYear();
+    renderPlans();
+    renderCart();
+  </script>
+</body>
+</html>
