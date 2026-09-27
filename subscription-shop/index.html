@@ -80,7 +80,7 @@
 
     .plans {
       display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-      gap: 20px; padding: 24px 0 64px;
+      gap: 20px; padding: 24px 0 64px; max-width: 760px; margin: 0 auto;
     }
     .plan {
       background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
@@ -184,7 +184,7 @@
       <p>Выберите тариф, оплатите удобным способом и начните пользоваться сразу. Отмена в любой момент.</p>
       <div class="toggle" role="group" aria-label="Период оплаты">
         <button type="button" data-period="month" aria-pressed="true">Помесячно</button>
-        <button type="button" data-period="year" aria-pressed="false">Годовая <span class="save">−20%</span></button>
+        <button type="button" data-period="year" aria-pressed="false">Годовая <span class="save">−10%</span></button>
       </div>
     </section>
 
@@ -208,6 +208,7 @@
       <details><summary>Можно ли сменить тариф?</summary><p>Да, в любой момент. Разница пересчитывается пропорционально оставшимся дням.</p></details>
       <details><summary>Какие способы оплаты доступны?</summary><p>Банковские карты, ЕРИП и безналичный расчёт для организаций.</p></details>
       <details><summary>Есть ли возврат?</summary><p>Да. При отказе от подписки возвращаем оплату за неиспользованный период — подробнее в <a href="oferta.html">оферте</a>.</p></details>
+      <details><summary>Это подписка на Claude?</summary><p>Нет. Подписка iaTop не является платной подпиской на Claude. iaTop не связан с Anthropic и не является его официальным партнёром.</p></details>
     </section>
   </main>
 
@@ -237,19 +238,21 @@
   <script>
     // Замените на свои тарифы. Цены в белорусских рублях за месяц.
     const PLANS = [
-      { id: "basic", name: "Базовый", desc: "Для личного использования и знакомства с сервисом.", price: 19,
+      { id: "basic", name: "Базовый", desc: "Для личного использования и знакомства с сервисом.", price: 9,
         features: ["1 пользователь", "Основные функции", "Поддержка по почте"] },
-      { id: "pro", name: "Про", desc: "Для тех, кто пользуется сервисом каждый день.", price: 49, featured: true,
-        features: ["1 пользователь", "Все функции", "Приоритетная поддержка", "Расширенные лимиты"] },
-      { id: "team", name: "Команда", desc: "Для небольших команд с общим управлением.", price: 129,
-        features: ["До 10 пользователей", "Все функции Про", "Админ-панель", "Счета для юрлиц"] }
+      { id: "pro", name: "Про", desc: "Для тех, кто пользуется сервисом каждый день.", price: 55, featured: true,
+        features: ["1 пользователь", "Все функции", "Приоритетная поддержка", "Расширенные лимиты"] }
     ];
-    const YEAR_DISCOUNT = 0.2;
+    const YEAR_DISCOUNT = 0.1;
     // Ссылка на страницу оплаты вашего платёжного провайдера.
     const CHECKOUT_URL = "";
 
     let period = "month";
     let cart = load();
+    // Убираем из сохранённой корзины тарифы, которых больше нет.
+    for (const key of Object.keys(cart)) {
+      if (!PLANS.some(p => p.id === key.split(":")[0])) delete cart[key];
+    }
 
     const $ = (id) => document.getElementById(id);
     const fmt = (n) => n.toLocaleString("ru-RU") + " BYN";
