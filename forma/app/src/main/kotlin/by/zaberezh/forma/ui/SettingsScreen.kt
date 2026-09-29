@@ -1,3 +1,5 @@
+@file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+
 package by.zaberezh.forma.ui
 
 import android.Manifest
@@ -13,6 +15,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -134,6 +137,12 @@ fun SettingsScreen() {
                 Field("API-ключ", key, { key = it }, number = false, secret = true)
                 Field("Адрес API (пусто = api.anthropic.com)", url, { url = it }, number = false)
                 Field("Модель", model, { model = it }, number = false)
+                Buttons {
+                    Claude.MODELS.forEach { (id, _) ->
+                        FilterChip(selected = model == id, onClick = { model = id }, label = { Text(id.removePrefix("claude-")) })
+                    }
+                }
+                Claude.MODELS.forEach { (_, about) -> Muted(about) }
                 Muted("Ключ от посредника работает только с его адресом — впиши адрес из его инструкции (например https://…/v1).")
                 Buttons {
                     Primary("Сохранить и проверить", {

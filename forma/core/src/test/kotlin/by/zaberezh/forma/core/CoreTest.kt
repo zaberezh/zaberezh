@@ -88,6 +88,17 @@ class CoreTest {
         assertTrue(abs(tdee - 2690) < 5, "tdee=$tdee"); assertEquals(1.0, conf)
     }
 
+    @Test fun settingsMigrationDropsWalking() {
+        val s = MemoryStore()
+        SETTINGS.set(s, Settings(profile = Profile(activity = 1.55), apiKey = "k"))
+        migrateSettings(s)
+        assertEquals(1.375, SETTINGS.get(s).profile.activity)
+        assertEquals("k", SETTINGS.get(s).apiKey)
+        SETTINGS.set(s, SETTINGS.get(s).copy(profile = Profile(activity = 1.6)))
+        migrateSettings(s) // уже v2 — не трогаем
+        assertEquals(1.6, SETTINGS.get(s).profile.activity)
+    }
+
     @Test fun libraryResolver() {
         val s = MemoryStore()
         FoodModule.remember(s, listOf(FoodItem("Гречка", 200.0, Macro(110.0, 4.0, 1.0, 21.0)), FoodItem("Яйцо", 55.0, Macro(157.0, 12.7, 11.5, 0.7))))
