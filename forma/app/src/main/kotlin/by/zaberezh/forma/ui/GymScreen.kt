@@ -152,6 +152,7 @@ private fun WorkoutScreen(ctx: Ctx, id: String) {
     var lastSet by remember { mutableLongStateOf(0L) }
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
     var pick by remember { mutableStateOf(false) }
+    var creating by remember { mutableStateOf(false) }
     var cancel by remember { mutableStateOf(false) }
     val view = LocalView.current
     DisposableEffect(Unit) { view.keepScreenOn = true; onDispose { view.keepScreenOn = false } }
@@ -191,12 +192,19 @@ private fun WorkoutScreen(ctx: Ctx, id: String) {
                 })
         }
         item {
-            if (!pick) Secondary("+ Упражнение не по плану", { pick = true }, Modifier.fillMaxWidth())
-            else Block("Добавить упражнение") {
-                p.exercises.filter { it.id !in ids }.forEach { ex ->
-                    Text(ex.name, Modifier.fillMaxWidth().clickable { extra = extra + ex.id; pick = false }.padding(vertical = 8.dp))
+            when {
+                creating -> ExerciseForm(ctx, null, w.day) { creating = false }
+                !pick -> Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (ids.isEmpty()) Muted("В дне ${w.day} пока нет упражнений — создай их: название, вес, повторы.")
+                    Primary("+ Создать упражнение", { creating = true }, Modifier.fillMaxWidth())
+                    if (p.exercises.any { it.id !in ids }) Secondary("+ Из программы (другой день)", { pick = true }, Modifier.fillMaxWidth())
                 }
-                Flat("Закрыть", { pick = false }, C.muted)
+                else -> Block("Добавить из программы") {
+                    p.exercises.filter { it.id !in ids }.forEach { ex ->
+                        Text(ex.name, Modifier.fillMaxWidth().clickable { extra = extra + ex.id; pick = false }.padding(vertical = 8.dp))
+                    }
+                    Flat("Закрыть", { pick = false }, C.muted)
+                }
             }
         }
     }

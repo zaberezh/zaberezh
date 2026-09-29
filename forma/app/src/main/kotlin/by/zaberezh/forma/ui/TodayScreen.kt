@@ -85,6 +85,7 @@ fun TodayScreen(onTab: (Int) -> Unit) {
             }
         }
         items(ctx.settings.counters, key = { "counter-" + it.id }) { CounterBlock(ctx, it) }
+        items(ctx.settings.tests, key = { "test-" + it.id }) { TestBlock(ctx, it) }
         item { SleepBlock(ctx) }
         item {
             val t = FoodModule.dayTotal(s, ctx.today)
