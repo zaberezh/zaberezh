@@ -54,6 +54,9 @@ fun ProgramEditor(ctx: Ctx) {
 
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         editing?.let { e -> ExerciseForm(ctx, e.id?.let(p::ex), e.day) { editing = null } }
+            ?: Primary("+ Новое упражнение", { editing = Editing(null, p.days.firstOrNull()?.id) }, Modifier.fillMaxWidth())
+        if (p.exercises.isEmpty() && editing == null)
+            Muted("Программа пустая. Нажми «+ Новое упражнение»: название, вес, повторы, подходы и день — остальное подставится само.")
         val groups = p.days.map { d -> d.name to d.exercises.mapNotNull(p::ex) } +
             listOfNotNull(p.exercises.filter { ex -> p.days.none { ex.id in it.exercises } }.takeIf { it.isNotEmpty() }?.let { "без дня" to it })
         groups.forEachIndexed { gi, (dayName, list) ->
@@ -101,7 +104,7 @@ private fun ExerciseRow(ctx: Ctx, ex: Exercise, open: Boolean, bwKg: Double, onT
 }
 
 @Composable
-private fun ExerciseForm(ctx: Ctx, ex: Exercise?, preDay: String?, onDone: () -> Unit) {
+fun ExerciseForm(ctx: Ctx, ex: Exercise?, preDay: String?, onDone: () -> Unit) {
     val s = ctx.store
     val p = GymModule.program(s)
     var name by remember(ex) { mutableStateOf(ex?.name ?: "") }

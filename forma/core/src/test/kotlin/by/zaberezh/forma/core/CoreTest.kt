@@ -5,6 +5,7 @@ import by.zaberezh.forma.core.body.Weight
 import by.zaberezh.forma.core.body.navyBodyFat
 import by.zaberezh.forma.core.body.weightRate
 import by.zaberezh.forma.core.daily.CounterModule
+import by.zaberezh.forma.core.daily.TestModule
 import by.zaberezh.forma.core.food.FoodItem
 import by.zaberezh.forma.core.food.FoodModule
 import by.zaberezh.forma.core.food.LibraryResolver
@@ -89,6 +90,19 @@ class CoreTest {
         assertEquals(listOf(0, 15, 0), CounterModule.series(s, "pullups", mon.minusDays(2), mon).map { it.second })
         assertTrue(CounterModule.morning(ctx).first().contains("вчера: 15"))
         assertNotNull(CounterModule.checkup(ctx, mon.minusDays(13), mon))
+    }
+
+    @Test fun weeklyTest() {
+        val s = MemoryStore()
+        val def = Settings().tests.first()
+        assertTrue(TestModule.due(Ctx(s, mon), def))
+        TestModule.record(s, def.id, mon, 8.0)
+        TestModule.record(s, def.id, mon, 9.0) // исправление в тот же день
+        assertEquals(listOf(mon to 9.0), TestModule.results(s, def.id))
+        assertFalse(TestModule.due(Ctx(s, mon.plusDays(6)), def))
+        assertTrue(TestModule.due(Ctx(s, mon.plusDays(7)), def))
+        TestModule.record(s, def.id, mon.plusDays(7), 11.0)
+        assertTrue(TestModule.checkup(Ctx(s, mon.plusDays(7)), mon.plusDays(1), mon.plusDays(7))!!.lines.first().contains("9 → 11"))
     }
 
     @Test fun doubleProgression() {
