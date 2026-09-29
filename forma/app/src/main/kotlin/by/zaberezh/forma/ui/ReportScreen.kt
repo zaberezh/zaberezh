@@ -29,7 +29,6 @@ import kotlinx.coroutines.withContext
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 
-private val METHOD: String by lazy { Checkup::class.java.getResource("/method.md")?.readText() ?: "" }
 private val DM = DateTimeFormatter.ofPattern("d MMM", RU)
 
 @Composable

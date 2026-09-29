@@ -112,6 +112,26 @@ class Claude(apiKey: String, private val model: String, baseUrl: String = "") {
         error("Модель не вернула результат" + last.takeIf { it.isNotBlank() }?.let { ": ${it.take(300)}" }.orEmpty())
     }
 
+    /**
+     * План тренировки на день. Один-два запроса без веб-поиска, ответ ограничен 8000 токенами.
+     * [limit] — потолок токенов на весь вызов: при превышении останавливаемся.
+     */
+    fun planDay(method: String, prompt: String, limit: Long = 200_000): Pair<List<Pair<String, Int>>, String> {
+        val b = base(method, OutputConfig.Effort.LOW).maxTokens(8000L).addTool(PLAN_TOOL).addUserMessage(prompt)
+        repeat(2) {
+            if (used > limit) error("Остановлено: израсходовано $used токенов (лимит $limit)")
+            val m = call(b)
+            val tool = m.content().firstNotNullOfOrNull { it.toolUse().orElse(null)?.takeIf { t -> t.name() == "report_plan" } }
+            if (tool != null) {
+                val r = LENIENT.decodeFromJsonElement(PlanReport.serializer(), toJson(tool._input().convert(Map::class.java)))
+                return r.items.map { it.id to it.sets.coerceIn(1, 6) } to r.note
+            }
+            b.addMessage(m)
+            if (m.stopReason().orElse(null) != StopReason.PAUSE_TURN) b.addUserMessage("Верни план вызовом report_plan.")
+        }
+        error("Модель не вернула план")
+    }
+
     /** Анализ чекапа по методике. */
     fun analyze(method: String, report: String, facts: String, note: String): String {
         val m = call(
@@ -131,6 +151,9 @@ class Claude(apiKey: String, private val model: String, baseUrl: String = "") {
         val m = call(MessageCreateParams.builder().model(model).maxTokens(1024L).addUserMessage("Ответь одним словом: ок"))
         return text(m).ifBlank { "ок" } + " · модель ${m.model()}"
     }
+
+    @Serializable private data class PlanReport(val items: List<PlanEntry>, val note: String = "")
+    @Serializable private data class PlanEntry(val id: String, val sets: Int)
 
     @Serializable private data class FoodReport(val items: List<Item>, val note: String = "")
     @Serializable private data class Item(
@@ -187,6 +210,33 @@ class Claude(apiKey: String, private val model: String, baseUrl: String = "") {
         """.trimIndent()
 
         private fun prop(type: String, desc: String, extra: Map<String, Any> = emptyMap()) = mapOf("type" to type, "description" to desc) + extra
+
+        val PLAN_TOOL: Tool = Tool.builder()
+            .name("report_plan")
+            .description("Вернуть план тренировки: упражнения из базы по порядку выполнения и число рабочих подходов.")
+            .strict(true)
+            .inputSchema(
+                Tool.InputSchema.builder()
+                    .properties(
+                        Tool.InputSchema.Properties.builder()
+                            .putAdditionalProperty("items", JsonValue.from(mapOf(
+                                "type" to "array",
+                                "items" to mapOf(
+                                    "type" to "object", "additionalProperties" to false, "required" to listOf("id", "sets"),
+                                    "properties" to mapOf(
+                                        "id" to prop("string", "id упражнения из базы"),
+                                        "sets" to prop("integer", "Рабочих подходов, 1–6"),
+                                    ),
+                                ),
+                            )))
+                            .putAdditionalProperty("note", JsonValue.from(prop("string", "Почему такой план, 1–2 предложения")))
+                            .build()
+                    )
+                    .required(listOf("items", "note"))
+                    .putAdditionalProperty("additionalProperties", JsonValue.from(false))
+                    .build()
+            )
+            .build()
 
         val REPORT_TOOL: Tool = Tool.builder()
             .name("report_foods")

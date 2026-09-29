@@ -8,7 +8,6 @@ data class ExerciseInput(
     val weight: Double?,        // рабочий вес сейчас (для упражнений с весом тела — доп. вес)
     val reps: String,           // «10» или «8-12»
     val sets: Int,
-    val days: Set<String>,      // id дней программы
     val muscle: String?,        // главная мышца (null — угадать по названию)
     val bodyweight: Boolean,
     val step: Double?,          // шаг прибавки (null — угадать)
@@ -71,12 +70,11 @@ fun guessStep(name: String): Double {
     }
 }
 
-/** Добавить (id == null) или обновить упражнение и его дни. */
+/** Добавить (id == null) или обновить упражнение в базе. */
 fun Program.upsert(id: String?, i: ExerciseInput): Program {
     require(i.name.isNotBlank()) { "Введи название" }
     val (lo, hi) = parseReps(i.reps) ?: throw IllegalArgumentException("Повторы: число или диапазон, например 10 или 8-12")
     require(i.sets in 1..10) { "Подходов: от 1 до 10" }
-    require(i.days.isNotEmpty()) { "Выбери хотя бы один день" }
     val guessed = guessMuscles(i.name)
     val muscles = when {
         i.muscle == null -> guessed.ifEmpty { throw IllegalArgumentException("Выбери основную мышцу") }
@@ -93,15 +91,7 @@ fun Program.upsert(id: String?, i: ExerciseInput): Program {
         rir = old?.rir ?: if (compound) 2 else 1, restSec = old?.restSec ?: if (compound) 150 else 90,
     )
     val exercises = if (old == null) exercises + e else exercises.map { if (it.id == exId) e else it }
-    val days = days.map { d ->
-        val has = exId in d.exercises
-        when {
-            d.id in i.days && !has -> d.copy(exercises = d.exercises + exId)
-            d.id !in i.days && has -> d.copy(exercises = d.exercises - exId)
-            else -> d
-        }
-    }
-    return copy(exercises = exercises, days = days)
+    return copy(exercises = exercises)
 }
 
 fun Program.remove(id: String): Program =

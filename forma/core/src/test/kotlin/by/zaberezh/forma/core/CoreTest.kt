@@ -15,6 +15,7 @@ import by.zaberezh.forma.core.food.Meal
 import by.zaberezh.forma.core.food.adaptiveTdee
 import by.zaberezh.forma.core.gym.GymModule
 import by.zaberezh.forma.core.gym.PROGRAM
+import by.zaberezh.forma.core.gym.Planner
 import by.zaberezh.forma.core.gym.SetLog
 import by.zaberezh.forma.core.gym.WORKOUT
 import by.zaberezh.forma.core.gym.Workout
@@ -136,13 +137,38 @@ class CoreTest {
         assertEquals(55.0, nextTarget(ex, stuck).weight)
     }
 
-    @Test fun programRotationAndTargets() {
+    @Test fun dailyPlanFromExerciseBase() {
         val s = store()
-        assertEquals("A", GymModule.nextDay(s).id)
-        WORKOUT.save(s, Workout("A", mon.startMs(), sets = listOf(SetLog("bench", 50.0, 10))), ts = mon.startMs() + 3600_000)
-        assertEquals("B", GymModule.nextDay(s).id)
-        val t = GymModule.targets(s, PROGRAM.get(s).day("A")!!)
-        assertEquals(50.0, t.first().weight)
+        val ctx = Ctx(s, mon)
+        val plan = GymModule.planFor(ctx, mon)
+        val p = PROGRAM.get(s)
+        val sets = plan.items.sumOf { it.sets }
+        assertTrue(sets in 12..20, "sets=$sets plan=$plan")
+        assertTrue(plan.items.size in 4..7)
+        assertTrue(p.ex(plan.items.first().ex)!!.muscles.size > 1, "сначала базовое")
+        // все крупные мышцы верха покрыты в фулбоди-дне
+        val m = Planner.planMuscles(p, plan)
+        listOf("chest", "back", "side_delts").forEach { assertTrue((m[it] ?: 0.0) >= 2, "$it: $m") }
+
+        // вчера грудь убита -> сегодня грудь почти не берётся
+        WORKOUT.save(s, Workout(mon.minusDays(1).toString(), mon.minusDays(1).startMs(),
+            sets = List(4) { SetLog("bench", 60.0, 8) } + List(4) { SetLog("incline_db", 24.0, 10) }), ts = mon.minusDays(1).startMs() + 3600_000)
+        val after = Planner.planMuscles(p, GymModule.planFor(Ctx(s, mon), mon))
+        assertTrue((after["chest"] ?: 0.0) < (m["chest"] ?: 0.0), "chest $after vs $m")
+
+        // фокус «руки» — больше бицепса/трицепса
+        val arms = Planner.planMuscles(p, GymModule.planFor(ctx, mon, focus = "arms"))
+        assertTrue((arms["biceps"] ?: 0.0) + (arms["triceps"] ?: 0.0) > (m["biceps"] ?: 0.0) + (m["triceps"] ?: 0.0))
+
+        // будущие дни недели не копируют сегодняшний: симуляция учитывает запланированное
+        val wed = GymModule.planFor(Ctx(s, mon), mon.plusDays(2))
+        assertTrue(wed.items.isNotEmpty())
+
+        // правка сохраняется и возвращается как есть
+        GymModule.savePlan(s, plan.copy(items = plan.items.drop(1), source = "edited"))
+        assertEquals(plan.items.size - 1, GymModule.planFor(Ctx(s, mon), mon).items.size)
+        val t = GymModule.targets(s, plan)
+        assertEquals(plan.items.size, t.size)
     }
 
     @Test fun nutritionTargetsAndAdaptiveTdee() {
@@ -161,8 +187,7 @@ class CoreTest {
     @Test fun defaultProgramIsEmptyAndSafe() {
         val s = MemoryStore()
         assertTrue(defaultProgram().exercises.isEmpty())
-        assertEquals("A", GymModule.nextDay(s).id)
-        assertTrue(GymModule.targets(s, GymModule.nextDay(s)).isEmpty())
+        assertTrue(GymModule.planFor(Ctx(s, mon), mon).items.isEmpty())
         s.kvPut(PROGRAM.key, JSON.encodeToString(Program.serializer(), prog)) // старый черновик
         migrateSettings(s)
         assertTrue(PROGRAM.get(s).exercises.isEmpty())

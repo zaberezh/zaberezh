@@ -5,6 +5,15 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -17,9 +26,6 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
-import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.getValue
@@ -39,11 +45,12 @@ private val TABS = listOf(
     Tab("Сегодня", R.drawable.nav_today),
     Tab("Зал", R.drawable.nav_gym),
     Tab("Турник", R.drawable.nav_turnik),
+    Tab("Сон", R.drawable.nav_sleep),
     Tab("Еда", R.drawable.nav_food),
     Tab("Тело", R.drawable.nav_body),
     Tab("Отчёт", R.drawable.nav_report),
 )
-private const val SETTINGS_TAB = 6
+private const val SETTINGS_TAB = 7
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -70,19 +77,24 @@ class MainActivity : ComponentActivity() {
                         }
                     },
                     bottomBar = {
-                        NavigationBar(containerColor = C.card, tonalElevation = 0.dp) {
+                        // своя компактная панель: 7 вкладок помещаются на любом экране
+                        Row(
+                            Modifier.fillMaxWidth().background(C.card).navigationBarsPadding().height(64.dp).padding(horizontal = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
                             TABS.forEachIndexed { i, t ->
-                                NavigationBarItem(
-                                    selected = tab == i,
-                                    onClick = { tab = i },
-                                    icon = { Icon(painterResource(t.icon), t.title) },
-                                    label = { Text(t.title, maxLines = 1) },
-                                    colors = NavigationBarItemDefaults.colors(
-                                        selectedIconColor = C.accent, selectedTextColor = C.accent,
-                                        unselectedIconColor = C.muted, unselectedTextColor = C.muted,
-                                        indicatorColor = C.accent.copy(alpha = 0.14f),
-                                    ),
-                                )
+                                val sel = tab == i
+                                Column(
+                                    Modifier.weight(1f).fillMaxHeight().clip(RoundedCornerShape(12.dp))
+                                        .clickable { tab = i }.padding(vertical = 6.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center,
+                                ) {
+                                    Box(
+                                        Modifier.clip(RoundedCornerShape(10.dp)).background(if (sel) C.accent.copy(alpha = 0.16f) else C.card)
+                                            .padding(horizontal = 10.dp, vertical = 3.dp),
+                                    ) { Icon(painterResource(t.icon), t.title, Modifier.size(22.dp), tint = if (sel) C.accent else C.muted) }
+                                    Text(t.title, fontSize = 10.sp, maxLines = 1, color = if (sel) C.accent else C.muted)
+                                }
                             }
                         }
                     },
@@ -93,9 +105,10 @@ class MainActivity : ComponentActivity() {
                                 0 -> TodayScreen(onTab = { tab = it })
                                 1 -> GymScreen()
                                 2 -> TurnikScreen()
-                                3 -> FoodScreen()
-                                4 -> BodyScreen()
-                                5 -> ReportScreen()
+                                3 -> SleepScreen()
+                                4 -> FoodScreen()
+                                5 -> BodyScreen()
+                                6 -> ReportScreen()
                                 else -> SettingsScreen()
                             }
                         }
