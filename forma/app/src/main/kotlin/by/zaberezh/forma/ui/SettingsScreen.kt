@@ -67,7 +67,7 @@ fun SettingsScreen() {
         item {
             Block("Профиль и цели") {
                 num("age", "Возраст"); num("height", "Рост, см")
-                num("activity", "Активность (×BMR), 1.55 = 3 трен. + ходьба")
+                num("activity", "Активность (×BMR), 1.45 = 3 силовые без кардио")
                 num("gain", "Темп веса, кг/нед (0.1 = медленный набор)")
                 num("protein", "Белок, г/кг"); num("fat", "Доля жиров в калориях (0.25)")
                 num("kcal", "Калории вручную (пусто = авто)")
@@ -80,7 +80,7 @@ fun SettingsScreen() {
                 Button(onClick = {
                     fun d(k: String, def: Double) = f[k]?.num() ?: def
                     SETTINGS.set(s, st.copy(
-                        profile = p.copy(age = d("age", 18.0).toInt(), heightCm = d("height", 180.0), activity = d("activity", 1.55),
+                        profile = p.copy(age = d("age", 18.0).toInt(), heightCm = d("height", 180.0), activity = d("activity", 1.45),
                             gainKgPerWeek = d("gain", 0.1), proteinPerKg = d("protein", 2.0), fatShare = d("fat", 0.25)),
                         kcalOverride = f["kcal"]?.num()?.toInt(),
                         sessionsPerWeek = d("sessions", 3.0).toInt().coerceIn(1, 5), minVisitMin = d("visit", 75.0).toInt(),
