@@ -1,37 +1,72 @@
 {
-  "name": "Full Body A/B/C (черновик — заменим на твои упражнения)",
-  "version": 1,
-  "exercises": [
-    {"id": "bench", "name": "Жим штанги лёжа", "muscles": {"chest": 1, "triceps": 0.5, "front_delts": 0.5}, "sets": 3, "repMin": 6, "repMax": 10, "step": 2.5, "rir": 2, "restSec": 180},
-    {"id": "lat_pulldown", "name": "Тяга верхнего блока широким хватом", "muscles": {"back": 1, "biceps": 0.5, "rear_delts": 0.5}, "sets": 3, "repMin": 8, "repMax": 12, "step": 5, "rir": 1, "restSec": 120},
-    {"id": "squat", "name": "Приседания со штангой", "muscles": {"quads": 1, "glutes": 0.5}, "sets": 3, "repMin": 6, "repMax": 10, "step": 2.5, "rir": 2, "restSec": 180},
-    {"id": "lateral_raise", "name": "Махи гантелями в стороны", "muscles": {"side_delts": 1}, "sets": 3, "repMin": 12, "repMax": 20, "step": 1, "rir": 1, "restSec": 60},
-    {"id": "curl", "name": "Подъём штанги на бицепс", "muscles": {"biceps": 1}, "sets": 2, "repMin": 8, "repMax": 12, "step": 2.5, "rir": 1, "restSec": 90},
-    {"id": "pushdown", "name": "Разгибания на трицепс на блоке", "muscles": {"triceps": 1}, "sets": 2, "repMin": 10, "repMax": 15, "step": 2.5, "rir": 1, "restSec": 90},
-
-    {"id": "incline_db", "name": "Жим гантелей на наклонной 30°", "muscles": {"chest": 1, "front_delts": 0.5, "triceps": 0.5}, "sets": 3, "repMin": 8, "repMax": 12, "step": 2, "rir": 2, "restSec": 150},
-    {"id": "row", "name": "Тяга штанги в наклоне", "muscles": {"back": 1, "rear_delts": 0.5, "biceps": 0.5}, "sets": 3, "repMin": 6, "repMax": 10, "step": 2.5, "rir": 2, "restSec": 150},
-    {"id": "rdl", "name": "Румынская тяга", "muscles": {"hams": 1, "glutes": 0.5}, "sets": 3, "repMin": 8, "repMax": 10, "step": 2.5, "rir": 2, "restSec": 150},
-    {"id": "cable_lateral", "name": "Махи в стороны в кроссовере", "muscles": {"side_delts": 1}, "sets": 3, "repMin": 12, "repMax": 20, "step": 1.25, "rir": 1, "restSec": 60},
-    {"id": "hammer", "name": "Молотки с гантелями", "muscles": {"biceps": 1}, "sets": 2, "repMin": 8, "repMax": 12, "step": 2, "rir": 1, "restSec": 90},
-    {"id": "calf", "name": "Подъём на носки стоя", "muscles": {"calves": 1}, "sets": 2, "repMin": 10, "repMax": 15, "step": 5, "rir": 1, "restSec": 60},
-
-    {"id": "ohp", "name": "Жим штанги стоя", "muscles": {"front_delts": 1, "side_delts": 0.5, "triceps": 0.5}, "sets": 3, "repMin": 6, "repMax": 10, "step": 2.5, "rir": 2, "restSec": 150},
-    {"id": "pullup", "name": "Подтягивания (вес = доп. отягощение)", "muscles": {"back": 1, "biceps": 0.5}, "sets": 3, "repMin": 5, "repMax": 12, "step": 2.5, "bw": 1.0, "rir": 1, "restSec": 150},
-    {"id": "leg_press", "name": "Жим ногами", "muscles": {"quads": 1, "glutes": 0.5}, "sets": 3, "repMin": 10, "repMax": 15, "step": 10, "rir": 2, "restSec": 120},
-    {"id": "cable_fly", "name": "Сведения в кроссовере", "muscles": {"chest": 1}, "sets": 2, "repMin": 10, "repMax": 15, "step": 2.5, "rir": 1, "restSec": 90},
-    {"id": "face_pull", "name": "Тяга каната к лицу", "muscles": {"rear_delts": 1}, "sets": 2, "repMin": 12, "repMax": 20, "step": 2.5, "rir": 1, "restSec": 60},
-    {"id": "overhead_ext", "name": "Разгибания из-за головы на блоке", "muscles": {"triceps": 1}, "sets": 2, "repMin": 10, "repMax": 15, "step": 2.5, "rir": 1, "restSec": 90},
-    {"id": "hanging_raise", "name": "Подъём ног в висе", "muscles": {"abs": 1}, "sets": 2, "repMin": 8, "repMax": 15, "step": 0, "rir": 1, "restSec": 60}
-  ],
+  "name": "Моя программа (ждёт упражнений)",
+  "version": 2,
+  "exercises": [],
   "days": [
-    {"id": "A", "name": "A", "exercises": ["bench", "lat_pulldown", "squat", "lateral_raise", "curl", "pushdown"]},
-    {"id": "B", "name": "B", "exercises": ["incline_db", "row", "rdl", "cable_lateral", "hammer", "calf"]},
-    {"id": "C", "name": "C", "exercises": ["ohp", "pullup", "leg_press", "cable_fly", "face_pull", "overhead_ext", "hanging_raise"]}
+    {
+      "id": "A",
+      "name": "A",
+      "exercises": []
+    },
+    {
+      "id": "B",
+      "name": "B",
+      "exercises": []
+    },
+    {
+      "id": "C",
+      "name": "C",
+      "exercises": []
+    }
   ],
   "volume": {
-    "chest": [8, 14], "back": [10, 16], "side_delts": [8, 16], "rear_delts": [4, 10],
-    "biceps": [6, 12], "triceps": [6, 12], "quads": [6, 12], "hams": [4, 10], "glutes": [0, 12],
-    "front_delts": [0, 12], "calves": [0, 8], "abs": [0, 8]
+    "chest": [
+      8,
+      14
+    ],
+    "back": [
+      10,
+      16
+    ],
+    "side_delts": [
+      8,
+      16
+    ],
+    "rear_delts": [
+      4,
+      10
+    ],
+    "biceps": [
+      6,
+      12
+    ],
+    "triceps": [
+      6,
+      12
+    ],
+    "quads": [
+      6,
+      12
+    ],
+    "hams": [
+      4,
+      10
+    ],
+    "glutes": [
+      0,
+      12
+    ],
+    "front_delts": [
+      0,
+      12
+    ],
+    "calves": [
+      0,
+      8
+    ],
+    "abs": [
+      0,
+      8
+    ]
   }
 }

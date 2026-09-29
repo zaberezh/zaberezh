@@ -3,6 +3,7 @@ package by.zaberezh.forma.core
 import by.zaberezh.forma.core.body.BodyModule
 import by.zaberezh.forma.core.food.FoodModule
 import by.zaberezh.forma.core.gym.GymModule
+import by.zaberezh.forma.core.gym.PROGRAM
 import by.zaberezh.forma.core.store.Pref
 import by.zaberezh.forma.core.store.Store
 import by.zaberezh.forma.core.store.today
@@ -46,12 +47,19 @@ val SETTINGS = Pref("settings", Settings.serializer()) { Settings() }
 
 /** Миграция сохранённых настроек при обновлении приложения. */
 fun migrateSettings(store: Store) {
-    val st = SETTINGS.get(store)
-    if (st.schema >= 2) return
-    val p = st.profile
-    // v2: активность без ходьбы — старые значения по умолчанию (1.55/1.45) → 1.375
-    val act = if (p.activity == 1.55 || p.activity == 1.45) 1.375 else p.activity
-    SETTINGS.set(store, st.copy(profile = p.copy(activity = act), schema = 2))
+    var st = SETTINGS.get(store)
+    if (st.schema < 2) {
+        // v2: активность без ходьбы — старые значения по умолчанию (1.55/1.45) → 1.375
+        val p = st.profile
+        val act = if (p.activity == 1.55 || p.activity == 1.45) 1.375 else p.activity
+        st = st.copy(profile = p.copy(activity = act), schema = 2)
+    }
+    if (st.schema < 3) {
+        // v3: черновая программа убрана — если сохранена она, сбрасываем на пустую
+        if (store.kvGet(PROGRAM.key)?.contains("черновик") == true) store.kvPut(PROGRAM.key, null)
+        st = st.copy(schema = 3)
+    }
+    SETTINGS.set(store, st)
 }
 
 /** Контекст вычислений: хранилище + «сегодня». */
