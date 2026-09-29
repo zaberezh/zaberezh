@@ -1,6 +1,7 @@
 package by.zaberezh.forma.ui
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material3.MaterialTheme
@@ -60,6 +61,11 @@ fun TodayScreen(onTab: (Int) -> Unit) {
                     if (manual) Flat("Авто", { GymModule.resetWeek(ctx); moveErr = null })
                 }
                 Err(moveErr)
+                if (GymModule.threeInRow(ctx)) Text(
+                    "* 3 дня подряд — не лучшая идея: мышцы и нервная система не успевают восстановиться, " +
+                        "особенно при недосыпе; третья тренировка обычно выходит слабее и повышает риск травмы.",
+                    style = MaterialTheme.typography.bodySmall, color = C.warn,
+                )
                 val next = GymModule.nextDay(s)
                 val active = s.kvGet(ACTIVE)?.let { s.get(it) } != null
                 when {
@@ -78,6 +84,7 @@ fun TodayScreen(onTab: (Int) -> Unit) {
                 }
             }
         }
+        items(ctx.settings.counters, key = { "counter-" + it.id }) { CounterBlock(ctx, it) }
         item { SleepBlock(ctx) }
         item {
             val t = FoodModule.dayTotal(s, ctx.today)

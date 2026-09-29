@@ -2,6 +2,8 @@ package by.zaberezh.forma.core
 
 import by.zaberezh.forma.core.body.BodyModule
 import by.zaberezh.forma.core.food.FoodModule
+import by.zaberezh.forma.core.daily.CounterDef
+import by.zaberezh.forma.core.daily.CounterModule
 import by.zaberezh.forma.core.gym.GymModule
 import by.zaberezh.forma.core.gym.PROGRAM
 import by.zaberezh.forma.core.sleep.SleepModule
@@ -46,6 +48,7 @@ data class Settings(
     val wakeHour: Int = 7,
     val wakeMinute: Int = 30,
     val bedReminder: Boolean = true,
+    val counters: List<CounterDef> = listOf(CounterDef("pullups", "Подтягивания")),
 )
 
 val SETTINGS = Pref("settings", Settings.serializer()) { Settings() }
@@ -88,5 +91,5 @@ interface Module {
 }
 
 object Modules {
-    val all: List<Module> = listOf(GymModule, SleepModule, BodyModule, FoodModule)
+    val all: List<Module> = listOf(GymModule, CounterModule, SleepModule, BodyModule, FoodModule)
 }

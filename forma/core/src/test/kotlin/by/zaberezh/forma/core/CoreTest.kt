@@ -4,6 +4,7 @@ import by.zaberezh.forma.core.body.WEIGHT
 import by.zaberezh.forma.core.body.Weight
 import by.zaberezh.forma.core.body.navyBodyFat
 import by.zaberezh.forma.core.body.weightRate
+import by.zaberezh.forma.core.daily.CounterModule
 import by.zaberezh.forma.core.food.FoodItem
 import by.zaberezh.forma.core.food.FoodModule
 import by.zaberezh.forma.core.food.LibraryResolver
@@ -69,10 +70,25 @@ class CoreTest {
         val wk = GymModule.week(Ctx(s, mon))
         assertEquals(listOf(mon.plusDays(1), mon.plusDays(2), mon.plusDays(4)), wk.plan)
         assertFalse(wk.todayGym)
-        assertNotNull(GymModule.toggleDay(ctx, mon.plusDays(3)))  // Вт+Ср+Чт — 3 подряд, запрещено
+        assertFalse(GymModule.threeInRow(ctx))
+        assertNull(GymModule.toggleDay(ctx, mon.plusDays(3)))     // Вт+Ср+Чт — можно, но с предупреждением
+        assertTrue(GymModule.threeInRow(ctx))
+        assertNull(GymModule.toggleDay(ctx, mon.plusDays(3)))
         assertNotNull(GymModule.toggleDay(ctx, mon.plusDays(5)))  // суббота
         GymModule.resetWeek(ctx)
         assertEquals(listOf(mon, mon.plusDays(2), mon.plusDays(4)), GymModule.week(ctx).plan)
+    }
+
+    @Test fun dailyCounter() {
+        val s = MemoryStore()
+        val ctx = Ctx(s, mon)
+        assertEquals(0, CounterModule.get(s, "pullups", mon))
+        CounterModule.set(s, "pullups", mon.minusDays(1), 12)
+        CounterModule.set(s, "pullups", mon.minusDays(1), 15) // редактирование
+        assertEquals(15, CounterModule.get(s, "pullups", mon.minusDays(1)))
+        assertEquals(listOf(0, 15, 0), CounterModule.series(s, "pullups", mon.minusDays(2), mon).map { it.second })
+        assertTrue(CounterModule.morning(ctx).first().contains("вчера: 15"))
+        assertNotNull(CounterModule.checkup(ctx, mon.minusDays(13), mon))
     }
 
     @Test fun doubleProgression() {
