@@ -1,0 +1,23 @@
+package by.zaberezh.forma
+
+import android.app.Application
+import by.zaberezh.forma.core.Ctx
+import by.zaberezh.forma.data.SqlStore
+import by.zaberezh.forma.sys.Geo
+import by.zaberezh.forma.sys.Morning
+import by.zaberezh.forma.sys.Notify
+
+object Forma {
+    lateinit var store: SqlStore
+    fun ctx() = Ctx(store)
+}
+
+class App : Application() {
+    override fun onCreate() {
+        super.onCreate()
+        Forma.store = SqlStore(this)
+        Notify.channels(this)
+        Morning.schedule(this)
+        Geo.register(this)
+    }
+}

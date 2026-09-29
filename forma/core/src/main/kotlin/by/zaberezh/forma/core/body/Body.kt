@@ -1,0 +1,113 @@
+package by.zaberezh.forma.core.body
+
+import by.zaberezh.forma.core.Ctx
+import by.zaberezh.forma.core.Field
+import by.zaberezh.forma.core.Module
+import by.zaberezh.forma.core.Section
+import by.zaberezh.forma.core.r1
+import by.zaberezh.forma.core.r2
+import by.zaberezh.forma.core.slope
+import by.zaberezh.forma.core.store.Kind
+import by.zaberezh.forma.core.store.Store
+import by.zaberezh.forma.core.store.endMs
+import by.zaberezh.forma.core.store.startMs
+import kotlinx.serialization.Serializable
+import java.time.LocalDate
+import java.time.temporal.ChronoUnit
+import kotlin.math.log10
+
+@Serializable data class Weight(val kg: Double)
+@Serializable data class Measure(val v: Map<String, Double>)
+@Serializable data class Photo(val path: String, val pose: String)
+
+val WEIGHT = Kind("body.weight", Weight.serializer())
+val MEASURE = Kind("body.measure", Measure.serializer())
+val PHOTO = Kind("body.photo", Photo.serializer())
+
+val MEASURE_FIELDS = listOf(
+    Field("waist", "Талия (по пупку)", "см", "утром, на выдохе"),
+    Field("chest", "Грудь", "см", "по соскам, руки опущены"),
+    Field("shoulders", "Плечи", "см", "по дельтам, самая широкая точка"),
+    Field("arm", "Бицепс (напряжённый)", "см", "правая рука"),
+    Field("forearm", "Предплечье", "см"),
+    Field("thigh", "Бедро", "см", "под ягодицей"),
+    Field("calf", "Икра", "см"),
+    Field("neck", "Шея", "см", "под кадыком — для % жира"),
+)
+val POSES = listOf("front" to "спереди", "side" to "сбоку", "back" to "сзади")
+
+fun latestWeight(s: Store): Double? = WEIGHT.all(s).lastOrNull()?.second?.kg
+
+/** Дневные веса (среднее за день), по возрастанию. */
+fun dailyWeights(s: Store, from: LocalDate, to: LocalDate): List<Pair<LocalDate, Double>> =
+    WEIGHT.all(s, from.startMs(), to.endMs()).groupBy { it.first.day }
+        .map { (d, l) -> d to l.map { it.second.kg }.average() }.sortedBy { it.first }
+
+/** Темп изменения веса, кг/нед (регрессия по сырым весам). */
+fun weightRate(s: Store, to: LocalDate, days: Long = 21): Double? {
+    val w = dailyWeights(s, to.minusDays(days - 1), to)
+    if (w.size < 5 || ChronoUnit.DAYS.between(w.first().first, w.last().first) < 10) return null
+    return slope(w.map { ChronoUnit.DAYS.between(to, it.first).toDouble() to it.second })?.times(7)
+}
+
+/** Сглаженный вес (EMA, α=0.1 по дням) — убирает шум воды/соли. */
+fun trendWeight(s: Store, to: LocalDate): Double? {
+    val w = dailyWeights(s, to.minusDays(60), to)
+    if (w.isEmpty()) return null
+    var ema = w.first().second
+    w.drop(1).forEach { ema += 0.1 * (it.second - ema) }
+    return ema
+}
+
+/** % жира по формуле ВМС США (мужчины): талия, шея, рост в см. */
+fun navyBodyFat(waist: Double, neck: Double, height: Double): Double? =
+    if (waist <= neck) null else 495 / (1.0324 - 0.19077 * log10(waist - neck) + 0.15456 * log10(height)) - 450
+
+object BodyModule : Module {
+    override val id = "body"
+    override val title = "Тело"
+
+    fun lastMeasure(s: Store) = MEASURE.all(s).lastOrNull()
+
+    override fun morning(ctx: Ctx): List<String> {
+        val out = mutableListOf<String>()
+        val s = ctx.store
+        val lastW = WEIGHT.all(s).lastOrNull()
+        if (lastW != null && lastW.first.day != ctx.today) out += "Взвешивание: натощак, после туалета"
+        val lm = lastMeasure(s)?.first?.day
+        val days = lm?.let { ChronoUnit.DAYS.between(it, ctx.today) }
+        if (days == null || days >= 28) out += "Замеры + фото: " + (days?.let { "прошло $it дн." } ?: "ещё не делались")
+        return out
+    }
+
+    override fun checkup(ctx: Ctx, from: LocalDate, to: LocalDate): Section {
+        val s = ctx.store
+        val lines = mutableListOf<String>()
+        val actions = mutableListOf<String>()
+        val w = dailyWeights(s, from, to)
+        val rate = weightRate(s, to, ChronoUnit.DAYS.between(from, to) + 1)
+        val target = ctx.settings.profile.gainKgPerWeek
+        if (w.isNotEmpty()) lines += "Вес: ${w.first().second.r1()} → ${w.last().second.r1()} кг, взвешиваний ${w.size}"
+        trendWeight(s, to)?.let { lines += "Сглаженный вес: ${it.r1()} кг" }
+        rate?.let { lines += "Темп: ${it.r2()} кг/нед (цель ${target.r2()})" }
+        if (w.size < 7) actions += "Взвешиваний мало (${w.size}) — нужен минимум 4 раза в неделю для точного темпа."
+
+        val ms = MEASURE.all(s).map { it.first.day to it.second.v }
+        val cur = ms.lastOrNull { it.first <= to }
+        val prev = ms.lastOrNull { cur != null && it.first < cur.first && it.first <= from } ?: ms.firstOrNull { cur != null && it.first < cur.first }
+        if (cur != null) {
+            MEASURE_FIELDS.forEach { f ->
+                val a = prev?.second?.get(f.key); val b = cur.second[f.key]
+                if (b != null) lines += "${f.label}: " + (a?.let { "${it.r1()} → " } ?: "") + "${b.r1()} см"
+            }
+            val h = ctx.settings.profile.heightCm
+            val bf = navyBodyFat(cur.second["waist"] ?: 0.0, cur.second["neck"] ?: 0.0, h)
+            val bf0 = prev?.let { navyBodyFat(it.second["waist"] ?: 0.0, it.second["neck"] ?: 0.0, h) }
+            bf?.let { lines += "% жира (формула ВМС, ±3%): " + (bf0?.let { "${it.r1()} → " } ?: "") + it.r1() }
+            val dw = (cur.second["waist"] ?: 0.0) - (prev?.second?.get("waist") ?: cur.second["waist"] ?: 0.0)
+            if (prev != null && dw >= 1.0) actions += "Талия +${dw.r1()} см — набор идёт с жиром, срежь 150 ккал."
+        }
+        return Section(title, lines, actions, mapOf("weights" to w.size, "rate_kg_week" to rate, "target_rate" to target,
+            "measure_last" to cur?.second, "measure_prev" to prev?.second))
+    }
+}
