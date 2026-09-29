@@ -37,6 +37,7 @@ data class Settings(
         GymPlace("dvs", "Дворец водного спорта (Сурганова 2а)", 53.918795, 27.607268),
     ),
     val sessionsPerWeek: Int = 3,
+    val gymWeekends: Boolean = true,    // выходные тоже могут быть днями зала
     val minVisitMin: Int = 75,
     val morningHour: Int = 8,
     val morningMinute: Int = 0,

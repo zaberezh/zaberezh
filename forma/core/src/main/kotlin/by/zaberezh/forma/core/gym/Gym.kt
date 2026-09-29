@@ -51,7 +51,7 @@ object GymModule : Module {
         val trained = trainedDays(ctx, mon, mon.plusDays(6))
         val manual = manualDays(ctx.store, mon)
         return if (manual != null) manualWeek(trained, manual, ctx.today, ctx.settings.sessionsPerWeek)
-        else planWeek(trained, ctx.today, ctx.settings.sessionsPerWeek)
+        else planWeek(trained, ctx.today, ctx.settings.sessionsPerWeek, weekends = ctx.settings.gymWeekends)
     }
 
     /**
@@ -62,7 +62,7 @@ object GymModule : Module {
     fun toggleDay(ctx: Ctx, day: LocalDate): String? {
         val mon = ctx.today.with(DayOfWeek.MONDAY)
         if (day < ctx.today) return "Прошедший день не перенести"
-        if (day.dayOfWeek.value > 5) return "Только будни"
+        if (day.dayOfWeek.value > 5 && !ctx.settings.gymWeekends) return "Выходные выключены в настройках"
         val trained = trainedDays(ctx, mon, mon.plusDays(6))
         if (day in trained) return "Тренировка в этот день уже засчитана"
         val wk = week(ctx)

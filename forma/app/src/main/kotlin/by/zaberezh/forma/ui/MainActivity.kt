@@ -38,11 +38,12 @@ private data class Tab(val title: String, val icon: Int)
 private val TABS = listOf(
     Tab("Сегодня", R.drawable.nav_today),
     Tab("Зал", R.drawable.nav_gym),
+    Tab("Турник", R.drawable.nav_turnik),
     Tab("Еда", R.drawable.nav_food),
     Tab("Тело", R.drawable.nav_body),
     Tab("Отчёт", R.drawable.nav_report),
 )
-private const val SETTINGS_TAB = 5
+private const val SETTINGS_TAB = 6
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -91,9 +92,10 @@ class MainActivity : ComponentActivity() {
                             when (tab) {
                                 0 -> TodayScreen(onTab = { tab = it })
                                 1 -> GymScreen()
-                                2 -> FoodScreen()
-                                3 -> BodyScreen()
-                                4 -> ReportScreen()
+                                2 -> TurnikScreen()
+                                3 -> FoodScreen()
+                                4 -> BodyScreen()
+                                5 -> ReportScreen()
                                 else -> SettingsScreen()
                             }
                         }

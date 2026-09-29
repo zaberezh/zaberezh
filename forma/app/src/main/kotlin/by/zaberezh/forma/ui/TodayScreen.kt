@@ -48,7 +48,7 @@ fun TodayScreen(onTab: (Int) -> Unit) {
         item {
             Block("Зал", trailing = { Pill("${wk.done} / $target", if (wk.done >= target) C.good else C.accent) }) {
                 Row(Modifier.fillMaxWidth()) {
-                    (0L..4L).forEach { d ->
+                    (0L..(if (ctx.settings.gymWeekends) 6L else 4L)).forEach { d ->
                         val day = mon.plusDays(d)
                         DayDot(day.dayOfWeek.getDisplayName(TextStyle.SHORT, RU), day in trained, day in wk.plan, day == ctx.today,
                             Modifier.weight(1f).clickable { moveErr = GymModule.toggleDay(ctx, day) })
@@ -84,8 +84,6 @@ fun TodayScreen(onTab: (Int) -> Unit) {
                 }
             }
         }
-        items(ctx.settings.counters, key = { "counter-" + it.id }) { CounterBlock(ctx, it) }
-        items(ctx.settings.tests, key = { "test-" + it.id }) { TestBlock(ctx, it) }
         item { SleepBlock(ctx) }
         item {
             val t = FoodModule.dayTotal(s, ctx.today)
@@ -95,7 +93,7 @@ fun TodayScreen(onTab: (Int) -> Unit) {
                 Progress("Белок", t.p, g.p, "г")
                 Progress("Жиры", t.f, g.f, "г")
                 Progress("Углеводы", t.c, g.c, "г")
-                Secondary("Добавить еду", { onTab(2) }, Modifier.fillMaxWidth())
+                Secondary("Добавить еду", { onTab(3) }, Modifier.fillMaxWidth())
             }
         }
         item {
@@ -114,11 +112,11 @@ fun TodayScreen(onTab: (Int) -> Unit) {
             }
         }
         item {
-            val lines = Modules.all.filter { it.id != GymModule.id }.flatMap { it.morning(ctx) }
+            val lines = Modules.all.filter { it.id !in setOf(GymModule.id, "daily", "tests", "sleep") }.flatMap { it.morning(ctx) }
             val due = Checkup.due(ctx)
             if (lines.isNotEmpty() || due) Block("Напоминания") {
                 lines.forEach { Text("• $it", style = MaterialTheme.typography.bodyMedium) }
-                if (due) Secondary("Сделать чекап", { onTab(4) }, Modifier.fillMaxWidth())
+                if (due) Secondary("Сделать чекап", { onTab(5) }, Modifier.fillMaxWidth())
             }
         }
     }
