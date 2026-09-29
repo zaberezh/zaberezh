@@ -18,6 +18,7 @@ data class Exercise(
     val rir: Int = 2,                   // сколько повторов оставлять в запасе
     val restSec: Int = 120,
     val note: String = "",
+    val startWeight: Double? = null,    // вес на старте (пока нет истории)
 )
 
 @Serializable
@@ -61,7 +62,7 @@ val MUSCLES = linkedMapOf(
     "chest" to "грудь", "back" to "спина (ширина/толщина)", "side_delts" to "средняя дельта",
     "front_delts" to "передняя дельта", "rear_delts" to "задняя дельта", "biceps" to "бицепс",
     "triceps" to "трицепс", "quads" to "квадрицепс", "hams" to "бицепс бедра", "glutes" to "ягодицы",
-    "calves" to "икры", "abs" to "пресс",
+    "calves" to "икры", "abs" to "пресс", "forearms" to "предплечья",
 )
 
 fun defaultProgram(): Program =

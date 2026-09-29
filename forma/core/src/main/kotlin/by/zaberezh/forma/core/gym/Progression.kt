@@ -22,7 +22,8 @@ fun workingSets(sets: List<SetLog>): List<SetLog> {
 fun nextTarget(ex: Exercise, history: List<List<SetLog>>): Target {
     val sessions = history.filter { it.isNotEmpty() }
     val last = sessions.lastOrNull()
-        ?: return Target(ex, null, List(ex.sets) { ex.repMin }, "подбери вес на ${ex.repMin}–${ex.repMax} повт., в запасе ${ex.rir}")
+        ?: return if (ex.startWeight != null) Target(ex, ex.startWeight, List(ex.sets) { ex.repMin }, "стартовый вес")
+        else Target(ex, null, List(ex.sets) { ex.repMin }, "подбери вес на ${ex.repMin}–${ex.repMax} повт., в запасе ${ex.rir}")
     val work = workingSets(last)
     val w = work.first().w
     if (work.size >= ex.sets && work.take(ex.sets).all { it.r >= ex.repMax } && ex.step > 0)

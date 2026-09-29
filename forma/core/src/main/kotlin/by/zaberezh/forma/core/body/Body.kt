@@ -24,15 +24,12 @@ val WEIGHT = Kind("body.weight", Weight.serializer())
 val MEASURE = Kind("body.measure", Measure.serializer())
 val PHOTO = Kind("body.photo", Photo.serializer())
 
+/** Замеры: утром до еды и тренировки, одной лентой, лента плотно, но не впивается; 2 замера → среднее. */
 val MEASURE_FIELDS = listOf(
-    Field("waist", "Талия (по пупку)", "см", "утром, на выдохе"),
-    Field("chest", "Грудь", "см", "по соскам, руки опущены"),
-    Field("shoulders", "Плечи", "см", "по дельтам, самая широкая точка"),
-    Field("arm", "Бицепс (напряжённый)", "см", "правая рука"),
-    Field("forearm", "Предплечье", "см"),
-    Field("thigh", "Бедро", "см", "под ягодицей"),
-    Field("calf", "Икра", "см"),
-    Field("neck", "Шея", "см", "под кадыком — для % жира"),
+    Field("waist", "Талия", "см", "По линии пупка, утром натощак, на спокойном выдохе. Живот не втягивать, лента строго горизонтально."),
+    Field("chest", "Грудь", "см", "По самой выступающей точке груди спереди и под лопатками сзади. Руки опущены, спокойный выдох."),
+    Field("arm", "Бицепс", "см", "Правая рука: согни и напряги (кулак к плечу, локоть на уровне плеча), по самой высокой точке бицепса."),
+    Field("forearm", "Предплечье", "см", "Правая рука выпрямлена, кулак сжат, в самой широкой части — примерно 5 см ниже локтя."),
 )
 val POSES = listOf("front" to "спереди", "side" to "сбоку", "back" to "сзади")
 
@@ -61,7 +58,7 @@ fun trendWeight(s: Store, to: LocalDate): Double? {
 
 /** % жира по формуле ВМС США (мужчины): талия, шея, рост в см. */
 fun navyBodyFat(waist: Double, neck: Double, height: Double): Double? =
-    if (waist <= neck) null else 495 / (1.0324 - 0.19077 * log10(waist - neck) + 0.15456 * log10(height)) - 450
+    if (neck <= 0 || waist <= neck) null else 495 / (1.0324 - 0.19077 * log10(waist - neck) + 0.15456 * log10(height)) - 450
 
 object BodyModule : Module {
     override val id = "body"
