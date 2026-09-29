@@ -1,26 +1,41 @@
-@file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+@file:OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 
 package by.zaberezh.forma.ui
 
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.FlowRowScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -28,13 +43,45 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import by.zaberezh.forma.Forma
 import by.zaberezh.forma.core.Ctx
 import by.zaberezh.forma.core.r1
+import kotlin.math.roundToInt
 
+// ---------- палитра ----------
+object C {
+    val bg = Color(0xFF0D0F12)
+    val card = Color(0xFF16191E)
+    val cardHi = Color(0xFF1E2228)
+    val line = Color(0xFF2A2F37)
+    val text = Color(0xFFE8EAED)
+    val muted = Color(0xFF8E97A3)
+    val accent = Color(0xFF7FB4FF)
+    val good = Color(0xFF5FD08C)
+    val warn = Color(0xFFF2C94C)
+    val bad = Color(0xFFFF6B6B)
+}
+
+val Scheme = darkColorScheme(
+    primary = C.accent, onPrimary = Color(0xFF0A1A30),
+    background = C.bg, onBackground = C.text,
+    surface = C.bg, onSurface = C.text,
+    surfaceVariant = C.card, onSurfaceVariant = C.muted,
+    surfaceContainer = C.card, surfaceContainerHigh = C.cardHi, surfaceContainerHighest = C.cardHi,
+    surfaceContainerLow = C.card, surfaceContainerLowest = C.bg,
+    outline = C.line, outlineVariant = C.line, error = C.bad,
+)
+
+// ---------- данные ----------
 /** Контекст, пересоздаваемый при любом изменении данных. */
 @Composable
 fun rememberCtx(): Ctx {
@@ -42,18 +89,32 @@ fun rememberCtx(): Ctx {
     return remember(v) { Ctx(Forma.store) }
 }
 
+fun String.num(): Double? = trim().replace(',', '.').toDoubleOrNull()
+
+fun Context.copy(text: String) =
+    getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("forma", text))
+
+// ---------- раскладка ----------
 @Composable
 fun Screen(content: LazyListScope.() -> Unit) = LazyColumn(
-    Modifier.fillMaxSize().padding(horizontal = 12.dp),
-    contentPadding = PaddingValues(vertical = 12.dp),
-    verticalArrangement = Arrangement.spacedBy(8.dp),
+    Modifier.fillMaxSize(),
+    contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 24.dp),
+    verticalArrangement = Arrangement.spacedBy(12.dp),
     content = content,
 )
 
+/** Карточка-раздел. [trailing] — справа от заголовка (счётчик, статус). */
 @Composable
-fun Block(title: String? = null, content: @Composable ColumnScope.() -> Unit) = Card(Modifier.fillMaxWidth()) {
-    Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        if (title != null) Text(title, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
+fun Block(title: String? = null, trailing: (@Composable () -> Unit)? = null, content: @Composable ColumnScope.() -> Unit) = Card(
+    Modifier.fillMaxWidth(),
+    shape = RoundedCornerShape(16.dp),
+    colors = CardDefaults.cardColors(containerColor = C.card),
+) {
+    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        if (title != null || trailing != null) Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text(title ?: "", Modifier.weight(1f), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            trailing?.invoke()
+        }
         content()
     }
 }
@@ -62,28 +123,147 @@ fun Block(title: String? = null, content: @Composable ColumnScope.() -> Unit) = 
 fun Line(content: @Composable RowScope.() -> Unit) =
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically, content = content)
 
+/** Ряд кнопок/чипов с переносом — ничего не вылезает за край. */
 @Composable
-fun Muted(text: String) = Text(text, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+fun Buttons(content: @Composable FlowRowScope.() -> Unit) =
+    FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp), content = content)
+
+// ---------- текст ----------
+@Composable
+fun Muted(text: String, modifier: Modifier = Modifier) =
+    Text(text, modifier, style = MaterialTheme.typography.bodySmall, color = C.muted)
 
 @Composable
-fun Err(text: String?) { if (!text.isNullOrBlank()) Text(text, color = Color(0xFFFF6B6B), style = MaterialTheme.typography.bodySmall) }
+fun Err(text: String?) { if (!text.isNullOrBlank()) Text(text, color = C.bad, style = MaterialTheme.typography.bodySmall) }
 
 @Composable
-fun Field(label: String, value: String, onChange: (String) -> Unit, modifier: Modifier = Modifier, number: Boolean = true, lines: Int = 1) =
-    OutlinedTextField(
-        value = value, onValueChange = onChange, label = { Text(label) }, modifier = modifier,
-        singleLine = lines == 1, minLines = lines,
-        keyboardOptions = if (number) KeyboardOptions(keyboardType = KeyboardType.Decimal) else KeyboardOptions.Default,
+fun Note(text: String?) { if (!text.isNullOrBlank()) Text(text, color = C.good, style = MaterialTheme.typography.bodySmall) }
+
+/** Строка «подпись … значение». */
+@Composable
+fun Stat(label: String, value: String, color: Color = C.text) = Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+    Text(label, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium, color = C.muted)
+    Text(value, Modifier.weight(1f, fill = false).padding(start = 12.dp), style = MaterialTheme.typography.bodyMedium,
+        color = color, fontWeight = FontWeight.Medium, textAlign = TextAlign.End)
+}
+
+/** Крупное число с подписью. */
+@Composable
+fun BigValue(value: String, unit: String, sub: String? = null) = Column {
+    Row(verticalAlignment = Alignment.Bottom) {
+        Text(value, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.SemiBold)
+        Text(" $unit", Modifier.padding(bottom = 4.dp), color = C.muted)
+    }
+    if (sub != null) Muted(sub)
+}
+
+/** Маленькая плашка статуса. */
+@Composable
+fun Pill(text: String, color: Color = C.accent) = Box(
+    Modifier.clip(RoundedCornerShape(50)).background(color.copy(alpha = 0.16f)).padding(horizontal = 10.dp, vertical = 3.dp)
+) { Text(text, color = color, style = MaterialTheme.typography.labelMedium, maxLines = 1) }
+
+fun statusColor(status: String) = when (status) {
+    "растёт" -> C.good
+    "медленно" -> C.accent
+    "стоит" -> C.warn
+    "падает" -> C.bad
+    else -> C.muted
+}
+
+/** Полоса прогресса «факт / цель». */
+@Composable
+fun Progress(label: String, cur: Double, target: Int, unit: String = "") {
+    val f = if (target > 0) (cur / target).toFloat() else 0f
+    val color = when { f > 1.1f -> C.warn; f >= 0.9f -> C.good; else -> C.accent }
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Row(Modifier.fillMaxWidth()) {
+            Text(label, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+            Text("${cur.roundToInt()} / $target $unit".trim(), style = MaterialTheme.typography.bodyMedium, color = C.muted)
+        }
+        Box(Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp)).background(C.line)) {
+            Box(Modifier.fillMaxWidth(f.coerceIn(0f, 1f)).height(6.dp).clip(RoundedCornerShape(3.dp)).background(color))
+        }
+    }
+}
+
+// ---------- кнопки ----------
+private val BtnPad = PaddingValues(horizontal = 14.dp, vertical = 8.dp)
+
+@Composable
+fun Primary(text: String, onClick: () -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true) =
+    Button(onClick, modifier.height(44.dp), enabled = enabled, shape = RoundedCornerShape(12.dp), contentPadding = BtnPad) { Text(text, maxLines = 1) }
+
+@Composable
+fun Secondary(text: String, onClick: () -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true) =
+    OutlinedButton(onClick, modifier.height(44.dp), enabled = enabled, shape = RoundedCornerShape(12.dp), contentPadding = BtnPad) { Text(text, maxLines = 1) }
+
+@Composable
+fun Flat(text: String, onClick: () -> Unit, color: Color = C.accent) =
+    TextButton(onClick) { Text(text, color = color, maxLines = 1) }
+
+/** Кнопка удаления с подтверждением. */
+@Composable
+fun DeleteButton(what: String, onConfirm: () -> Unit) {
+    var ask by remember { mutableStateOf(false) }
+    Flat("Удалить", { ask = true }, C.muted)
+    if (ask) AlertDialog(
+        onDismissRequest = { ask = false },
+        title = { Text("Удалить $what?") },
+        confirmButton = { TextButton({ ask = false; onConfirm() }) { Text("Удалить", color = C.bad) } },
+        dismissButton = { TextButton({ ask = false }) { Text("Отмена") } },
+        containerColor = C.cardHi,
     )
+}
 
-fun String.num(): Double? = trim().replace(',', '.').toDoubleOrNull()
-
-fun Context.copy(text: String) =
-    getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("forma", text))
-
-/** Числовое поле, привязанное к модели: хранит свой текст, наружу отдаёт распарсенное число. */
+// ---------- ввод ----------
 @Composable
-fun NumBound(label: String, value: Double, onValue: (Double) -> Unit, modifier: Modifier = Modifier) {
+fun Field(
+    label: String, value: String, onChange: (String) -> Unit, modifier: Modifier = Modifier.fillMaxWidth(),
+    number: Boolean = true, lines: Int = 1, secret: Boolean = false, suffix: String? = null,
+) {
+    val suf: (@Composable () -> Unit)? = if (suffix == null) null else { { Text(suffix, color = C.muted) } }
+    OutlinedTextField(
+    value = value, onValueChange = onChange, modifier = modifier,
+    label = { Text(label, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+    suffix = suf,
+    singleLine = lines == 1, minLines = lines,
+    shape = RoundedCornerShape(12.dp),
+    visualTransformation = if (secret) PasswordVisualTransformation() else VisualTransformation.None,
+    keyboardOptions = if (number) KeyboardOptions(keyboardType = KeyboardType.Decimal) else KeyboardOptions.Default,
+    )
+}
+
+/** Числовое поле, привязанное к модели: хранит свой текст, наружу отдаёт число. */
+@Composable
+fun NumBound(label: String, value: Double, onValue: (Double) -> Unit, modifier: Modifier = Modifier, suffix: String? = null) {
     var t by remember { mutableStateOf(if (value == 0.0) "" else value.r1()) }
-    Field(label, t, { t = it; onValue(it.num() ?: 0.0) }, modifier)
+    Field(label, t, { t = it; onValue(it.num() ?: 0.0) }, modifier, suffix = suffix)
+}
+
+/** Сетка полей по 2 в ряд. */
+@Composable
+fun <T> Grid2(items: List<T>, cell: @Composable (T, Modifier) -> Unit) = Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    items.chunked(2).forEach { row ->
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            row.forEach { cell(it, Modifier.weight(1f)) }
+            if (row.size == 1) Box(Modifier.weight(1f))
+        }
+    }
+}
+
+/** Кружок дня недели: ✓ сделано, обводка — по плану, подсветка — сегодня. */
+@Composable
+fun DayDot(label: String, done: Boolean, planned: Boolean, today: Boolean, modifier: Modifier) = Column(
+    modifier, horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)
+) {
+    Text(label, style = MaterialTheme.typography.labelMedium, color = if (today) C.accent else C.muted)
+    val bg = when { done -> C.good; else -> C.cardHi }
+    Box(
+        Modifier.height(34.dp).fillMaxWidth(0.8f).clip(RoundedCornerShape(10.dp)).background(bg)
+            .then(if (planned && !done) Modifier.border(2.dp, C.accent, RoundedCornerShape(10.dp)) else Modifier),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(when { done -> "✓"; planned -> "зал"; else -> "" }, color = if (done) C.bg else C.accent, style = MaterialTheme.typography.labelMedium)
+    }
 }

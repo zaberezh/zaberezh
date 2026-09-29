@@ -1,13 +1,19 @@
 package by.zaberezh.forma.ui
 
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AssistChip
-import androidx.compose.material3.Button
+import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -16,6 +22,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
 import by.zaberezh.forma.core.ai.Claude
 import by.zaberezh.forma.core.food.FoodItem
 import by.zaberezh.forma.core.food.FoodModule
@@ -29,10 +37,14 @@ import by.zaberezh.forma.core.store.ZONE
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.time.Instant
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
 
 private val HHMM = DateTimeFormatter.ofPattern("HH:mm")
+private val DAY = DateTimeFormatter.ofPattern("EEEE, d MMMM", RU)
+
+private fun Macro.line() = "${kcal.i()} ккал · Б ${p.i()} · Ж ${f.i()} · У ${c.i()}"
 
 @Composable
 fun FoodScreen() {
@@ -46,101 +58,137 @@ fun FoodScreen() {
     val scope = rememberCoroutineScope()
 
     fun resolve() {
-        val q = text.trim(); if (q.isEmpty()) return
+        val q = text.trim()
+        if (q.isEmpty()) return
         busy = true; err = null
         scope.launch {
+            val st = ctx.settings
             val r = withContext(Dispatchers.IO) {
                 runCatching {
                     LibraryResolver(s).resolve(q)
-                        ?: ctx.settings.apiKey.takeIf { it.isNotBlank() }?.let { Claude(it, ctx.settings.model).foods(q) }
-                        ?: error("Нет в библиотеке, а API-ключ Claude не задан (Настройки). Можно ввести вручную ниже.")
+                        ?: st.apiKey.takeIf { it.isNotBlank() }?.let { Claude(it, st.model, st.apiUrl).foods(q) }
+                        ?: error("Нет в библиотеке, а API-ключ не задан (Настройки → Claude). Можно ввести КБЖУ вручную.")
                 }
             }
             busy = false
-            r.onSuccess { draft = (draft ?: emptyList()) + it }.onFailure { err = it.message ?: it.toString() }
+            r.onSuccess { draft = (draft ?: emptyList()) + it }.onFailure { err = Claude.explain(it) }
         }
     }
 
     Screen {
         item {
-            val t = FoodModule.dayTotal(s, date); val g = FoodModule.targets(ctx)
+            val t = FoodModule.dayTotal(s, date)
+            val g = FoodModule.targets(ctx)
             Block {
                 Line {
-                    TextButton(onClick = { date = date.minusDays(1) }) { Text("◀") }
-                    Text(if (date == ctx.today) "Сегодня" else date.toString())
-                    TextButton(onClick = { if (date < ctx.today) date = date.plusDays(1) }) { Text("▶") }
+                    Flat("‹", { date = date.minusDays(1) })
+                    Text(if (date == ctx.today) "Сегодня" else DAY.format(date), Modifier.weight(1f),
+                        style = MaterialTheme.typography.titleMedium, textAlign = TextAlign.Center)
+                    Flat("›", { if (date < ctx.today) date = date.plusDays(1) }, if (date < ctx.today) C.accent else C.line)
                 }
-                Text("${t.kcal.i()} / ${g.kcal} ккал")
-                Text("Б ${t.p.i()}/${g.p}   Ж ${t.f.i()}/${g.f}   У ${t.c.i()}/${g.c}")
-                Muted("TDEE ${g.tdee}: ${g.tdeeNote}")
+                Progress("Калории", t.kcal, g.kcal, "ккал")
+                Progress("Белок", t.p, g.p, "г")
+                Progress("Жиры", t.f, g.f, "г")
+                Progress("Углеводы", t.c, g.c, "г")
+                Muted("Норма ${g.kcal} ккал = расход ${g.tdee} + набор. Расход: ${g.tdeeNote}")
             }
         }
         item {
-            Block("Что съел") {
-                Field("напр.: шаурма большая Шаурма Шеф на Немиге, кола 0.5", text, { text = it }, number = false, lines = 2)
+            Block("Добавить") {
+                Field("Что съел", text, { text = it }, number = false, lines = 2)
+                Muted("Пример: «шаурма большая, Шаурма Шеф на Немиге; кола 0.5» или «гречка 200г, 2 яйца»")
                 Line {
-                    Button(onClick = { resolve() }, enabled = !busy) { Text("Посчитать") }
-                    OutlinedButton(onClick = { draft = (draft ?: emptyList()) + FoodItem(text.ifBlank { "продукт" }, 100.0, Macro()) }) { Text("Вручную") }
-                    if (busy) CircularProgressIndicator()
+                    Primary(if (busy) "Ищу…" else "Посчитать КБЖУ", { resolve() }, Modifier.weight(1f), enabled = !busy)
+                    if (busy) CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp)
+                    else Secondary("Вручную", { draft = (draft ?: emptyList()) + FoodItem(text.ifBlank { "Продукт" }, 100.0, Macro()) })
                 }
                 Err(err)
             }
         }
-        val lib = FoodModule.library(s).take(15)
+        val lib = FoodModule.library(s).take(20)
         if (lib.isNotEmpty()) item {
-            LazyRow {
-                items(lib) { f ->
-                    AssistChip(onClick = { draft = (draft ?: emptyList()) + FoodItem(f.name, f.grams, f.per100, f.source, "high") },
-                        label = { Text("${f.name} ${f.grams.r1()}г") })
-                }
-            }
-        }
-        draft?.let { items ->
-            item {
-                Block("Проверь и сохрани") {
-                    items.forEachIndexed { i, it -> key(i, it.name) { DraftItem(it, { n -> draft = items.toMutableList().also { l -> l[i] = n } }, { draft = items.filterIndexed { j, _ -> j != i } }) } }
-                    Text("Итого: " + items.fold(Macro()) { a, b -> a + b.total }.short())
-                    Line {
-                        Button(onClick = {
-                            val ts = if (date == ctx.today) System.currentTimeMillis() else date.atTime(LocalTime.NOON).atZone(ZONE).toInstant().toEpochMilli()
-                            MEAL.save(s, Meal(text.ifBlank { items.joinToString { it.name } }, items), ts = ts)
-                            FoodModule.remember(s, items)
-                            draft = null; text = ""
-                        }, enabled = items.isNotEmpty()) { Text("Сохранить") }
-                        TextButton(onClick = { draft = null }) { Text("Отмена") }
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Muted("Частое — в один тап:")
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    items(lib) { f ->
+                        AssistChip(
+                            onClick = { draft = (draft ?: emptyList()) + FoodItem(f.name, f.grams, f.per100, f.source, "high") },
+                            label = { Text("${f.name} · ${f.grams.r1()} г", maxLines = 1) },
+                            shape = RoundedCornerShape(10.dp),
+                            colors = AssistChipDefaults.assistChipColors(containerColor = C.card, labelColor = C.text),
+                        )
                     }
                 }
             }
         }
-        items(FoodModule.meals(s, date).reversed(), key = { it.first.id }) { (e, m) ->
-            Block {
-                Line {
-                    Text(HHMM.format(java.time.Instant.ofEpochMilli(e.ts).atZone(ZONE)) + "  " + m.text, Modifier.weight(1f))
-                    TextButton(onClick = { s.delete(e.id) }) { Text("×") }
+        draft?.let { list ->
+            item {
+                Block("Проверь перед сохранением") {
+                    list.forEachIndexed { i, it ->
+                        if (i > 0) HorizontalDivider(color = C.line)
+                        key(i, it.name) {
+                            DraftItem(it,
+                                { n -> draft = list.toMutableList().also { l -> l[i] = n } },
+                                { draft = list.filterIndexed { j, _ -> j != i } })
+                        }
+                    }
+                    HorizontalDivider(color = C.line)
+                    Stat("Итого", list.fold(Macro()) { a, b -> a + b.total }.line())
+                    Line {
+                        Primary("Сохранить", {
+                            val ts = if (date == ctx.today) System.currentTimeMillis()
+                            else date.atTime(LocalTime.NOON).atZone(ZONE).toInstant().toEpochMilli()
+                            MEAL.save(s, Meal(text.ifBlank { list.joinToString { it.name } }, list), ts = ts)
+                            FoodModule.remember(s, list)
+                            draft = null; text = ""; err = null
+                        }, Modifier.weight(1f), enabled = list.isNotEmpty())
+                        Flat("Отмена", { draft = null }, C.muted)
+                    }
                 }
-                m.items.forEach { Muted("${it.name} ${it.grams.r1()}г — ${it.total.short()}") }
-                Text(m.items.fold(Macro()) { a, b -> a + b.total }.short())
+            }
+        }
+        val meals = FoodModule.meals(s, date).reversed()
+        if (meals.isNotEmpty()) item { Muted("Записано") }
+        items(meals, key = { it.first.id }) { (e, m) ->
+            val total = m.items.fold(Macro()) { a, b -> a + b.total }
+            Block(HHMM.format(Instant.ofEpochMilli(e.ts).atZone(ZONE)) + "  ·  ${total.kcal.i()} ккал") {
+                Text(m.text, style = MaterialTheme.typography.bodyMedium)
+                m.items.forEach { Stat("${it.name}, ${it.grams.r1()} г", "${it.total.kcal.i()} ккал") }
+                Line {
+                    Muted("Б ${total.p.i()} · Ж ${total.f.i()} · У ${total.c.i()}", Modifier.weight(1f))
+                    DeleteButton("приём пищи") { s.delete(e.id) }
+                }
             }
         }
     }
 }
 
 @Composable
-private fun DraftItem(it: FoodItem, onChange: (FoodItem) -> Unit, onRemove: () -> Unit) {
-    var manual by remember { mutableStateOf(it.per100 == Macro()) }
-    Line {
-        Text(it.name, Modifier.weight(1f))
-        NumBound("г", it.grams, { g -> onChange(it.copy(grams = g)) }, Modifier.weight(0.6f))
-        TextButton(onClick = onRemove) { Text("×") }
-    }
-    Muted(it.total.short() + (if (it.source.isNotBlank()) " · ${it.conf} · ${it.source}" else ""))
-    if (manual) {
-        Muted("на 100 г:")
+private fun DraftItem(item: FoodItem, onChange: (FoodItem) -> Unit, onRemove: () -> Unit) {
+    var manual by remember { mutableStateOf(item.per100 == Macro()) }
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Line {
-            NumBound("ккал", it.per100.kcal, { v -> onChange(it.copy(per100 = it.per100.copy(kcal = v))) }, Modifier.weight(1f))
-            NumBound("Б", it.per100.p, { v -> onChange(it.copy(per100 = it.per100.copy(p = v))) }, Modifier.weight(1f))
-            NumBound("Ж", it.per100.f, { v -> onChange(it.copy(per100 = it.per100.copy(f = v))) }, Modifier.weight(1f))
-            NumBound("У", it.per100.c, { v -> onChange(it.copy(per100 = it.per100.copy(c = v))) }, Modifier.weight(1f))
+            Text(item.name, Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge)
+            NumBound("Масса", item.grams, { g -> onChange(item.copy(grams = g)) }, Modifier.width(110.dp), suffix = "г")
         }
-    } else TextButton(onClick = { manual = true }) { Text("править КБЖУ на 100 г") }
+        Text(item.total.line(), style = MaterialTheme.typography.bodyMedium)
+        if (item.source.isNotBlank()) Muted(
+            (when (item.conf) { "high" -> "точно"; "medium" -> "примерно"; "low" -> "оценка"; else -> "" }) + " · " + item.source,
+        )
+        if (manual) {
+            Muted("КБЖУ на 100 г:")
+            Grid2(listOf("ккал", "Б", "Ж", "У")) { k, m ->
+                when (k) {
+                    "ккал" -> NumBound("Ккал", item.per100.kcal, { v -> onChange(item.copy(per100 = item.per100.copy(kcal = v))) }, m)
+                    "Б" -> NumBound("Белки", item.per100.p, { v -> onChange(item.copy(per100 = item.per100.copy(p = v))) }, m, "г")
+                    "Ж" -> NumBound("Жиры", item.per100.f, { v -> onChange(item.copy(per100 = item.per100.copy(f = v))) }, m, "г")
+                    else -> NumBound("Углеводы", item.per100.c, { v -> onChange(item.copy(per100 = item.per100.copy(c = v))) }, m, "г")
+                }
+            }
+        }
+        Buttons {
+            if (!manual) Flat("Править КБЖУ", { manual = true })
+            Flat("Убрать", onRemove, C.muted)
+        }
+    }
 }

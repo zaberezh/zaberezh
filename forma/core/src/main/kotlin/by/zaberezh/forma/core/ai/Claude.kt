@@ -8,6 +8,13 @@ import by.zaberezh.forma.core.store.JSON
 import com.anthropic.client.AnthropicClient
 import com.anthropic.client.okhttp.AnthropicOkHttpClient
 import com.anthropic.core.JsonValue
+import com.anthropic.errors.AnthropicIoException
+import com.anthropic.errors.AnthropicServiceException
+import com.anthropic.errors.BadRequestException
+import com.anthropic.errors.NotFoundException
+import com.anthropic.errors.PermissionDeniedException
+import com.anthropic.errors.RateLimitException
+import com.anthropic.errors.UnauthorizedException
 import com.anthropic.models.messages.Message
 import com.anthropic.models.messages.MessageCreateParams
 import com.anthropic.models.messages.OutputConfig
@@ -18,8 +25,12 @@ import com.anthropic.models.messages.WebSearchTool20260209
 import kotlinx.serialization.Serializable
 
 /** Тонкая обёртка над Claude API: поиск КБЖУ (веб-поиск) и разбор чекапа. */
-class Claude(apiKey: String, private val model: String) {
-    private val client: AnthropicClient = AnthropicOkHttpClient.builder().apiKey(apiKey).build()
+class Claude(apiKey: String, private val model: String, baseUrl: String = "") {
+    private val official = baseUrl.isBlank() || "api.anthropic.com" in baseUrl
+    private val client: AnthropicClient = AnthropicOkHttpClient.builder().apiKey(apiKey).apply {
+        // посредники принимают ключ либо в x-api-key, либо в Authorization: Bearer — шлём оба
+        if (!official) baseUrl(baseUrl.trim().trimEnd('/').removeSuffix("/v1")).authToken(apiKey)
+    }.build()
 
     private fun base(system: String, effort: OutputConfig.Effort) = MessageCreateParams.builder()
         .model(model)
@@ -28,7 +39,7 @@ class Claude(apiKey: String, private val model: String) {
         .outputConfig(OutputConfig.builder().effort(effort).build())
         .apply {
             // Серверный fallback при отказе классификатора (поддерживается новыми моделями).
-            if (model in FALLBACK_MODELS) {
+            if (official && model in FALLBACK_MODELS) {
                 putAdditionalHeader("anthropic-beta", "server-side-fallback-2026-07-01")
                 putAdditionalBodyProperty("fallbacks", JsonValue.from("default"))
             }
@@ -41,10 +52,18 @@ class Claude(apiKey: String, private val model: String) {
     private fun text(m: Message) = m.content().mapNotNull { it.text().orElse(null)?.text() }.joinToString("\n").trim()
 
     /** Разбор приёма пищи в позиции с КБЖУ. Для заведений Минска ищет данные в интернете. */
-    fun foods(meal: String): List<FoodItem> {
+    fun foods(meal: String): List<FoodItem> = try {
+        foods(meal, web = true)
+    } catch (e: BadRequestException) {
+        foods(meal, web = false) // посредник без серверного веб-поиска — оценка по знаниям модели
+    }
+
+    private fun foods(meal: String, web: Boolean): List<FoodItem> {
         val b = base(FOOD_SYSTEM, OutputConfig.Effort.MEDIUM)
-            .addTool(WebSearchTool20260209.builder().maxUses(6L)
-                .userLocation(UserLocation.builder().city("Minsk").country("BY").timezone("Europe/Minsk").build()).build())
+            .apply {
+                if (web) addTool(WebSearchTool20260209.builder().maxUses(6L)
+                    .userLocation(UserLocation.builder().city("Minsk").country("BY").timezone("Europe/Minsk").build()).build())
+            }
             .addTool(REPORT_TOOL)
             .addUserMessage(meal)
         repeat(6) {
@@ -77,6 +96,12 @@ class Claude(apiKey: String, private val model: String) {
 
     fun resolver() = FoodResolver { foods(it) }
 
+    /** Минимальный запрос для проверки ключа/адреса/модели. */
+    fun ping(): String {
+        val m = client.messages().create(MessageCreateParams.builder().model(model).maxTokens(256L).addUserMessage("Ответь одним словом: ок").build())
+        return text(m).ifBlank { "ок (${m.model()})" }
+    }
+
     @Serializable private data class FoodReport(val items: List<Item>, val note: String = "")
     @Serializable private data class Item(
         val name: String, val grams: Double, val kcal: Double, val protein: Double, val fat: Double, val carbs: Double,
@@ -84,6 +109,18 @@ class Claude(apiKey: String, private val model: String) {
     )
 
     companion object {
+        /** Понятное объяснение ошибки API. */
+        fun explain(e: Throwable): String = when (e) {
+            is UnauthorizedException -> "Ключ не принят (401). Проверь ключ и адрес API: ключ посредника работает только с его адресом."
+            is PermissionDeniedException -> "Доступ запрещён (403): регион или права ключа. Нужен VPN или адрес посредника."
+            is NotFoundException -> "Не найдено (404): неверный адрес API или модель недоступна у этого провайдера."
+            is RateLimitException -> "Лимит запросов/баланс (429). Подожди или пополни баланс."
+            is BadRequestException -> "Запрос отклонён (400): ${e.message?.take(200)}"
+            is AnthropicServiceException -> "Ошибка сервера ${e.statusCode()}: ${e.message?.take(200)}"
+            is AnthropicIoException -> "Нет связи с API: проверь интернет/VPN и адрес."
+            else -> e.message ?: e.toString()
+        }
+
         val FALLBACK_MODELS = setOf("claude-opus-5-5", "claude-sonnet-5-5", "claude-fable-5-1", "claude-opus-5")
 
         val FOOD_SYSTEM = """

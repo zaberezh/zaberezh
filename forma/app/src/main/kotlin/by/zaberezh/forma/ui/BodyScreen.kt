@@ -8,10 +8,12 @@ import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.height
-import androidx.compose.material3.Button
-import androidx.compose.material3.OutlinedButton
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -19,7 +21,9 @@ import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -40,6 +44,10 @@ import by.zaberezh.forma.core.body.weightRate
 import by.zaberezh.forma.core.r1
 import by.zaberezh.forma.core.r2
 import java.io.File
+import java.time.format.DateTimeFormatter
+import kotlin.math.abs
+
+private val DM = DateTimeFormatter.ofPattern("d MMM", RU)
 
 @Composable
 fun BodyScreen() {
@@ -49,31 +57,43 @@ fun BodyScreen() {
     Screen {
         item {
             var w by remember { mutableStateOf("") }
+            val all = WEIGHT.all(s)
+            val trend = trendWeight(s, ctx.today)
+            val rate = weightRate(s, ctx.today)
+            val goal = ctx.settings.profile.gainKgPerWeek
             Block("Вес") {
+                if (trend != null) BigValue(trend.r1(), "кг", "сглаженный · последний замер ${all.last().second.kg.r1()} кг")
+                else Muted("Взвешивайся утром натощак, минимум 4 раза в неделю")
+                if (rate != null) Stat("Темп за 3 недели", "${if (rate >= 0) "+" else ""}${rate.r2()} кг/нед",
+                    if (abs(rate - goal) <= 0.15) C.good else C.warn)
+                Stat("Цель", "+${goal.r2()} кг/нед")
                 Line {
-                    Field("кг (утром натощак)", w, { w = it }, Modifier.weight(1f))
-                    Button(onClick = { w.num()?.let { WEIGHT.save(s, Weight(it)); w = "" } }) { Text("Сохранить") }
+                    Field("Вес сегодня", w, { w = it }, Modifier.weight(1f), suffix = "кг")
+                    Primary("Сохранить", { w.num()?.let { WEIGHT.save(s, Weight(it)); w = "" } })
                 }
-                trendWeight(s, ctx.today)?.let { Text("Сглаженный: ${it.r1()} кг") }
-                weightRate(s, ctx.today)?.let { Text("Темп за 3 нед: ${it.r2()} кг/нед (цель ${ctx.settings.profile.gainKgPerWeek.r2()})") }
-                Muted(WEIGHT.all(s).takeLast(14).reversed().joinToString("  ") { "${it.first.day.dayOfMonth}: ${it.second.kg.r1()}" })
+                if (all.isNotEmpty()) Buttons {
+                    all.takeLast(10).reversed().forEach { (e, x) -> Pill("${DM.format(e.day)}: ${x.kg.r1()}", C.muted) }
+                }
             }
         }
         item {
             val last = BodyModule.lastMeasure(s)
-            val vals = remember(last?.first?.id) { mutableStateMapOf<String, String>().apply { last?.second?.v?.forEach { (k, v) -> put(k, v.r1()) } } }
-            Block("Замеры (раз в 4 недели)" + (last?.let { " · прошлые ${it.first.day}" } ?: "")) {
-                MEASURE_FIELDS.forEach { f ->
-                    Field("${f.label}, ${f.unit}", vals[f.key] ?: "", { vals[f.key] = it })
-                    if (f.hint.isNotEmpty()) Muted(f.hint)
-                }
-                Button(onClick = {
-                    val m = vals.mapNotNull { (k, v) -> v.num()?.let { k to it } }.toMap()
-                    if (m.isNotEmpty()) MEASURE.save(s, Measure(m))
-                }) { Text("Сохранить замеры") }
+            val vals = remember(last?.first?.id) {
+                mutableStateMapOf<String, String>().apply { last?.second?.v?.forEach { (k, v) -> put(k, v.r1()) } }
+            }
+            var saved by remember { mutableStateOf<String?>(null) }
+            Block("Замеры", trailing = { last?.let { Pill("прошлые ${DM.format(it.first.day)}", C.muted) } }) {
+                Muted("Раз в 4 недели, утром. Талия — по пупку на выдохе, бицепс — напряжённый, правая рука.")
+                Grid2(MEASURE_FIELDS) { f, m -> Field(f.label.substringBefore(" ("), vals[f.key] ?: "", { vals[f.key] = it }, m, suffix = "см") }
                 last?.second?.v?.let { v ->
-                    navyBodyFat(v["waist"] ?: 0.0, v["neck"] ?: 0.0, ctx.settings.profile.heightCm)?.let { Muted("% жира (ВМС, ±3%): ${it.r1()}") }
+                    navyBodyFat(v["waist"] ?: 0.0, v["neck"] ?: 0.0, ctx.settings.profile.heightCm)
+                        ?.let { Stat("% жира (формула ВМС, ±3%)", it.r1()) }
                 }
+                Primary("Сохранить замеры", {
+                    val m = vals.mapNotNull { (k, v) -> v.num()?.let { k to it } }.toMap()
+                    if (m.isNotEmpty()) { MEASURE.save(s, Measure(m)); saved = "Сохранено" }
+                }, Modifier.fillMaxWidth())
+                Note(saved)
             }
         }
         item {
@@ -82,29 +102,29 @@ fun BodyScreen() {
                 pending?.let { (f, pose) -> if (ok && f.length() > 0) PHOTO.save(s, Photo(f.absolutePath, pose)) else f.delete() }
                 pending = null
             }
-            Block("Фото формы (раз в месяц, один свет и расстояние)") {
+            Block("Фото формы") {
+                Muted("Раз в месяц: одно место, свет и расстояние.")
                 Line {
                     POSES.forEach { (id, label) ->
-                        OutlinedButton(onClick = {
+                        Secondary(label.replaceFirstChar { it.uppercase() }, {
                             val dir = File(c.filesDir, "photos").apply { mkdirs() }
                             val f = File(dir, "${ctx.today}_${id}_${System.currentTimeMillis()}.jpg")
                             pending = f to id
                             val uri: Uri = FileProvider.getUriForFile(c, c.packageName + ".files", f)
                             shot.launch(uri)
-                        }) { Text(label) }
+                        }, Modifier.weight(1f))
                     }
                 }
-                // сравнение: первое и последнее фото по каждому ракурсу
-                val all = PHOTO.all(s).map { it.first to it.second }
+                val all = PHOTO.all(s)
                 POSES.forEach { (id, label) ->
                     val list = all.filter { it.second.pose == id }
                     if (list.isNotEmpty()) {
-                        Muted("$label: ${list.first().first.day} → ${list.last().first.day} (${list.size} шт.)")
+                        Text("${label.replaceFirstChar { it.uppercase() }} · ${list.size} фото", style = MaterialTheme.typography.bodyMedium)
                         Line {
                             listOf(list.first(), list.last()).distinctBy { it.first.id }.forEach { (e, p) ->
-                                Column(Modifier.weight(1f)) {
+                                Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
                                     Thumb(p.path)
-                                    Muted(e.day.toString())
+                                    Muted(DM.format(e.day))
                                 }
                             }
                         }
@@ -118,7 +138,11 @@ fun BodyScreen() {
 @Composable
 private fun Thumb(path: String) {
     val bmp = remember(path) { runCatching { loadThumb(path) }.getOrNull() }
-    if (bmp != null) Image(bmp.asImageBitmap(), null, Modifier.height(220.dp), contentScale = ContentScale.Fit)
+    if (bmp != null) Image(
+        bmp.asImageBitmap(), null,
+        Modifier.fillMaxWidth().aspectRatio(0.75f).clip(RoundedCornerShape(12.dp)),
+        contentScale = ContentScale.Crop,
+    )
 }
 
 private fun loadThumb(path: String): Bitmap? {
