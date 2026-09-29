@@ -56,7 +56,7 @@ fun SettingsScreen() {
     val export = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
         uri?.let { c.contentResolver.openOutputStream(it)?.use { o -> o.write(Forma.store.exportJson().toByteArray()) }; msg = "Экспортировано" }
     }
-    val import = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+    val importer = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         uri?.let { u -> msg = runCatching { c.contentResolver.openInputStream(u)!!.use { Forma.store.importJson(it.readBytes().decodeToString()) }; "Импортировано" }.getOrElse { it.message } }
     }
 
@@ -133,7 +133,7 @@ fun SettingsScreen() {
             Block("Данные") {
                 Line {
                     Button(onClick = { export.launch("forma-${ctx.today}.json") }) { Text("Экспорт") }
-                    OutlinedButton(onClick = { import.launch(arrayOf("application/json", "*/*")) }) { Text("Импорт") }
+                    OutlinedButton(onClick = { importer.launch(arrayOf("application/json", "*/*")) }) { Text("Импорт") }
                 }
                 Muted("Все данные хранятся только на телефоне. Экспорт — резервная копия (фото не включаются).")
             }
