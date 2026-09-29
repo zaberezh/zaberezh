@@ -39,9 +39,20 @@ data class Settings(
     val model: String = "claude-opus-5-5",
     val apiUrl: String = "",            // пусто = api.anthropic.com; иначе адрес Anthropic-совместимого посредника
     val kcalOverride: Int? = null,
+    val schema: Int = 0,
 )
 
 val SETTINGS = Pref("settings", Settings.serializer()) { Settings() }
+
+/** Миграция сохранённых настроек при обновлении приложения. */
+fun migrateSettings(store: Store) {
+    val st = SETTINGS.get(store)
+    if (st.schema >= 2) return
+    val p = st.profile
+    // v2: активность без ходьбы — старые значения по умолчанию (1.55/1.45) → 1.375
+    val act = if (p.activity == 1.55 || p.activity == 1.45) 1.375 else p.activity
+    SETTINGS.set(store, st.copy(profile = p.copy(activity = act), schema = 2))
+}
 
 /** Контекст вычислений: хранилище + «сегодня». */
 class Ctx(val store: Store, val today: LocalDate = today()) {

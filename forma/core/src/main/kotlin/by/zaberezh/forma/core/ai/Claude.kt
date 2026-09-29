@@ -21,6 +21,7 @@ import com.anthropic.models.messages.OutputConfig
 import com.anthropic.models.messages.StopReason
 import com.anthropic.models.messages.Tool
 import com.anthropic.models.messages.UserLocation
+import com.anthropic.models.messages.WebSearchTool20250305
 import com.anthropic.models.messages.WebSearchTool20260209
 import kotlinx.serialization.Serializable
 
@@ -32,12 +33,20 @@ class Claude(apiKey: String, private val model: String, baseUrl: String = "") {
         if (!official) baseUrl(baseUrl.trim().trimEnd('/').removeSuffix("/v1")).authToken(apiKey)
     }.build()
 
+    /** Токены, потраченные этим клиентом (вход + выход) — показываем пользователю. */
+    var used = 0L
+        private set
+
+    private val haiku = "haiku" in model
+    /** Новый веб-поиск с фильтрацией результатов (меньше токенов) есть у моделей 4.6+; Haiku — только базовый. */
+    private val modernSearch = !haiku && listOf("-4-6", "-4-7", "-4-8", "-5").any { it in model }
+
     private fun base(system: String, effort: OutputConfig.Effort) = MessageCreateParams.builder()
         .model(model)
         .maxTokens(16000L)
         .system(system)
-        .outputConfig(OutputConfig.builder().effort(effort).build())
         .apply {
+            if (!haiku) outputConfig(OutputConfig.builder().effort(effort).build()) // Haiku не поддерживает effort
             // Серверный fallback при отказе классификатора (поддерживается новыми моделями).
             if (official && model in FALLBACK_MODELS) {
                 putAdditionalHeader("anthropic-beta", "server-side-fallback-2026-07-01")
@@ -45,8 +54,11 @@ class Claude(apiKey: String, private val model: String, baseUrl: String = "") {
             }
         }
 
-    private fun check(m: Message) {
+    private fun call(b: MessageCreateParams.Builder): Message {
+        val m = client.messages().create(b.build())
+        runCatching { used += m.usage().inputTokens() + m.usage().outputTokens() }
         if (m.stopReason().orElse(null) == StopReason.REFUSAL) error("Claude отказался отвечать на запрос")
+        return m
     }
 
     private fun text(m: Message) = m.content().mapNotNull { it.text().orElse(null)?.text() }.joinToString("\n").trim()
@@ -59,47 +71,51 @@ class Claude(apiKey: String, private val model: String, baseUrl: String = "") {
     }
 
     private fun foods(meal: String, web: Boolean): List<FoodItem> {
-        val b = base(FOOD_SYSTEM, OutputConfig.Effort.MEDIUM)
+        val loc = UserLocation.builder().city("Minsk").country("BY").timezone("Europe/Minsk").build()
+        val b = base(FOOD_SYSTEM, OutputConfig.Effort.LOW)
             .apply {
-                if (web) addTool(WebSearchTool20260209.builder().maxUses(6L)
-                    .userLocation(UserLocation.builder().city("Minsk").country("BY").timezone("Europe/Minsk").build()).build())
+                if (web && modernSearch) addTool(WebSearchTool20260209.builder().maxUses(MAX_SEARCHES).userLocation(loc).build())
+                else if (web) addTool(WebSearchTool20250305.builder().maxUses(MAX_SEARCHES).userLocation(loc).build())
             }
             .addTool(REPORT_TOOL)
             .addUserMessage(meal)
-        repeat(6) {
-            val m = client.messages().create(b.build())
-            check(m)
-            val call = m.content().firstNotNullOfOrNull { it.toolUse().orElse(null)?.takeIf { t -> t.name() == "report_foods" } }
-            if (call != null) {
-                val r = JSON.decodeFromJsonElement(FoodReport.serializer(), toJson(call._input().convert(Map::class.java)))
-                return r.items.filter { it.grams > 0 }.map {
+        // Каждый повтор заново отправляет результаты поиска — поэтому не больше 3 запросов.
+        var last = ""
+        repeat(3) {
+            val m = call(b)
+            last = text(m)
+            val tool = m.content().firstNotNullOfOrNull { it.toolUse().orElse(null)?.takeIf { t -> t.name() == "report_foods" } }
+            if (tool != null) {
+                val r = LENIENT.decodeFromJsonElement(FoodReport.serializer(), toJson(tool._input().convert(Map::class.java)))
+                val items = r.items.filter { it.grams > 0 && it.kcal >= 0 }.map {
                     val k = 100.0 / it.grams
                     FoodItem(it.name, it.grams, Macro(it.kcal * k, it.protein * k, it.fat * k, it.carbs * k), it.source, it.confidence)
                 }
+                if (items.isEmpty()) error("Модель не вернула ни одной позиции" + r.note.takeIf { it.isNotBlank() }?.let { ": $it" }.orEmpty())
+                return items
             }
             b.addMessage(m) // pause_turn: сервер продолжит сам; end_turn без инструмента — напоминаем
-            if (m.stopReason().orElse(null) != StopReason.PAUSE_TURN) b.addUserMessage("Верни результат вызовом report_foods.")
+            if (m.stopReason().orElse(null) != StopReason.PAUSE_TURN)
+                b.addUserMessage("Верни результат вызовом report_foods. Если точных данных нет — дай оценку, items не может быть пустым.")
         }
-        error("Claude не вернул результат")
+        error("Модель не вернула результат" + last.takeIf { it.isNotBlank() }?.let { ": ${it.take(300)}" }.orEmpty())
     }
 
     /** Анализ чекапа по методике. */
     fun analyze(method: String, report: String, facts: String, note: String): String {
-        val m = client.messages().create(
-            base(method, OutputConfig.Effort.HIGH)
+        val m = call(
+            base(method, OutputConfig.Effort.MEDIUM)
                 .addUserMessage("Отчёт приложения:\n$report\n\nДанные (JSON):\n$facts\n\nКомментарий пользователя: ${note.ifBlank { "—" }}")
-                .build()
         )
-        check(m)
-        return text(m)
+        return text(m).ifBlank { error("Пустой ответ модели") }
     }
 
     fun resolver() = FoodResolver { foods(it) }
 
     /** Минимальный запрос для проверки ключа/адреса/модели. */
     fun ping(): String {
-        val m = client.messages().create(MessageCreateParams.builder().model(model).maxTokens(256L).addUserMessage("Ответь одним словом: ок").build())
-        return text(m).ifBlank { "ок (${m.model()})" }
+        val m = call(MessageCreateParams.builder().model(model).maxTokens(1024L).addUserMessage("Ответь одним словом: ок"))
+        return text(m).ifBlank { "ок" } + " · модель ${m.model()}"
     }
 
     @Serializable private data class FoodReport(val items: List<Item>, val note: String = "")
@@ -109,6 +125,16 @@ class Claude(apiKey: String, private val model: String, baseUrl: String = "") {
     )
 
     companion object {
+        const val MAX_SEARCHES = 3L
+        private val LENIENT = kotlinx.serialization.json.Json { ignoreUnknownKeys = true; isLenient = true; coerceInputValues = true }
+
+        /** Модели на выбор в настройках: id → пояснение. */
+        val MODELS = listOf(
+            "claude-sonnet-5-5" to "Sonnet 5.5 — оптимально: умный поиск, дешевле Opus",
+            "claude-opus-5-5" to "Opus 5.5 — точнее для чекапов, дороже",
+            "claude-haiku-4-5" to "Haiku 4.5 — самая дешёвая, поиск проще (больше токенов на результатах)",
+        )
+
         /** Понятное объяснение ошибки API. */
         fun explain(e: Throwable): String = when (e) {
             is UnauthorizedException -> "Ключ не принят (401). Проверь ключ и адрес API: ключ посредника работает только с его адресом."
@@ -134,6 +160,8 @@ class Claude(apiKey: String, private val model: String, baseUrl: String = "") {
             - Базовые продукты (яйцо, гречка, куриная грудка, хлеб…) считай по справочным значениям без поиска.
               Крупы и макароны — в готовом виде, если не сказано «сухой»/«сырой».
             - Если количество не указано — стандартная порция. Напитки тоже позиции (кола, сок, кофе с молоком/сахаром).
+            - Экономь: не больше 2 поисков на весь запрос; если за 2 поиска не нашёл — оценивай.
+            - items никогда не бывает пустым: если заведение не найдено, оцени по типичному блюду такого типа.
             Результат верни только вызовом инструмента report_foods, без текста.
         """.trimIndent()
 

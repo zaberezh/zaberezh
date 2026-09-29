@@ -70,9 +70,10 @@ fun ReportScreen() {
                         if (st.apiKey.isBlank()) { err = "API-ключ не задан (Настройки → Claude). Можно скопировать отчёт в чат."; return@Primary }
                         busy = true; err = null
                         scope.launch {
-                            val r = withContext(Dispatchers.IO) { runCatching { Claude(st.apiKey, st.model, st.apiUrl).analyze(METHOD, text, facts, note) } }
+                            val ai = Claude(st.apiKey, st.model, st.apiUrl)
+                            val r = withContext(Dispatchers.IO) { runCatching { ai.analyze(METHOD, text, facts, note) } }
                             busy = false
-                            r.onSuccess { CHECKUP.save(s, CheckupRec(from.toString(), to.toString(), text, facts, it)); info = "Готово — ниже в истории" }
+                            r.onSuccess { CHECKUP.save(s, CheckupRec(from.toString(), to.toString(), text, facts, it)); info = "Готово — ниже в истории · ~${ai.used} токенов" }
                                 .onFailure { err = Claude.explain(it) }
                         }
                     }, Modifier.weight(1f), enabled = !busy)
