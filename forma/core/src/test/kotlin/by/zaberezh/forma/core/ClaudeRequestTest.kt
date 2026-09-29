@@ -17,3 +17,17 @@ class ClaudeRequestTest {
         println(json)
     }
 }
+
+class AiPlanPromptSize {
+    @Test fun promptIsSmall() {
+        val s = by.zaberezh.forma.core.store.MemoryStore()
+        val p = by.zaberezh.forma.core.gym.parseProgram(javaClass.getResource("/test_program.json")!!.readText())
+        by.zaberezh.forma.core.gym.PROGRAM.set(s, p)
+        val day = java.time.LocalDate.of(2026, 9, 28)
+        val prompt = by.zaberezh.forma.core.gym.aiPlanPrompt(Ctx(s, day), day, null)
+        val method = javaClass.getResource("/method.md")!!.readText()
+        // грубо: ~1 токен на 3 символа русского текста
+        println("AI_PLAN prompt=${prompt.length} chars, method=${method.length} chars, ≈${(prompt.length + method.length) / 3} input tokens")
+        assertTrue(prompt.length + method.length < 60_000)
+    }
+}

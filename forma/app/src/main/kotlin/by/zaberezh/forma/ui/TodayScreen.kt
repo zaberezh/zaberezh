@@ -18,6 +18,7 @@ import by.zaberezh.forma.core.body.Weight
 import by.zaberezh.forma.core.body.trendWeight
 import by.zaberezh.forma.core.food.FoodModule
 import by.zaberezh.forma.core.gym.GymModule
+import by.zaberezh.forma.core.gym.Planner
 import by.zaberezh.forma.core.i
 import by.zaberezh.forma.core.r1
 import by.zaberezh.forma.core.report.Checkup
@@ -66,12 +67,13 @@ fun TodayScreen(onTab: (Int) -> Unit) {
                         "особенно при недосыпе; третья тренировка обычно выходит слабее и повышает риск травмы.",
                     style = MaterialTheme.typography.bodySmall, color = C.warn,
                 )
-                val next = GymModule.nextDay(s)
                 val active = s.kvGet(ACTIVE)?.let { s.get(it) } != null
+                val plan = GymModule.planFor(ctx, ctx.today)
+                val summary = Planner.summary(GymModule.program(s), plan)
                 when {
                     ctx.today in trained -> Stat("Сегодня", "тренировка засчитана", C.good)
                     wk.todayGym -> {
-                        Stat("Сегодня", "зал · день ${next.name}")
+                        Stat("Сегодня зал", summary.ifEmpty { "добавь упражнения в базу (вкладка «Зал»)" })
                         Muted(if (wk.canSkipToday) "Можно перенести без потери цели недели" else "Перенос сорвёт цель недели")
                     }
                     wk.achievable < target -> Stat("Сегодня", "отдых · в плане ${wk.achievable} из $target", C.warn)
@@ -79,12 +81,14 @@ fun TodayScreen(onTab: (Int) -> Unit) {
                 }
                 when {
                     active -> Primary("Продолжить тренировку", { onTab(1) }, Modifier.fillMaxWidth())
-                    wk.todayGym -> Primary("Начать тренировку · день ${next.name}", { startWorkout(ctx, next.id); onTab(1) }, Modifier.fillMaxWidth())
-                    else -> Secondary("Начать тренировку сегодня · день ${next.name}", { startWorkout(ctx, next.id); onTab(1) }, Modifier.fillMaxWidth())
+                    ctx.today in trained -> {}
+                    plan.items.isEmpty() -> Secondary("Открыть «Зал»", { onTab(1) }, Modifier.fillMaxWidth())
+                    wk.todayGym -> Primary("Начать тренировку (${plan.items.size} упр.)", { startWorkout(ctx); onTab(1) }, Modifier.fillMaxWidth())
+                    else -> Secondary("Всё равно тренироваться сегодня", { startWorkout(ctx); onTab(1) }, Modifier.fillMaxWidth())
                 }
             }
         }
-        item { SleepBlock(ctx) }
+        item { SleepSummary(ctx) { onTab(3) } }
         item {
             val t = FoodModule.dayTotal(s, ctx.today)
             val g = FoodModule.targets(ctx)
@@ -93,7 +97,7 @@ fun TodayScreen(onTab: (Int) -> Unit) {
                 Progress("Белок", t.p, g.p, "г")
                 Progress("Жиры", t.f, g.f, "г")
                 Progress("Углеводы", t.c, g.c, "г")
-                Secondary("Добавить еду", { onTab(3) }, Modifier.fillMaxWidth())
+                Secondary("Добавить еду", { onTab(4) }, Modifier.fillMaxWidth())
             }
         }
         item {
@@ -116,7 +120,7 @@ fun TodayScreen(onTab: (Int) -> Unit) {
             val due = Checkup.due(ctx)
             if (lines.isNotEmpty() || due) Block("Напоминания") {
                 lines.forEach { Text("• $it", style = MaterialTheme.typography.bodyMedium) }
-                if (due) Secondary("Сделать чекап", { onTab(5) }, Modifier.fillMaxWidth())
+                if (due) Secondary("Сделать чекап", { onTab(6) }, Modifier.fillMaxWidth())
             }
         }
     }

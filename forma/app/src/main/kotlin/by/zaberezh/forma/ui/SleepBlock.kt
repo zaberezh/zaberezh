@@ -20,6 +20,11 @@ import by.zaberezh.forma.core.sleep.SleepModule
 import by.zaberezh.forma.core.sleep.dur
 import by.zaberezh.forma.core.sleep.hm
 import by.zaberezh.forma.sys.SleepSync
+import by.zaberezh.forma.sys.Evening
+import by.zaberezh.forma.core.SETTINGS
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Switch
+import androidx.compose.material3.Text
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -59,5 +64,73 @@ fun SleepBlock(ctx: Ctx) {
         if (list.size > 1) Muted(list.joinToString("\n") { (d, x) ->
             "${d.dayOfWeek.getDisplayName(TextStyle.SHORT, RU)}  ${hm(x.start)}–${hm(x.end)}  ${dur(x.minutes)}"
         })
+    }
+}
+
+/** Кратко о сне для главного экрана. */
+@Composable
+fun SleepSummary(ctx: Ctx, onOpen: () -> Unit) {
+    val c = LocalContext.current
+    val access = remember { SleepSync.hasAccess(c) }
+    LaunchedEffect(Unit) { if (access) withContext(Dispatchers.IO) { runCatching { SleepSync.sync(c) } } }
+    val n = SleepModule.lastNight(ctx.store, ctx.today)
+    val st = SleepModule.stats(ctx, ctx.today.minusDays(6), ctx.today)
+    val target = ctx.settings.sleepTargetH
+    Block("Сон", trailing = { Flat("Подробнее", onOpen) }) {
+        when {
+            !access -> Muted("Нужен доступ «История использования» — во вкладке «Сон».")
+            n == null -> Muted("Прошлая ночь появится после первой разблокировки утром.")
+            else -> Stat("Прошлая ночь", "${hm(n.start)} → ${hm(n.end)} · ${dur(n.minutes)}",
+                if (n.minutes >= target * 60 - 30) C.good else C.warn)
+        }
+        st?.let { Stat("Среднее за неделю", dur(it.avgMin)) }
+        Stat("Отбой сегодня", SleepModule.bedtime(ctx).toString())
+    }
+}
+
+/** Вкладка «Сон»: ночь, неделя, история и настройки режима. */
+@Composable
+fun SleepScreen() {
+    val ctx = rememberCtx()
+    val st = ctx.settings
+    Screen {
+        item { SleepBlock(ctx) }
+        item {
+            val nights = SleepModule.nights(ctx.store, ctx.today.minusDays(13), ctx.today).reversed()
+            if (nights.isNotEmpty()) Block("Последние ночи") {
+                nights.forEach { (d, x) ->
+                    Stat("${d.dayOfWeek.getDisplayName(TextStyle.SHORT, RU)} ${d.dayOfMonth}  ${hm(x.start)}–${hm(x.end)}",
+                        dur(x.minutes) + if (x.wakeups > 0) " · ${x.wakeups}×" else "",
+                        if (x.minutes >= st.sleepTargetH * 60 - 30) C.good else C.warn)
+                }
+            }
+        }
+        item {
+            var target by remember(st) { mutableStateOf(st.sleepTargetH.r1()) }
+            var wakeH by remember(st) { mutableStateOf(st.wakeHour.toString()) }
+            var wakeM by remember(st) { mutableStateOf("%02d".format(st.wakeMinute)) }
+            var remind by remember(st) { mutableStateOf(st.bedReminder) }
+            val c = LocalContext.current
+            Block("Режим сна") {
+                Line {
+                    Field("Цель", target, { target = it }, Modifier.weight(1f), suffix = "ч")
+                    Field("Подъём", wakeH, { wakeH = it }, Modifier.weight(1f), suffix = "ч")
+                    Field("", wakeM, { wakeM = it }, Modifier.weight(1f), suffix = "мин")
+                }
+                Line {
+                    Text("Напоминание об отбое за 30 мин", Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+                    Switch(checked = remind, onCheckedChange = { remind = it })
+                }
+                Primary("Сохранить", {
+                    SETTINGS.set(ctx.store, SETTINGS.get(ctx.store).copy(
+                        sleepTargetH = (target.num() ?: 8.0).coerceIn(5.0, 11.0),
+                        wakeHour = (wakeH.num()?.toInt() ?: 7).coerceIn(0, 23), wakeMinute = (wakeM.num()?.toInt() ?: 30).coerceIn(0, 59),
+                        bedReminder = remind,
+                    ))
+                    Evening.schedule(c)
+                }, Modifier.fillMaxWidth())
+                Muted("Отбой = подъём − цель сна. Засыпание считается по последнему выключению экрана, подъём — по первой разблокировке.")
+            }
+        }
     }
 }

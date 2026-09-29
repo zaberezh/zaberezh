@@ -77,23 +77,68 @@ object GymModule : Module {
 
     fun resetWeek(ctx: Ctx) = ctx.store.kvPut(planKey(ctx.today.with(DayOfWeek.MONDAY)), null)
 
-    /** Следующий день программы по кругу A→B→C. */
-    fun nextDay(s: Store): TrainingDay {
-        val p = program(s)
-        val last = workouts(s).lastOrNull { it.second.sets.isNotEmpty() }?.second?.day
-        if (p.days.isEmpty()) return TrainingDay("A", "A", emptyList())
-        val i = p.days.indexOfFirst { it.id == last }
-        return p.days[(i + 1).mod(p.days.size)]
-    }
-
     fun history(s: Store, exId: String, before: Long = Long.MAX_VALUE): List<Pair<LocalDate, List<SetLog>>> =
         workouts(s).filter { it.first.ts < before }
             .map { (e, w) -> e.day to w.sets.filter { it.ex == exId } }
             .filter { it.second.isNotEmpty() }
 
-    fun targets(s: Store, day: TrainingDay, before: Long = Long.MAX_VALUE): List<Target> {
+    // ---------- план на дату ----------
+    private fun planId(d: LocalDate) = "plan:$d"
+
+    fun storedPlan(s: Store, d: LocalDate): DayPlan? = s.get(planId(d))?.let(DAYPLAN::decode)
+
+    fun savePlan(s: Store, plan: DayPlan) {
+        val d = LocalDate.parse(plan.date)
+        DAYPLAN.save(s, plan, ts = d.startMs(), id = planId(d))
+    }
+
+    /** Вернуть авто-план (сбросить ручные правки дня). */
+    fun resetPlan(s: Store, d: LocalDate) = s.delete(planId(d))
+
+    /** Выполненные сессии: дата → подходы. */
+    fun sessions(s: Store): List<Pair<LocalDate, List<SetLog>>> =
+        workouts(s).filter { it.second.sets.isNotEmpty() }.map { it.first.day to it.second.sets }
+
+    private fun lastUsed(s: Store): Map<String, LocalDate> {
+        val m = HashMap<String, LocalDate>()
+        sessions(s).forEach { (d, sets) -> sets.forEach { m[it.ex] = d } }
+        return m
+    }
+
+    /**
+     * План на дату: сохранённый (правили руками / тренировка начата) или составленный заново.
+     * Для будущих дней учитываются запланированные до них тренировки недели (симуляция), чтобы дни не повторялись.
+     */
+    fun planFor(ctx: Ctx, date: LocalDate, focus: String? = null): DayPlan {
+        val s = ctx.store
+        if (focus == null) storedPlan(s, date)?.let { return it }
         val p = program(s)
-        return day.exercises.mapNotNull(p::ex).map { ex -> nextTarget(ex, history(s, ex.id, before).map { it.second }) }
+        val log = Planner.muscleLog(p, sessions(s)).toMutableList()
+        val used = lastUsed(s).toMutableMap()
+        val trained = trainedDays(ctx, ctx.today.minusDays(7), ctx.today)
+        week(ctx).plan.filter { it >= ctx.today && it < date && it !in trained }.forEach { d ->
+            val pl = planFor(ctx, d)
+            log += d to Planner.planMuscles(p, pl)
+            pl.items.forEach { used[it.ex] = d }
+        }
+        return Planner.build(p, date, log, used, ctx.settings.sessionsPerWeek, focus)
+    }
+
+    /** Цели по упражнениям плана (двойная прогрессия; число подходов — из плана). */
+    fun targets(s: Store, plan: DayPlan, before: Long = Long.MAX_VALUE): List<Target> {
+        val p = program(s)
+        return plan.items.mapNotNull { i -> p.ex(i.ex)?.copy(sets = i.sets) }
+            .map { ex -> nextTarget(ex, history(s, ex.id, before).map { it.second }) }
+    }
+
+    /** Текущая сила по упражнению: последний рабочий вес × повторы (или стартовые из базы). */
+    fun strength(s: Store, ex: Exercise): String {
+        val last = history(s, ex.id).lastOrNull()?.second?.let(::workingSets)
+        return when {
+            last != null && last.isNotEmpty() -> "${last.first().w.r1()} кг × ${last.joinToString(",") { it.r.toString() }}"
+            ex.startWeight != null -> "${ex.startWeight.r1()} кг × ${ex.repMin}"
+            else -> "вес не задан"
+        }
     }
 
     fun trend(s: Store, ex: Exercise, to: LocalDate, days: Long = 42): ExTrend {
@@ -127,10 +172,10 @@ object GymModule : Module {
     override fun morning(ctx: Ctx): List<String> {
         val wk = week(ctx)
         if (!wk.todayGym) return emptyList()
-        val day = nextDay(ctx.store)
-        val head = "Зал сегодня: день ${day.name} (${wk.done + 1}/${ctx.settings.sessionsPerWeek} за неделю)" +
-            if (!wk.canSkipToday) " — перенос сорвёт недельную цель" else ""
-        return listOf(head) + targets(ctx.store, day).map { it.short() }
+        val plan = planFor(ctx, ctx.today)
+        val head = "Зал сегодня: ${Planner.summary(program(ctx.store), plan).ifEmpty { "план пуст — добавь упражнения в базу" }}" +
+            " (${wk.done + 1}/${ctx.settings.sessionsPerWeek} за неделю)" + if (!wk.canSkipToday) " — перенос сорвёт недельную цель" else ""
+        return listOf(head) + targets(ctx.store, plan).map { it.short() }
     }
 
     override fun checkup(ctx: Ctx, from: LocalDate, to: LocalDate): Section {

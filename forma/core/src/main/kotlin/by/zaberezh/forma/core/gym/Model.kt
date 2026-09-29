@@ -69,6 +69,5 @@ fun defaultProgram(): Program =
     JSON.decodeFromString(Program.serializer(), Program::class.java.getResource("/default_program.json")!!.readText())
 
 fun parseProgram(text: String): Program = JSON.decodeFromString(Program.serializer(), text).also { p ->
-    require(p.days.isNotEmpty()) { "нет дней" }
     p.days.flatMap { it.exercises }.forEach { id -> requireNotNull(p.ex(id)) { "упражнение '$id' не описано" } }
 }

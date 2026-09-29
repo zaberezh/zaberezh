@@ -114,8 +114,7 @@ fun SettingsScreen() {
             sessionsPerWeek = d("sessions", 3.0).toInt().coerceIn(1, 5), minVisitMin = d("visit", 75.0).toInt(),
             morningHour = d("hour", 8.0).toInt().coerceIn(0, 23), morningMinute = d("minute", 0.0).toInt().coerceIn(0, 59),
             checkupDays = d("checkup", 14.0).toInt().coerceIn(7, 60),
-            sleepTargetH = d("sleepH", 8.0).coerceIn(5.0, 11.0), wakeHour = d("wakeH", 7.0).toInt().coerceIn(0, 23),
-            wakeMinute = d("wakeM", 30.0).toInt().coerceIn(0, 59), bedReminder = bedReminder, gymWeekends = weekends,
+            gymWeekends = weekends,
             apiKey = key.trim(), apiUrl = url.trim(), model = model.trim().ifEmpty { "claude-opus-5-5" },
         ))
         Morning.schedule(c)
@@ -134,16 +133,6 @@ fun SettingsScreen() {
                 grid(GOALS)
                 Muted("Активность 1.375 = только 3 силовые в неделю, ходьба не учитывается. Темп 0.1 кг/нед = медленный набор. " +
                     "Через 2–4 недели записей расход уточняется по реальным данным.")
-            }
-        }
-        item {
-            Block("Сон") {
-                grid(SLEEP)
-                Line {
-                    Text("Напоминание об отбое за 30 мин", Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
-                    Switch(checked = bedReminder, onCheckedChange = { bedReminder = it })
-                }
-                Muted("Отбой считается от подъёма и цели сна. Сохраняется кнопкой «Сохранить» ниже.")
             }
         }
         item {

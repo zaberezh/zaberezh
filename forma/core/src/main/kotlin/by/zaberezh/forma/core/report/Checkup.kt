@@ -38,7 +38,7 @@ object Checkup {
         val m = mapOf(
             "period" to "$from..$to",
             "profile" to JSON.encodeToJsonElement(by.zaberezh.forma.core.Profile.serializer(), ctx.settings.profile),
-            "program" to p.days.map { d -> d.name + ": " + d.exercises.mapNotNull(p::ex).joinToString { "${it.name} ${it.sets}x${it.repMin}-${it.repMax}" } },
+            "exercise_base" to p.exercises.map { "${it.name}: ${it.sets}x${it.repMin}-${it.repMax}, сейчас ${GymModule.strength(ctx.store, it)}" },
             "modules" to sections.associate { it.title to it.facts },
         )
         return toJson(m).toString()

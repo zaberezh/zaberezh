@@ -31,24 +31,22 @@ class EditTest {
 
     @Test fun addEditRemove() {
         var p = defaultProgram()
-        p = p.upsert(null, ExerciseInput("Жим штанги лёжа", 60.0, "8", 3, setOf("A", "C"), null, false, null))
+        p = p.upsert(null, ExerciseInput("Жим штанги лёжа", 60.0, "8", 3, null, false, null))
         val ex = p.exercises.single()
         assertEquals(8 to 12, ex.repMin to ex.repMax); assertEquals(2.5, ex.step)
-        assertEquals(listOf(ex.id), p.day("A")!!.exercises); assertEquals(listOf(ex.id), p.day("C")!!.exercises)
         val t = nextTarget(ex, emptyList())
         assertEquals(60.0, t.weight); assertEquals(listOf(8, 8, 8), t.reps)
 
-        p = p.upsert(ex.id, ExerciseInput("Жим штанги лёжа", 62.5, "6-10", 4, setOf("B"), null, false, null))
+        p = p.upsert(ex.id, ExerciseInput("Жим штанги лёжа", 62.5, "6-10", 4, null, false, null))
         assertEquals(1, p.exercises.size); assertEquals(4, p.exercises[0].sets)
-        assertTrue(p.day("A")!!.exercises.isEmpty()); assertEquals(listOf(ex.id), p.day("B")!!.exercises)
 
-        p = p.upsert(null, ExerciseInput("Подтягивания", 0.0, "5-10", 3, setOf("A"), null, true, null))
+        p = p.upsert(null, ExerciseInput("Подтягивания", 0.0, "5-10", 3, null, true, null))
         assertEquals(1.0, p.exercises.last().bw)
 
-        assertFailsWith<IllegalArgumentException> { p.upsert(null, ExerciseInput("Непонятное", 10.0, "10", 3, setOf("A"), null, false, null)) }
-        assertEquals(mapOf("abs" to 1.0), p.upsert(null, ExerciseInput("Непонятное", 10.0, "10", 3, setOf("A"), "abs", false, null)).exercises.last().muscles)
+        assertFailsWith<IllegalArgumentException> { p.upsert(null, ExerciseInput("Непонятное", 10.0, "10", 3, null, false, null)) }
+        assertEquals(mapOf("abs" to 1.0), p.upsert(null, ExerciseInput("Непонятное", 10.0, "10", 3, "abs", false, null)).exercises.last().muscles)
 
         p = p.remove(ex.id)
-        assertEquals(1, p.exercises.size); assertTrue(p.days.none { ex.id in it.exercises })
+        assertEquals(1, p.exercises.size)
     }
 }
