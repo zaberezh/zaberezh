@@ -14,7 +14,7 @@ data class Profile(
     val age: Int = 18,
     val heightCm: Double = 180.0,
     val male: Boolean = true,
-    val activity: Double = 1.45,       // множитель к BMR: 3 силовые без кардио + учёба/ходьба
+    val activity: Double = 1.375,      // множитель к BMR: только 3 силовые в неделю (ходьба не учитывается)
     val gainKgPerWeek: Double = 0.1,   // целевой темп веса: медленный набор/рекомпозиция
     val proteinPerKg: Double = 2.0,
     val fatShare: Double = 0.25,       // доля калорий из жира
@@ -37,6 +37,7 @@ data class Settings(
     val checkupDays: Int = 14,
     val apiKey: String = "",
     val model: String = "claude-opus-5-5",
+    val apiUrl: String = "",            // пусто = api.anthropic.com; иначе адрес Anthropic-совместимого посредника
     val kcalOverride: Int? = null,
 )
 
