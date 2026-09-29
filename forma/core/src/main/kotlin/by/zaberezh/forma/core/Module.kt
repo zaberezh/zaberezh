@@ -14,7 +14,7 @@ data class Profile(
     val age: Int = 18,
     val heightCm: Double = 180.0,
     val male: Boolean = true,
-    val activity: Double = 1.55,       // множитель к BMR (3 тренировки + учёба/ходьба)
+    val activity: Double = 1.45,       // множитель к BMR: 3 силовые без кардио + учёба/ходьба
     val gainKgPerWeek: Double = 0.1,   // целевой темп веса: медленный набор/рекомпозиция
     val proteinPerKg: Double = 2.0,
     val fatShare: Double = 0.25,       // доля калорий из жира
