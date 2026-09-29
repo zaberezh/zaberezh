@@ -57,21 +57,26 @@ fun FoodScreen() {
     var err by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
 
+    var info by remember { mutableStateOf<String?>(null) }
+
     fun resolve() {
         val q = text.trim()
         if (q.isEmpty()) return
-        busy = true; err = null
+        busy = true; err = null; info = null
         scope.launch {
             val st = ctx.settings
+            var ai: Claude? = null
             val r = withContext(Dispatchers.IO) {
                 runCatching {
                     LibraryResolver(s).resolve(q)
-                        ?: st.apiKey.takeIf { it.isNotBlank() }?.let { Claude(it, st.model, st.apiUrl).foods(q) }
+                        ?: st.apiKey.takeIf { it.isNotBlank() }?.let { Claude(it, st.model, st.apiUrl).also { c -> ai = c }.foods(q) }
                         ?: error("Нет в библиотеке, а API-ключ не задан (Настройки → Claude). Можно ввести КБЖУ вручную.")
                 }
             }
             busy = false
-            r.onSuccess { draft = (draft ?: emptyList()) + it }.onFailure { err = Claude.explain(it) }
+            val spent = ai?.used?.takeIf { it > 0 }?.let { "потрачено ~${"%,d".format(it).replace(',', ' ')} токенов" }
+            r.onSuccess { draft = (draft ?: emptyList()) + it; info = spent ?: "из библиотеки, без ИИ" }
+                .onFailure { err = Claude.explain(it) + (spent?.let { "\n$it" } ?: "") }
         }
     }
 
@@ -102,7 +107,7 @@ fun FoodScreen() {
                     if (busy) CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp)
                     else Secondary("Вручную", { draft = (draft ?: emptyList()) + FoodItem(text.ifBlank { "Продукт" }, 100.0, Macro()) })
                 }
-                Err(err)
+                Err(err); Note(info)
             }
         }
         val lib = FoodModule.library(s).take(20)
@@ -121,7 +126,7 @@ fun FoodScreen() {
                 }
             }
         }
-        draft?.let { list ->
+        draft?.takeIf { it.isNotEmpty() }?.let { list ->
             item {
                 Block("Проверь перед сохранением") {
                     list.forEachIndexed { i, it ->
