@@ -55,6 +55,21 @@ class CoreTest {
         assertFalse(planWeek(emptySet(), mon.plusDays(5)).todayGym) // суббота
     }
 
+    @Test fun manualWeekToggle() {
+        val s = MemoryStore()
+        val ctx = Ctx(s, mon)
+        assertEquals(listOf(mon, mon.plusDays(2), mon.plusDays(4)), GymModule.week(ctx).plan) // авто Пн/Ср/Пт
+        assertNull(GymModule.toggleDay(ctx, mon))                // снять понедельник
+        assertNull(GymModule.toggleDay(ctx, mon.plusDays(1)))    // поставить вторник
+        val wk = GymModule.week(Ctx(s, mon))
+        assertEquals(listOf(mon.plusDays(1), mon.plusDays(2), mon.plusDays(4)), wk.plan)
+        assertFalse(wk.todayGym)
+        assertNotNull(GymModule.toggleDay(ctx, mon.plusDays(3)))  // Вт+Ср+Чт — 3 подряд, запрещено
+        assertNotNull(GymModule.toggleDay(ctx, mon.plusDays(5)))  // суббота
+        GymModule.resetWeek(ctx)
+        assertEquals(listOf(mon, mon.plusDays(2), mon.plusDays(4)), GymModule.week(ctx).plan)
+    }
+
     @Test fun doubleProgression() {
         val ex = defaultProgram().ex("bench")!! // 3x6-10, шаг 2.5
         assertNull(nextTarget(ex, emptyList()).weight)

@@ -82,7 +82,7 @@ private fun GymHome(ctx: Ctx) {
                     Muted("Другой день:", Modifier.padding(top = 12.dp))
                     p.days.filter { it.id != next.id }.forEach { d -> Secondary(d.name, { startWorkout(ctx, d.id) }) }
                 }
-                Muted("План недели: " + wk.plan.joinToString(" · ") { WD[it.dayOfWeek.value - 1] })
+                Muted("План недели: " + wk.plan.joinToString(" · ") { WD[it.dayOfWeek.value - 1] } + " (перенести — на экране «Сегодня»)")
             }
         }
         item {

@@ -40,10 +40,39 @@ object GymModule : Module {
         return (w + v).toSet()
     }
 
+    private fun planKey(mon: LocalDate) = "gym.plan.$mon"
+
+    /** Дни, выбранные вручную на неделю (null — авто-план). */
+    fun manualDays(s: Store, mon: LocalDate): Set<LocalDate>? =
+        s.kvGet(planKey(mon))?.split(",")?.filter { it.isNotBlank() }?.map(LocalDate::parse)?.toSet()
+
     fun week(ctx: Ctx): WeekPlan {
         val mon = ctx.today.with(DayOfWeek.MONDAY)
-        return planWeek(trainedDays(ctx, mon, mon.plusDays(6)), ctx.today, ctx.settings.sessionsPerWeek)
+        val trained = trainedDays(ctx, mon, mon.plusDays(6))
+        val manual = manualDays(ctx.store, mon)
+        return if (manual != null) manualWeek(trained, manual, ctx.today, ctx.settings.sessionsPerWeek)
+        else planWeek(trained, ctx.today, ctx.settings.sessionsPerWeek)
     }
+
+    /**
+     * Поставить/снять тренировку на день текущей недели. Возвращает текст ошибки или null.
+     * Первое ручное изменение фиксирует текущий авто-план и дальше меняется только вручную.
+     */
+    fun toggleDay(ctx: Ctx, day: LocalDate): String? {
+        val mon = ctx.today.with(DayOfWeek.MONDAY)
+        if (day < ctx.today) return "Прошедший день не перенести"
+        if (day.dayOfWeek.value > 5) return "Только будни"
+        val trained = trainedDays(ctx, mon, mon.plusDays(6))
+        if (day in trained) return "Тренировка в этот день уже засчитана"
+        val wk = week(ctx)
+        val current = wk.plan.filter { it >= ctx.today && it !in trained }.toSet()
+        val next = if (day in current) current - day else current + day
+        if (!noLongRun(trained + next, mon)) return "Будет 3 дня подряд — так нельзя"
+        ctx.store.kvPut(planKey(mon), next.sorted().joinToString(","))
+        return null
+    }
+
+    fun resetWeek(ctx: Ctx) = ctx.store.kvPut(planKey(ctx.today.with(DayOfWeek.MONDAY)), null)
 
     /** Следующий день программы по кругу A→B→C. */
     fun nextDay(s: Store): TrainingDay {

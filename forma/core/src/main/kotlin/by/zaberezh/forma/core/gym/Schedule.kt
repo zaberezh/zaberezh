@@ -43,6 +43,28 @@ fun planWeek(trained: Set<LocalDate>, today: LocalDate, target: Int = 3, maxRun:
     return WeekPlan(done.size, (done + chosen).sorted(), todayGym, canSkip, done.size + chosen.size)
 }
 
+/** Нет ли в будних днях серии длиннее [maxRun] подряд. */
+fun noLongRun(days: Set<LocalDate>, monday: LocalDate, maxRun: Int = 2): Boolean {
+    var run = 0
+    for (i in 0L..4L) { run = if (monday.plusDays(i) in days) run + 1 else 0; if (run > maxRun) return false }
+    return true
+}
+
+/**
+ * План недели, заданный вручную: [chosen] — выбранные будущие дни.
+ * Сделанные дни всегда в плане; прошедшие несделанные — игнорируются.
+ */
+fun manualWeek(trained: Set<LocalDate>, chosen: Set<LocalDate>, today: LocalDate, target: Int = 3): WeekPlan {
+    val monday = today.with(DayOfWeek.MONDAY)
+    val week = (0L..6L).map { monday.plusDays(it) }.toSet()
+    val done = trained.filter { it in week }.toSet()
+    val future = chosen.filter { it in week && it >= today && it !in done }.toSet()
+    val todayGym = today in future
+    // перенести сегодня можно, если без него цель всё ещё достижима
+    val canSkip = !todayGym || planWeek(done, today.plusDays(1), target).achievable >= target
+    return WeekPlan(done.size, (done + future).sorted(), todayGym, canSkip, done.size + future.size)
+}
+
 private fun compareLex(a: List<LocalDate>, b: List<LocalDate>): Int {
     for (i in a.indices) { val c = a[i].compareTo(b[i]); if (c != 0) return c }
     return 0

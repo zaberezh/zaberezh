@@ -1,5 +1,6 @@
 package by.zaberezh.forma.ui
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material3.MaterialTheme
@@ -35,6 +36,7 @@ fun TodayScreen(onTab: (Int) -> Unit) {
     val mon = ctx.today.with(DayOfWeek.MONDAY)
     val trained = GymModule.trainedDays(ctx, mon, mon.plusDays(6))
     val target = ctx.settings.sessionsPerWeek
+    var moveErr by remember { mutableStateOf<String?>(null) }
     Screen {
         item {
             Text(
@@ -47,9 +49,17 @@ fun TodayScreen(onTab: (Int) -> Unit) {
                 Row(Modifier.fillMaxWidth()) {
                     (0L..4L).forEach { d ->
                         val day = mon.plusDays(d)
-                        DayDot(day.dayOfWeek.getDisplayName(TextStyle.SHORT, RU), day in trained, day in wk.plan, day == ctx.today, Modifier.weight(1f))
+                        DayDot(day.dayOfWeek.getDisplayName(TextStyle.SHORT, RU), day in trained, day in wk.plan, day == ctx.today,
+                            Modifier.weight(1f).clickable { moveErr = GymModule.toggleDay(ctx, day) })
                     }
                 }
+                val manual = GymModule.manualDays(s, mon) != null
+                Line {
+                    Muted(if (manual) "План задан вручную. Нажми на день, чтобы поставить или убрать зал."
+                        else "Нажми на день, чтобы поставить или убрать зал.", Modifier.weight(1f))
+                    if (manual) Flat("Авто", { GymModule.resetWeek(ctx); moveErr = null })
+                }
+                Err(moveErr)
                 val next = GymModule.nextDay(s)
                 when {
                     ctx.today in trained -> Stat("Сегодня", "тренировка засчитана", C.good)
@@ -58,7 +68,7 @@ fun TodayScreen(onTab: (Int) -> Unit) {
                         Muted(if (wk.canSkipToday) "Можно перенести без потери цели недели" else "Перенос сорвёт цель недели")
                         Primary("Открыть тренировку", { onTab(1) }, Modifier.fillMaxWidth())
                     }
-                    wk.achievable < target -> Stat("Сегодня", "отдых · максимум за неделю ${wk.achievable}", C.warn)
+                    wk.achievable < target -> Stat("Сегодня", "отдых · в плане ${wk.achievable} из $target", C.warn)
                     else -> Stat("Сегодня", "отдых")
                 }
             }
