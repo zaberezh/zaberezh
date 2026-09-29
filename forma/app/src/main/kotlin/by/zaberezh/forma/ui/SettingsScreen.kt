@@ -83,6 +83,7 @@ fun SettingsScreen() {
     }
     var key by remember(st) { mutableStateOf(st.apiKey) }
     var bedReminder by remember(st) { mutableStateOf(st.bedReminder) }
+    var weekends by remember(st) { mutableStateOf(st.gymWeekends) }
     var url by remember(st) { mutableStateOf(st.apiUrl) }
     var model by remember(st) { mutableStateOf(st.model) }
     var msg by remember { mutableStateOf<String?>(null) }
@@ -114,7 +115,7 @@ fun SettingsScreen() {
             morningHour = d("hour", 8.0).toInt().coerceIn(0, 23), morningMinute = d("minute", 0.0).toInt().coerceIn(0, 59),
             checkupDays = d("checkup", 14.0).toInt().coerceIn(7, 60),
             sleepTargetH = d("sleepH", 8.0).coerceIn(5.0, 11.0), wakeHour = d("wakeH", 7.0).toInt().coerceIn(0, 23),
-            wakeMinute = d("wakeM", 30.0).toInt().coerceIn(0, 59), bedReminder = bedReminder,
+            wakeMinute = d("wakeM", 30.0).toInt().coerceIn(0, 59), bedReminder = bedReminder, gymWeekends = weekends,
             apiKey = key.trim(), apiUrl = url.trim(), model = model.trim().ifEmpty { "claude-opus-5-5" },
         ))
         Morning.schedule(c)
@@ -148,6 +149,10 @@ fun SettingsScreen() {
         item {
             Block("Режим") {
                 grid(ROUTINE)
+                Line {
+                    Text("Выходные — тоже дни зала", Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+                    Switch(checked = weekends, onCheckedChange = { weekends = it })
+                }
                 Primary("Сохранить", { saveAll(); msg = "Сохранено" }, Modifier.fillMaxWidth())
                 Note(msg)
             }

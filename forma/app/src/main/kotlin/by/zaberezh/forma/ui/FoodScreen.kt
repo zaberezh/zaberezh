@@ -15,6 +15,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
@@ -22,6 +23,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import by.zaberezh.forma.core.ai.Claude
@@ -51,34 +53,13 @@ fun FoodScreen() {
     val ctx = rememberCtx()
     val s = ctx.store
     var date by remember { mutableStateOf(ctx.today) }
-    var text by remember { mutableStateOf("") }
-    var draft by remember { mutableStateOf<List<FoodItem>?>(null) }
-    var busy by remember { mutableStateOf(false) }
-    var err by remember { mutableStateOf<String?>(null) }
-    val scope = rememberCoroutineScope()
-
-    var info by remember { mutableStateOf<String?>(null) }
-
-    fun resolve() {
-        val q = text.trim()
-        if (q.isEmpty()) return
-        busy = true; err = null; info = null
-        scope.launch {
-            val st = ctx.settings
-            var ai: Claude? = null
-            val r = withContext(Dispatchers.IO) {
-                runCatching {
-                    LibraryResolver(s).resolve(q)
-                        ?: st.apiKey.takeIf { it.isNotBlank() }?.let { Claude(it, st.model, st.apiUrl).also { c -> ai = c }.foods(q) }
-                        ?: error("Нет в библиотеке, а API-ключ не задан (Настройки → Claude). Можно ввести КБЖУ вручную.")
-                }
-            }
-            busy = false
-            val spent = ai?.used?.takeIf { it > 0 }?.let { "потрачено ~${"%,d".format(it).replace(',', ' ')} токенов" }
-            r.onSuccess { draft = (draft ?: emptyList()) + it; info = spent ?: "из библиотеки, без ИИ" }
-                .onFailure { err = Claude.explain(it) + (spent?.let { "\n$it" } ?: "") }
-        }
-    }
+    var text by FoodSearch.text
+    var draft by FoodSearch.draft
+    val busy by FoodSearch.busy
+    var err by FoodSearch.err
+    val info by FoodSearch.info
+    val c = LocalContext.current
+    DisposableEffect(Unit) { FoodSearch.visible = true; onDispose { FoodSearch.visible = false } }
 
     Screen {
         item {
@@ -103,7 +84,7 @@ fun FoodScreen() {
                 Field("Что съел", text, { text = it }, number = false, lines = 2)
                 Muted("Пример: «шаурма большая, Шаурма Шеф на Немиге; кола 0.5» или «гречка 200г, 2 яйца»")
                 Line {
-                    Primary(if (busy) "Ищу…" else "Посчитать КБЖУ", { resolve() }, Modifier.weight(1f), enabled = !busy)
+                    Primary(if (busy) "Ищу…" else "Посчитать КБЖУ", { FoodSearch.resolve(ctx, c) }, Modifier.weight(1f), enabled = !busy)
                     if (busy) CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp)
                     else Secondary("Вручную", { draft = (draft ?: emptyList()) + FoodItem(text.ifBlank { "Продукт" }, 100.0, Macro()) })
                 }
@@ -145,7 +126,7 @@ fun FoodScreen() {
                             else date.atTime(LocalTime.NOON).atZone(ZONE).toInstant().toEpochMilli()
                             MEAL.save(s, Meal(text.ifBlank { list.joinToString { it.name } }, list), ts = ts)
                             FoodModule.remember(s, list)
-                            draft = null; text = ""; err = null
+                            FoodSearch.clear()
                         }, Modifier.weight(1f), enabled = list.isNotEmpty())
                         Flat("Отмена", { draft = null }, C.muted)
                     }

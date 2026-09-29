@@ -14,7 +14,8 @@ import java.time.temporal.ChronoUnit
 /** Ежедневный счётчик (подтягивания, отжимания…). Новый счётчик = новая строка в настройках, без кода. */
 @Serializable data class CounterDef(val id: String, val title: String, val unit: String = "раз")
 
-@Serializable data class DayCount(val counter: String, val date: String, val n: Int)
+/** Итог дня; [sets] — подходы по отдельности (если вводились подходами), сумма = [n]. */
+@Serializable data class DayCount(val counter: String, val date: String, val n: Int, val sets: List<Int> = emptyList())
 
 val COUNT = Kind("daily.count", DayCount.serializer())
 
@@ -24,12 +25,36 @@ object CounterModule : Module {
 
     private fun key(c: String, d: LocalDate) = "count:$c:$d"
 
-    /** Значение за день; не отмечено — 0. */
-    fun get(s: Store, c: String, d: LocalDate): Int = s.get(key(c, d))?.let(COUNT::decode)?.n ?: 0
+    fun day(s: Store, c: String, d: LocalDate): DayCount = s.get(key(c, d))?.let(COUNT::decode) ?: DayCount(c, d.toString(), 0)
 
-    fun set(s: Store, c: String, d: LocalDate, n: Int) {
-        COUNT.save(s, DayCount(c, d.toString(), n.coerceIn(0, 10_000)), ts = d.atTime(12, 0).atZone(ZONE).toInstant().toEpochMilli(), id = key(c, d))
+    /** Значение за день; не отмечено — 0. */
+    fun get(s: Store, c: String, d: LocalDate): Int = day(s, c, d).n
+
+    private fun save(s: Store, v: DayCount, d: LocalDate) =
+        COUNT.save(s, v, ts = d.atTime(12, 0).atZone(ZONE).toInstant().toEpochMilli(), id = key(v.counter, d))
+
+    /** Задать итог дня числом (подходы сбрасываются). */
+    fun set(s: Store, c: String, d: LocalDate, n: Int) = save(s, DayCount(c, d.toString(), n.coerceIn(0, 10_000)), d)
+
+    /** Добавить подход. Если итог был введён числом без подходов — он сохраняется первым «подходом». */
+    fun addSet(s: Store, c: String, d: LocalDate, reps: Int) {
+        if (reps <= 0) return
+        val cur = day(s, c, d)
+        val sets = (if (cur.sets.isEmpty() && cur.n > 0) listOf(cur.n) else cur.sets) + reps
+        save(s, cur.copy(n = sets.sum(), sets = sets), d)
     }
+
+    fun removeSet(s: Store, c: String, d: LocalDate, index: Int) {
+        val cur = day(s, c, d)
+        if (index !in cur.sets.indices) return
+        val sets = cur.sets.filterIndexed { i, _ -> i != index }
+        save(s, cur.copy(n = sets.sum(), sets = sets), d)
+    }
+
+    /** Лучший подход за всё время (из дней, введённых подходами). */
+    fun bestSet(s: Store, c: String): Pair<LocalDate, Int>? =
+        COUNT.all(s).map { it.second }.filter { it.counter == c && it.sets.isNotEmpty() }
+            .map { LocalDate.parse(it.date) to it.sets.max() }.maxByOrNull { it.second }
 
     /** Все дни периода, пропуски = 0. */
     fun series(s: Store, c: String, from: LocalDate, to: LocalDate): List<Pair<LocalDate, Int>> =
@@ -40,7 +65,8 @@ object CounterModule : Module {
     override fun morning(ctx: Ctx): List<String> = ctx.settings.counters.filter { used(ctx.store, it.id) }.map { d ->
         val y = ctx.today.minusDays(1)
         val week = series(ctx.store, d.id, ctx.today.minusDays(7), y).sumOf { it.second }
-        "${d.title} вчера: ${get(ctx.store, d.id, y)} · за 7 дней: $week"
+        val yd = day(ctx.store, d.id, y)
+        "${d.title} вчера: ${yd.n}" + (if (yd.sets.size > 1) " (${yd.sets.joinToString("+")})" else "") + " · за 7 дней: $week"
     }
 
     override fun checkup(ctx: Ctx, from: LocalDate, to: LocalDate): Section? {

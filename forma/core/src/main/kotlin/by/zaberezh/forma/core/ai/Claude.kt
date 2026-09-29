@@ -21,6 +21,8 @@ import com.anthropic.models.messages.OutputConfig
 import com.anthropic.models.messages.StopReason
 import com.anthropic.models.messages.Tool
 import com.anthropic.models.messages.UserLocation
+import com.anthropic.models.messages.WebFetchTool20250910
+import com.anthropic.models.messages.WebFetchTool20260209
 import com.anthropic.models.messages.WebSearchTool20250305
 import com.anthropic.models.messages.WebSearchTool20260209
 import kotlinx.serialization.Serializable
@@ -64,18 +66,27 @@ class Claude(apiKey: String, private val model: String, baseUrl: String = "") {
     private fun text(m: Message) = m.content().mapNotNull { it.text().orElse(null)?.text() }.joinToString("\n").trim()
 
     /** Разбор приёма пищи в позиции с КБЖУ. Для заведений Минска ищет данные в интернете. */
-    fun foods(meal: String): List<FoodItem> = try {
-        foods(meal, web = true)
-    } catch (e: BadRequestException) {
-        foods(meal, web = false) // посредник без серверного веб-поиска — оценка по знаниям модели
+    /** Уровни: 2 = поиск + открытие страниц (точные КБЖУ с карточек товаров), 1 = только поиск, 0 = без интернета. */
+    fun foods(meal: String): List<FoodItem> {
+        var level = 2
+        while (true) {
+            try { return foods(meal, level) } catch (e: BadRequestException) {
+                if (level == 0) throw e
+                level-- // посредник не поддерживает инструмент — пробуем проще
+            }
+        }
     }
 
-    private fun foods(meal: String, web: Boolean): List<FoodItem> {
+    private fun foods(meal: String, level: Int): List<FoodItem> {
+        val web = level >= 1
         val loc = UserLocation.builder().city("Minsk").country("BY").timezone("Europe/Minsk").build()
         val b = base(FOOD_SYSTEM, OutputConfig.Effort.LOW)
             .apply {
                 if (web && modernSearch) addTool(WebSearchTool20260209.builder().maxUses(MAX_SEARCHES).userLocation(loc).build())
                 else if (web) addTool(WebSearchTool20250305.builder().maxUses(MAX_SEARCHES).userLocation(loc).build())
+                // открыть карточку товара/меню — точные цифры вместо средних; объём страницы ограничен
+                if (level >= 2 && modernSearch) addTool(WebFetchTool20260209.builder().maxUses(MAX_FETCHES).maxContentTokens(FETCH_TOKENS).build())
+                else if (level >= 2) addTool(WebFetchTool20250910.builder().maxUses(MAX_FETCHES).maxContentTokens(FETCH_TOKENS).build())
             }
             .addTool(REPORT_TOOL)
             .addUserMessage(meal)
@@ -128,7 +139,9 @@ class Claude(apiKey: String, private val model: String, baseUrl: String = "") {
     )
 
     companion object {
-        const val MAX_SEARCHES = 3L
+        const val MAX_SEARCHES = 4L
+        const val MAX_FETCHES = 2L
+        const val FETCH_TOKENS = 6000L
         private val LENIENT = kotlinx.serialization.json.Json { ignoreUnknownKeys = true; isLenient = true; coerceInputValues = true }
 
         /** Модели на выбор в настройках: id → пояснение. */
@@ -155,16 +168,21 @@ class Claude(apiKey: String, private val model: String, baseUrl: String = "") {
         val FOOD_SYSTEM = """
             Ты модуль подсчёта КБЖУ в личном трекере. Пользователь живёт в Минске (Беларусь) и пишет, что съел.
             Разбей приём пищи на позиции. Для каждой определи массу порции в граммах и КБЖУ ИМЕННО ЭТОЙ ПОРЦИИ.
-            - Если указано заведение, сеть или бренд (шаурма из конкретной точки, блюдо кафе, продукт марки) — найди в интернете
-              официальные данные: сайт/меню заведения, карточку на сервисах доставки (Яндекс Еда, Delivio, Wolt и др.), этикетку.
-              Вес порции бери из меню. В source укажи адрес страницы.
-            - Если официальных данных нет — оцени по составу и типичному весу порции именно этого заведения;
-              confidence = medium или low, в source начни с «оценка:» и кратко обоснуй.
-            - Базовые продукты (яйцо, гречка, куриная грудка, хлеб…) считай по справочным значениям без поиска.
+            Главное — ТОЧНЫЕ данные, а не средние. Среднее/типовое значение — только если точного источника нет.
+            Где искать точные цифры:
+            - Магазинные продукты (бренд, упаковка, готовая еда из магазина): карточка товара на e-dostavka.by
+              (там указаны КБЖУ на 100 г и масса упаковки). Ищи запросом «<название> e-dostavka.by» и открой карточку.
+              Если там нет — сайт производителя или другие магазины Беларуси (gippo-market.by, green-market.by).
+            - Заведения (шаурма, кафе, фастфуд): сайт/меню заведения, карточка на сервисах доставки (Яндекс Еда, Delivio, Wolt).
+              Вес порции бери из меню.
+            - Базовые продукты без бренда (яйцо, гречка, куриная грудка…) — справочные значения без поиска.
               Крупы и макароны — в готовом виде, если не сказано «сухой»/«сырой».
-            - Если количество не указано — стандартная порция. Напитки тоже позиции (кола, сок, кофе с молоком/сахаром).
-            - Экономь: не больше 2 поисков на весь запрос; если за 2 поиска не нашёл — оценивай.
-            - items никогда не бывает пустым: если заведение не найдено, оцени по типичному блюду такого типа.
+            Правила:
+            - Не больше 3 поисков и 2 открытых страниц на весь запрос; не нашёл точного — оцени и честно пометь.
+            - source: адрес страницы, откуда взяты цифры, или «оценка: …» с кратким обоснованием.
+            - confidence: high — цифры со страницы именно этого товара/блюда; medium — близкий аналог; low — оценка.
+            - Если количество не указано — масса упаковки/стандартной порции. Напитки тоже позиции.
+            - items никогда не бывает пустым.
             Результат верни только вызовом инструмента report_foods, без текста.
         """.trimIndent()
 

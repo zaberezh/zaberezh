@@ -23,6 +23,7 @@ import by.zaberezh.forma.core.gym.defaultProgram
 import by.zaberezh.forma.core.gym.parseProgram
 import by.zaberezh.forma.core.store.JSON
 import by.zaberezh.forma.core.gym.nextTarget
+import by.zaberezh.forma.core.gym.noLongRun
 import by.zaberezh.forma.core.gym.planWeek
 import by.zaberezh.forma.core.report.Checkup
 import by.zaberezh.forma.core.store.MemoryStore
@@ -75,7 +76,10 @@ class CoreTest {
         assertNull(GymModule.toggleDay(ctx, mon.plusDays(3)))     // Вт+Ср+Чт — можно, но с предупреждением
         assertTrue(GymModule.threeInRow(ctx))
         assertNull(GymModule.toggleDay(ctx, mon.plusDays(3)))
-        assertNotNull(GymModule.toggleDay(ctx, mon.plusDays(5)))  // суббота
+        assertNull(GymModule.toggleDay(ctx, mon.plusDays(5)))     // суббота — можно
+        assertTrue(mon.plusDays(5) in GymModule.week(ctx).plan)
+        SETTINGS.set(s, Settings(gymWeekends = false))
+        assertNotNull(GymModule.toggleDay(Ctx(s, mon), mon.plusDays(6)))  // воскресенье при выключенных выходных
         GymModule.resetWeek(ctx)
         assertEquals(listOf(mon, mon.plusDays(2), mon.plusDays(4)), GymModule.week(ctx).plan)
     }
@@ -90,6 +94,13 @@ class CoreTest {
         assertEquals(listOf(0, 15, 0), CounterModule.series(s, "pullups", mon.minusDays(2), mon).map { it.second })
         assertTrue(CounterModule.morning(ctx).first().contains("вчера: 15"))
         assertNotNull(CounterModule.checkup(ctx, mon.minusDays(13), mon))
+        CounterModule.addSet(s, "pullups", mon, 8); CounterModule.addSet(s, "pullups", mon, 7); CounterModule.addSet(s, "pullups", mon, 6)
+        assertEquals(21, CounterModule.get(s, "pullups", mon))
+        CounterModule.removeSet(s, "pullups", mon, 1)
+        assertEquals(listOf(8, 6), CounterModule.day(s, "pullups", mon).sets)
+        CounterModule.addSet(s, "pullups", mon.minusDays(1), 5) // был итог 15 числом → 15 + 5
+        assertEquals(listOf(15, 5), CounterModule.day(s, "pullups", mon.minusDays(1)).sets)
+        assertEquals(mon.minusDays(1) to 15, CounterModule.bestSet(s, "pullups"))
     }
 
     @Test fun weeklyTest() {
@@ -103,6 +114,15 @@ class CoreTest {
         assertTrue(TestModule.due(Ctx(s, mon.plusDays(7)), def))
         TestModule.record(s, def.id, mon.plusDays(7), 11.0)
         assertTrue(TestModule.checkup(Ctx(s, mon.plusDays(7)), mon.plusDays(1), mon.plusDays(7))!!.lines.first().contains("9 → 11"))
+    }
+
+    @Test fun weekendsInAutoPlan() {
+        val thu = mon.plusDays(3)
+        assertEquals(2, planWeek(emptySet(), thu).achievable)                  // только будни
+        val p = planWeek(emptySet(), thu, weekends = true)
+        assertEquals(3, p.achievable)
+        assertEquals(listOf(thu, mon.plusDays(5), mon.plusDays(6)).size, p.plan.size)
+        assertTrue(noLongRun(p.plan.toSet(), mon))
     }
 
     @Test fun doubleProgression() {

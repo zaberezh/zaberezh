@@ -15,11 +15,11 @@ data class WeekPlan(
  * План недели: только будни, [target] тренировок, не больше [maxRun] дней подряд.
  * Минимизируем соседние дни (восстановление), при равенстве — раньше (запас на форс-мажор).
  */
-fun planWeek(trained: Set<LocalDate>, today: LocalDate, target: Int = 3, maxRun: Int = 2): WeekPlan {
+fun planWeek(trained: Set<LocalDate>, today: LocalDate, target: Int = 3, maxRun: Int = 2, weekends: Boolean = false): WeekPlan {
     val monday = today.with(DayOfWeek.MONDAY)
     val week = (0L..6L).map { monday.plusDays(it) }.toSet()
     val done = trained.filter { it in week }.toSet()
-    val weekdays = (0L..4L).map { monday.plusDays(it) }
+    val weekdays = (0L..(if (weekends) 6L else 4L)).map { monday.plusDays(it) }
     val free = weekdays.filter { it >= today && it !in done }
     val need = (target - done.size).coerceAtLeast(0)
 
@@ -46,7 +46,7 @@ fun planWeek(trained: Set<LocalDate>, today: LocalDate, target: Int = 3, maxRun:
 /** Нет ли в будних днях серии длиннее [maxRun] подряд. */
 fun noLongRun(days: Set<LocalDate>, monday: LocalDate, maxRun: Int = 2): Boolean {
     var run = 0
-    for (i in 0L..4L) { run = if (monday.plusDays(i) in days) run + 1 else 0; if (run > maxRun) return false }
+    for (i in 0L..6L) { run = if (monday.plusDays(i) in days) run + 1 else 0; if (run > maxRun) return false }
     return true
 }
 
@@ -61,7 +61,7 @@ fun manualWeek(trained: Set<LocalDate>, chosen: Set<LocalDate>, today: LocalDate
     val future = chosen.filter { it in week && it >= today && it !in done }.toSet()
     val todayGym = today in future
     // перенести сегодня можно, если без него цель всё ещё достижима
-    val canSkip = !todayGym || planWeek(done, today.plusDays(1), target).achievable >= target
+    val canSkip = !todayGym || planWeek(done, today.plusDays(1), target, weekends = true).achievable >= target
     return WeekPlan(done.size, (done + future).sorted(), todayGym, canSkip, done.size + future.size)
 }
 
