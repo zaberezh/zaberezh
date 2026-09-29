@@ -4,6 +4,7 @@ import android.app.Application
 import by.zaberezh.forma.core.Ctx
 import by.zaberezh.forma.core.migrateSettings
 import by.zaberezh.forma.data.SqlStore
+import by.zaberezh.forma.sys.Evening
 import by.zaberezh.forma.sys.Geo
 import by.zaberezh.forma.sys.Morning
 import by.zaberezh.forma.sys.Notify
@@ -20,6 +21,7 @@ class App : Application() {
         migrateSettings(Forma.store)
         Notify.channels(this)
         Morning.schedule(this)
+        Evening.schedule(this)
         Geo.register(this)
     }
 }

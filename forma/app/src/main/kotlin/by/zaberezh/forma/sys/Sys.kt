@@ -70,6 +70,7 @@ object Morning {
 
 class MorningReceiver : BroadcastReceiver() {
     override fun onReceive(c: Context, i: Intent) {
+        runCatching { SleepSync.sync(c) }
         runCatching { Notify.post(c, 1, "Сегодня", Checkup.morning(Forma.ctx())) }
         Morning.schedule(c)
     }
@@ -78,6 +79,7 @@ class MorningReceiver : BroadcastReceiver() {
 class BootReceiver : BroadcastReceiver() {
     override fun onReceive(c: Context, i: Intent) {
         Morning.schedule(c)
+        Evening.schedule(c)
         Geo.register(c) // геозоны сбрасываются после перезагрузки
     }
 }
