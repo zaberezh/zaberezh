@@ -83,6 +83,7 @@ fun SettingsScreen() {
     var apiMsg by remember { mutableStateOf<String?>(null) }
     var apiErr by remember { mutableStateOf<String?>(null) }
     var checking by remember { mutableStateOf(false) }
+    var available by remember { mutableStateOf(listOf<String>()) }
     val perms = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { Geo.register(c); refresh++ }
     val bg = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { Geo.register(c); refresh++ }
     val export = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
@@ -154,7 +155,21 @@ fun SettingsScreen() {
                             r.onSuccess { apiMsg = "Работает: $it" }.onFailure { apiErr = Claude.explain(it) }
                         }
                     }, enabled = key.isNotBlank() && !checking)
+                    Secondary("Модели сервиса", {
+                        checking = true; apiMsg = null; apiErr = null
+                        val k = key.trim(); val u = url.trim()
+                        scope.launch {
+                            val r = withContext(Dispatchers.IO) { runCatching { Claude(k, "claude-sonnet-5-5", u).models() } }
+                            checking = false
+                            r.onSuccess { available = it; if (it.isEmpty()) apiErr = "Сервис не вернул список моделей" }
+                                .onFailure { apiErr = "Список моделей недоступен: " + Claude.explain(it) }
+                        }
+                    }, enabled = key.isNotBlank() && !checking)
                     if (checking) CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp)
+                }
+                if (available.isNotEmpty()) {
+                    Muted("Доступно у сервиса (нажми, чтобы выбрать):")
+                    Buttons { available.forEach { id -> FilterChip(selected = model == id, onClick = { model = id }, label = { Text(id) }) } }
                 }
                 Note(apiMsg); Err(apiErr)
             }
