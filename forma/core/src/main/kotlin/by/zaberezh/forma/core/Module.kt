@@ -4,6 +4,7 @@ import by.zaberezh.forma.core.body.BodyModule
 import by.zaberezh.forma.core.food.FoodModule
 import by.zaberezh.forma.core.gym.GymModule
 import by.zaberezh.forma.core.gym.PROGRAM
+import by.zaberezh.forma.core.sleep.SleepModule
 import by.zaberezh.forma.core.store.Pref
 import by.zaberezh.forma.core.store.Store
 import by.zaberezh.forma.core.store.today
@@ -41,6 +42,10 @@ data class Settings(
     val apiUrl: String = "",            // пусто = api.anthropic.com; иначе адрес Anthropic-совместимого посредника
     val kcalOverride: Int? = null,
     val schema: Int = 0,
+    val sleepTargetH: Double = 8.0,
+    val wakeHour: Int = 7,
+    val wakeMinute: Int = 30,
+    val bedReminder: Boolean = true,
 )
 
 val SETTINGS = Pref("settings", Settings.serializer()) { Settings() }
@@ -83,5 +88,5 @@ interface Module {
 }
 
 object Modules {
-    val all: List<Module> = listOf(GymModule, BodyModule, FoodModule)
+    val all: List<Module> = listOf(GymModule, SleepModule, BodyModule, FoodModule)
 }

@@ -78,6 +78,7 @@ fun TodayScreen(onTab: (Int) -> Unit) {
                 }
             }
         }
+        item { SleepBlock(ctx) }
         item {
             val t = FoodModule.dayTotal(s, ctx.today)
             val g = FoodModule.targets(ctx)
