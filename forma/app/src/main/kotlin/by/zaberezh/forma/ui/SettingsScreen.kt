@@ -18,6 +18,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -34,7 +35,9 @@ import by.zaberezh.forma.Forma
 import by.zaberezh.forma.core.SETTINGS
 import by.zaberezh.forma.core.ai.Claude
 import by.zaberezh.forma.core.r1
+import by.zaberezh.forma.sys.Evening
 import by.zaberezh.forma.sys.Geo
+import by.zaberezh.forma.sys.SleepSync
 import by.zaberezh.forma.sys.Morning
 import by.zaberezh.forma.sys.granted
 import com.google.android.gms.location.LocationServices
@@ -57,6 +60,7 @@ private val ROUTINE = listOf(
     F("hour", "Уведомление", "ч"), F("minute", "Минуты", "мин"),
     F("checkup", "Чекап каждые", "дн"),
 )
+private val SLEEP = listOf(F("sleepH", "Цель сна", "ч"), F("wakeH", "Подъём", "ч"), F("wakeM", "Подъём", "мин"))
 
 @SuppressLint("MissingPermission")
 @Composable
@@ -74,9 +78,11 @@ fun SettingsScreen() {
             "gain" to p.gainKgPerWeek.toString(), "protein" to p.proteinPerKg.toString(), "fat" to p.fatShare.toString(),
             "kcal" to (st.kcalOverride?.toString() ?: ""), "sessions" to st.sessionsPerWeek.toString(), "visit" to st.minVisitMin.toString(),
             "hour" to st.morningHour.toString(), "minute" to "%02d".format(st.morningMinute), "checkup" to st.checkupDays.toString(),
+            "sleepH" to st.sleepTargetH.r1(), "wakeH" to st.wakeHour.toString(), "wakeM" to "%02d".format(st.wakeMinute),
         )
     }
     var key by remember(st) { mutableStateOf(st.apiKey) }
+    var bedReminder by remember(st) { mutableStateOf(st.bedReminder) }
     var url by remember(st) { mutableStateOf(st.apiUrl) }
     var model by remember(st) { mutableStateOf(st.model) }
     var msg by remember { mutableStateOf<String?>(null) }
@@ -107,9 +113,12 @@ fun SettingsScreen() {
             sessionsPerWeek = d("sessions", 3.0).toInt().coerceIn(1, 5), minVisitMin = d("visit", 75.0).toInt(),
             morningHour = d("hour", 8.0).toInt().coerceIn(0, 23), morningMinute = d("minute", 0.0).toInt().coerceIn(0, 59),
             checkupDays = d("checkup", 14.0).toInt().coerceIn(7, 60),
+            sleepTargetH = d("sleepH", 8.0).coerceIn(5.0, 11.0), wakeHour = d("wakeH", 7.0).toInt().coerceIn(0, 23),
+            wakeMinute = d("wakeM", 30.0).toInt().coerceIn(0, 59), bedReminder = bedReminder,
             apiKey = key.trim(), apiUrl = url.trim(), model = model.trim().ifEmpty { "claude-opus-5-5" },
         ))
         Morning.schedule(c)
+        Evening.schedule(c)
     }
 
     @Composable
@@ -124,6 +133,16 @@ fun SettingsScreen() {
                 grid(GOALS)
                 Muted("Активность 1.375 = только 3 силовые в неделю, ходьба не учитывается. Темп 0.1 кг/нед = медленный набор. " +
                     "Через 2–4 недели записей расход уточняется по реальным данным.")
+            }
+        }
+        item {
+            Block("Сон") {
+                grid(SLEEP)
+                Line {
+                    Text("Напоминание об отбое за 30 мин", Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+                    Switch(checked = bedReminder, onCheckedChange = { bedReminder = it })
+                }
+                Muted("Отбой считается от подъёма и цели сна. Сохраняется кнопкой «Сохранить» ниже.")
             }
         }
         item {
@@ -189,6 +208,10 @@ fun SettingsScreen() {
                 }
                 HorizontalDivider(color = C.line)
                 PermRow("Геолокация «Разрешить всегда»", always, enabled = fine) { bg.launch(Manifest.permission.ACCESS_BACKGROUND_LOCATION) }
+                HorizontalDivider(color = C.line)
+                PermRow("История использования (сон)", SleepSync.hasAccess(c)) {
+                    c.startActivity(Intent(AndroidSettings.ACTION_USAGE_ACCESS_SETTINGS))
+                }
                 HorizontalDivider(color = C.line)
                 PermRow("Без ограничений батареи", battery) {
                     c.startActivity(Intent(AndroidSettings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:" + c.packageName)))
