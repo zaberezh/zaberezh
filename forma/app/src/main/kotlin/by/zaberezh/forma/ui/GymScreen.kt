@@ -70,7 +70,6 @@ private fun GymHome(ctx: Ctx) {
     val p = GymModule.program(s)
     val next = GymModule.nextDay(s)
     val wk = GymModule.week(ctx)
-    var open by remember { mutableStateOf<String?>(null) }
     Screen {
         item {
             Block("Следующая тренировка", trailing = { Pill("день ${next.name}") }) {
@@ -85,33 +84,7 @@ private fun GymHome(ctx: Ctx) {
                 Muted("План недели: " + wk.plan.joinToString(" · ") { WD[it.dayOfWeek.value - 1] } + " (перенести — на экране «Сегодня»)")
             }
         }
-        item {
-            Block("Упражнения") {
-                if (p.exercises.isEmpty()) Muted("Программа пока пустая — упражнения появятся, когда их добавим (JSON ниже).")
-                else Muted("Нажми на упражнение — история подходов")
-                val bwKg = latestWeight(s) ?: 70.0
-                p.exercises.filter { ex -> p.days.any { ex.id in it.exercises } }.forEachIndexed { i, ex ->
-                    if (i > 0) HorizontalDivider(color = C.line)
-                    val tr = GymModule.trend(s, ex, ctx.today)
-                    Column(Modifier.fillMaxWidth().clickable { open = if (open == ex.id) null else ex.id }.padding(vertical = 4.dp),
-                        verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Line {
-                            Text(ex.name, Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge)
-                            if (tr.n > 0) Pill(tr.status, statusColor(tr.status))
-                        }
-                        if (tr.n > 0) Muted("e1RM ${tr.last.r1()} кг" + (tr.pctWeek?.let { " · ${it.pct()} в неделю" } ?: ""))
-                        if (open == ex.id) {
-                            val hist = GymModule.history(s, ex.id).takeLast(10).reversed()
-                            if (hist.isEmpty()) Muted("Ещё не выполнялось")
-                            hist.forEach { (d, sets) ->
-                                Stat(DM.format(d), sets.joinToString("  ") { "${it.w.r1()}×${it.r}" } +
-                                    "   e1RM ${sets.maxOf { e1rm(it.w, it.r, ex.bw * bwKg) }.r1()}")
-                            }
-                        }
-                    }
-                }
-            }
-        }
+        item { ProgramEditor(ctx) }
         item {
             val list = GymModule.workouts(s).takeLast(8).reversed()
             Block("История тренировок") {
@@ -147,10 +120,8 @@ private fun GymHome(ctx: Ctx) {
 private fun ProgramBlock(p: Program, ctx: Ctx) {
     val c = LocalContext.current
     var edit by remember { mutableStateOf(false) }
-    Block("Программа") {
-        Text(p.name, style = MaterialTheme.typography.bodyMedium)
-        p.days.forEach { d -> Muted("${d.name}: " + d.exercises.mapNotNull(p::ex).joinToString(", ") { it.name }) }
-        if (!edit) Secondary("Изменить (JSON)", { edit = true }, Modifier.fillMaxWidth())
+    Block("Программа: копия") {
+        if (!edit) Flat("Экспорт / импорт JSON (для переноса)", { edit = true }, C.muted)
         else {
             var text by remember { mutableStateOf(JSON.encodeToString(Program.serializer(), p)) }
             var err by remember { mutableStateOf<String?>(null) }

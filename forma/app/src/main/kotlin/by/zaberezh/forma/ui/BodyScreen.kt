@@ -83,8 +83,13 @@ fun BodyScreen() {
             }
             var saved by remember { mutableStateOf<String?>(null) }
             Block("Замеры", trailing = { last?.let { Pill("прошлые ${DM.format(it.first.day)}", C.muted) } }) {
-                Muted("Раз в 4 недели, утром. Талия — по пупку на выдохе, бицепс — напряжённый, правая рука.")
-                Grid2(MEASURE_FIELDS) { f, m -> Field(f.label.substringBefore(" ("), vals[f.key] ?: "", { vals[f.key] = it }, m, suffix = "см") }
+                Muted("Раз в 4 недели, утром до еды и тренировки, одной и той же лентой. Лента плотно, но не впивается; меряй 2 раза и бери среднее.")
+                MEASURE_FIELDS.forEach { f ->
+                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Field(f.label, vals[f.key] ?: "", { vals[f.key] = it }, suffix = "см")
+                        Muted(f.hint)
+                    }
+                }
                 last?.second?.v?.let { v ->
                     navyBodyFat(v["waist"] ?: 0.0, v["neck"] ?: 0.0, ctx.settings.profile.heightCm)
                         ?.let { Stat("% жира (формула ВМС, ±3%)", it.r1()) }
