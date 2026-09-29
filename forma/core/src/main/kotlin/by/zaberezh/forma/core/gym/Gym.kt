@@ -57,6 +57,7 @@ object GymModule : Module {
     /**
      * Поставить/снять тренировку на день текущей недели. Возвращает текст ошибки или null.
      * Первое ручное изменение фиксирует текущий авто-план и дальше меняется только вручную.
+     * 3 дня подряд разрешены (UI предупреждает через [threeInRow]).
      */
     fun toggleDay(ctx: Ctx, day: LocalDate): String? {
         val mon = ctx.today.with(DayOfWeek.MONDAY)
@@ -67,10 +68,12 @@ object GymModule : Module {
         val wk = week(ctx)
         val current = wk.plan.filter { it >= ctx.today && it !in trained }.toSet()
         val next = if (day in current) current - day else current + day
-        if (!noLongRun(trained + next, mon)) return "Будет 3 дня подряд — так нельзя"
         ctx.store.kvPut(planKey(mon), next.sorted().joinToString(","))
         return null
     }
+
+    /** В плане недели 3+ дня подряд. */
+    fun threeInRow(ctx: Ctx): Boolean = !noLongRun(week(ctx).plan.toSet(), ctx.today.with(DayOfWeek.MONDAY))
 
     fun resetWeek(ctx: Ctx) = ctx.store.kvPut(planKey(ctx.today.with(DayOfWeek.MONDAY)), null)
 
