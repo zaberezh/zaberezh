@@ -112,6 +112,9 @@ class Claude(apiKey: String, private val model: String, baseUrl: String = "") {
 
     fun resolver() = FoodResolver { foods(it) }
 
+    /** Модели, доступные у провайдера (если он поддерживает /v1/models). */
+    fun models(): List<String> = client.models().list().data().map { it.id() }
+
     /** Минимальный запрос для проверки ключа/адреса/модели. */
     fun ping(): String {
         val m = call(MessageCreateParams.builder().model(model).maxTokens(1024L).addUserMessage("Ответь одним словом: ок"))
