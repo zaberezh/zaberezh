@@ -78,6 +78,7 @@ object GymModule : Module {
     fun nextDay(s: Store): TrainingDay {
         val p = program(s)
         val last = workouts(s).lastOrNull { it.second.sets.isNotEmpty() }?.second?.day
+        if (p.days.isEmpty()) return TrainingDay("A", "A", emptyList())
         val i = p.days.indexOfFirst { it.id == last }
         return p.days[(i + 1).mod(p.days.size)]
     }

@@ -16,7 +16,10 @@ import by.zaberezh.forma.core.gym.PROGRAM
 import by.zaberezh.forma.core.gym.SetLog
 import by.zaberezh.forma.core.gym.WORKOUT
 import by.zaberezh.forma.core.gym.Workout
+import by.zaberezh.forma.core.gym.Program
 import by.zaberezh.forma.core.gym.defaultProgram
+import by.zaberezh.forma.core.gym.parseProgram
+import by.zaberezh.forma.core.store.JSON
 import by.zaberezh.forma.core.gym.nextTarget
 import by.zaberezh.forma.core.gym.planWeek
 import by.zaberezh.forma.core.report.Checkup
@@ -33,6 +36,8 @@ import kotlin.test.assertTrue
 
 class CoreTest {
     private val mon = LocalDate.of(2026, 9, 28) // понедельник
+    private val prog = parseProgram(javaClass.getResource("/test_program.json")!!.readText())
+    private fun store() = MemoryStore().also { PROGRAM.set(it, prog) }
 
     @Test fun weekPlanPrefersMonWedFri() {
         val p = planWeek(emptySet(), mon)
@@ -71,7 +76,7 @@ class CoreTest {
     }
 
     @Test fun doubleProgression() {
-        val ex = defaultProgram().ex("bench")!! // 3x6-10, шаг 2.5
+        val ex = prog.ex("bench")!! // 3x6-10, шаг 2.5
         assertNull(nextTarget(ex, emptyList()).weight)
         val up = nextTarget(ex, listOf(List(3) { SetLog("bench", 60.0, 10) }))
         assertEquals(62.5, up.weight); assertEquals(listOf(6, 6, 6), up.reps)
@@ -82,7 +87,7 @@ class CoreTest {
     }
 
     @Test fun programRotationAndTargets() {
-        val s = MemoryStore()
+        val s = store()
         assertEquals("A", GymModule.nextDay(s).id)
         WORKOUT.save(s, Workout("A", mon.startMs(), sets = listOf(SetLog("bench", 50.0, 10))), ts = mon.startMs() + 3600_000)
         assertEquals("B", GymModule.nextDay(s).id)
@@ -101,6 +106,16 @@ class CoreTest {
         val intake = w.associate { it.first to 2800.0 }
         val (tdee, conf) = adaptiveTdee(w, intake, mon)!!
         assertTrue(abs(tdee - 2690) < 5, "tdee=$tdee"); assertEquals(1.0, conf)
+    }
+
+    @Test fun defaultProgramIsEmptyAndSafe() {
+        val s = MemoryStore()
+        assertTrue(defaultProgram().exercises.isEmpty())
+        assertEquals("A", GymModule.nextDay(s).id)
+        assertTrue(GymModule.targets(s, GymModule.nextDay(s)).isEmpty())
+        s.kvPut(PROGRAM.key, JSON.encodeToString(Program.serializer(), prog)) // старый черновик
+        migrateSettings(s)
+        assertTrue(PROGRAM.get(s).exercises.isEmpty())
     }
 
     @Test fun settingsMigrationDropsWalking() {
@@ -132,7 +147,7 @@ class CoreTest {
     }
 
     @Test fun checkupRendersAllModules() {
-        val s = MemoryStore()
+        val s = store()
         (0..13).forEach { d ->
             val day = mon.minusDays(13L - d)
             WEIGHT.save(s, Weight(70.5 + d * 0.01), ts = day.startMs() + 7 * 3600_000)

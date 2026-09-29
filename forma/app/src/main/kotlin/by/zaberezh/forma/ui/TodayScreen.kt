@@ -61,15 +61,20 @@ fun TodayScreen(onTab: (Int) -> Unit) {
                 }
                 Err(moveErr)
                 val next = GymModule.nextDay(s)
+                val active = s.kvGet(ACTIVE)?.let { s.get(it) } != null
                 when {
                     ctx.today in trained -> Stat("Сегодня", "тренировка засчитана", C.good)
                     wk.todayGym -> {
-                        Stat("Сегодня", "день ${next.name}")
+                        Stat("Сегодня", "зал · день ${next.name}")
                         Muted(if (wk.canSkipToday) "Можно перенести без потери цели недели" else "Перенос сорвёт цель недели")
-                        Primary("Открыть тренировку", { onTab(1) }, Modifier.fillMaxWidth())
                     }
                     wk.achievable < target -> Stat("Сегодня", "отдых · в плане ${wk.achievable} из $target", C.warn)
-                    else -> Stat("Сегодня", "отдых")
+                    else -> Stat("Сегодня", "отдых по плану")
+                }
+                when {
+                    active -> Primary("Продолжить тренировку", { onTab(1) }, Modifier.fillMaxWidth())
+                    wk.todayGym -> Primary("Начать тренировку · день ${next.name}", { startWorkout(ctx, next.id); onTab(1) }, Modifier.fillMaxWidth())
+                    else -> Secondary("Начать тренировку сегодня · день ${next.name}", { startWorkout(ctx, next.id); onTab(1) }, Modifier.fillMaxWidth())
                 }
             }
         }

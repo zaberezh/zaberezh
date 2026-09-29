@@ -46,7 +46,7 @@ import kotlinx.coroutines.delay
 import java.time.Instant
 import java.time.format.DateTimeFormatter
 
-private const val ACTIVE = "gym.active"
+const val ACTIVE = "gym.active"
 private val DM = DateTimeFormatter.ofPattern("d MMM", RU)
 private val DMHM = DateTimeFormatter.ofPattern("d MMM, HH:mm", RU)
 private val WD = listOf("пн", "вт", "ср", "чт", "пт", "сб", "вс")
@@ -58,7 +58,7 @@ fun GymScreen() {
     if (active != null && ctx.store.get(active) != null) WorkoutScreen(ctx, active) else GymHome(ctx)
 }
 
-private fun startWorkout(ctx: Ctx, day: String) {
+fun startWorkout(ctx: Ctx, day: String) {
     val now = System.currentTimeMillis()
     val e = WORKOUT.save(ctx.store, Workout(day, now), ts = now)
     ctx.store.kvPut(ACTIVE, e.id)
@@ -87,7 +87,8 @@ private fun GymHome(ctx: Ctx) {
         }
         item {
             Block("Упражнения") {
-                Muted("Нажми на упражнение — история подходов")
+                if (p.exercises.isEmpty()) Muted("Программа пока пустая — упражнения появятся, когда их добавим (JSON ниже).")
+                else Muted("Нажми на упражнение — история подходов")
                 val bwKg = latestWeight(s) ?: 70.0
                 p.exercises.filter { ex -> p.days.any { ex.id in it.exercises } }.forEachIndexed { i, ex ->
                     if (i > 0) HorizontalDivider(color = C.line)
