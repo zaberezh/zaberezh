@@ -61,4 +61,22 @@ class EdostavkaTest {
         assertNull(edo.lookup("шаурма чизер папа донер"))
         assertEquals("теос про клубника", Edostavka.cleanQuery("2 теос про клубника 330г"))
     }
+
+    @Test fun condimentsArePortions() {
+        assertEquals(20.0, by.zaberezh.forma.core.food.condimentPortion("соус барбекю"))
+        assertEquals(30.0, by.zaberezh.forma.core.food.condimentPortion("сметана 20%"))
+        assertEquals(20.0, by.zaberezh.forma.core.food.condimentPortion("Сыр Российский"))
+        assertNull(by.zaberezh.forma.core.food.condimentPortion("сырники"))
+        assertNull(by.zaberezh.forma.core.food.condimentPortion("теос про клубника"))
+        val sauce = product.replace("Молочный коктейль Teos Pro обезжиренный, клубника, 330 г", "Соус барбекю Heinz, 230 г")
+        val e = Edostavka(fetch = { url -> if ("search" in url) search else sauce })
+        val r = shopResolve("соус барбекю", e)
+        assertEquals(20.0, r.items.single().grams) // порция, а не бутылка 230 г
+    }
+
+    @Test fun webHintsFromSearchPage() {
+        val page = "<html><body><div class='r'>Хот-дог — калорийность 290 ккал на 100 г, белки 10, жиры 17, углеводы 24</div></body></html>"
+        val hints = by.zaberezh.forma.core.food.WebHints.find("хот-дог", fetch = { page })
+        assertTrue(hints.single().contains("290 ккал"))
+    }
 }

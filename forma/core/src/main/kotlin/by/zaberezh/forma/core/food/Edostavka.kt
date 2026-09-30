@@ -80,7 +80,7 @@ class Edostavka(private val fetch: (String) -> String? = ::httpGet, private val 
             return when (m.groupValues[2].lowercase()) { "кг", "л" -> v * 1000; else -> v }
         }
 
-        private val STOP = setOf("г", "гр", "мл", "шт", "и", "с", "со", "вкус", "на", "из", "в", "без", "кг", "л")
+        private val STOP = setOf("г", "гр", "мл", "шт", "и", "с", "со", "вкус", "на", "из", "в", "без", "кг", "л", "только", "ничего", "немного", "порция")
 
         /** Запрос без количеств: «2 теос про клубника 330г» → «теос про клубника». */
         fun cleanQuery(q: String): String = q.lowercase().replace('ё', 'е')
