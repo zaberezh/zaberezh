@@ -77,6 +77,12 @@ fun migrateSettings(store: Store) {
         st = st.copy(schema = 3)
     }
     if (st.schema < 4) st = st.copy(supersets = false, schema = 4) // v4: суперсеты выключены
+    if (st.schema < 5) { // v5: акцент на предплечья — добавить упражнения, если в базе на них ничего нет
+        val p = PROGRAM.get(store)
+        if (p.exercises.none { (it.muscles["forearms"] ?: 0.0) >= 1.0 })
+            PROGRAM.set(store, p.copy(exercises = p.exercises + by.zaberezh.forma.core.gym.FOREARM_SEED.filter { s -> p.ex(s.id) == null }))
+        st = st.copy(schema = 5)
+    }
     SETTINGS.set(store, st)
 }
 
