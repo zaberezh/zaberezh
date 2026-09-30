@@ -49,11 +49,12 @@ fun shopResolve(text: String, edo: Edostavka): ShopResult {
         if (words.isEmpty() || words.all { it in GENERIC }) { left += part; continue }
         val cands = runCatching { edo.candidates(part) }.getOrDefault(emptyList())
         val hit = cands.firstOrNull { Edostavka.matches(part, it.title) && it.per100 != null }
-        if (hit == null) { left += part; hints += cands.take(2); continue }
+        if (hit == null) { left += part; hints += cands.filter { Edostavka.score(part, it.title) > 0 }.take(2); continue }
         val low = part.lowercase()
         val grams = GRAMS.find(low)?.groupValues?.get(1)?.replace(',', '.')?.toDouble()
         val count = COUNT.find(low)?.groupValues?.get(1)?.replace(',', '.')?.toDouble()
-        items += FoodItem(hit.title, grams ?: ((hit.packGrams ?: 100.0) * (count ?: 1.0)), hit.per100!!, hit.url, "high")
+        val portion = if (count == null) condimentPortion(part) ?: condimentPortion(hit.title) else null
+        items += FoodItem(hit.title, grams ?: portion ?: ((hit.packGrams ?: 100.0) * (count ?: 1.0)), hit.per100!!, hit.url, "high")
     }
     return ShopResult(items, left, hints)
 }
