@@ -60,7 +60,14 @@ class Claude(apiKey: String, private val model: String, baseUrl: String = "") {
         }
 
     private fun call(b: MessageCreateParams.Builder): Message {
-        val m = try { client.messages().create(b.build()) } catch (e: Exception) {
+        val params = b.build()
+        runCatching {
+            val mapper = Class.forName("com.anthropic.core.ObjectMappers").getMethod("jsonMapper").invoke(null) as com.fasterxml.jackson.databind.ObjectMapper
+            val body = mapper.writeValueAsString(params._body())
+            val msgs = body.substringAfter("\"messages\":", "").take(400)
+            debug("→ ${MODE_NAMES[level]} · ${body.length} симв. · модель $model · messages: $msgs")
+        }
+        val m = try { client.messages().create(params) } catch (e: Exception) {
             debug("${MODE_NAMES[level]} · ОШИБКА ${(e as? AnthropicServiceException)?.statusCode() ?: ""}: ${e.message?.take(500)}")
             throw e
         }
@@ -80,6 +87,9 @@ class Claude(apiKey: String, private val model: String, baseUrl: String = "") {
         if (m.stopReason().orElse(null) == StopReason.REFUSAL) error("Claude отказался отвечать на запрос")
         return m
     }
+
+    /** Сообщение пользователя массивом блоков: строковый content некоторые посредники теряют. */
+    private fun MessageCreateParams.Builder.userText(t: String) = addUserMessageOfBlockParams(listOf(ContentBlockParam.ofText(t)))
 
     private fun text(m: Message) = m.content().mapNotNull { it.text().orElse(null)?.text() }.joinToString("\n").trim()
 
@@ -112,7 +122,8 @@ class Claude(apiKey: String, private val model: String, baseUrl: String = "") {
     private fun foodsAt(meal: String): List<FoodItem> {
         val web = level >= 2
         val loc = UserLocation.builder().city("Minsk").country("BY").timezone("Europe/Minsk").build()
-        val b = base(FOOD_SYSTEM, OutputConfig.Effort.LOW)
+        // текст еды дублируется в system: если посредник всё же потеряет сообщение, модель его увидит
+        val b = base(FOOD_SYSTEM + "\n\nЗапрос пользователя (что он съел): «$meal»", OutputConfig.Effort.LOW)
             .apply {
                 if (web && modernSearch) addTool(WebSearchTool20260209.builder().maxUses(MAX_SEARCHES).userLocation(loc).build())
                 else if (web) addTool(WebSearchTool20250305.builder().maxUses(MAX_SEARCHES).userLocation(loc).build())
@@ -121,7 +132,7 @@ class Claude(apiKey: String, private val model: String, baseUrl: String = "") {
                 else if (level >= 3) addTool(WebFetchTool20250910.builder().maxUses(MAX_FETCHES).maxContentTokens(FETCH_TOKENS).build())
             }
             .addTool(if (level > 0) REPORT_TOOL else REPORT_TOOL.toBuilder().strict(false).build())
-            .addUserMessage("Я съел: «$meal». Посчитай КБЖУ каждой позиции.")
+            .userText("Я съел: «$meal». Посчитай КБЖУ каждой позиции.")
         // Каждый повтор заново отправляет результаты поиска — поэтому не больше 3 запросов.
         var last = ""
         repeat(3) {
@@ -134,7 +145,9 @@ class Claude(apiKey: String, private val model: String, baseUrl: String = "") {
                     val k = 100.0 / it.grams
                     FoodItem(it.name, it.grams, Macro(it.kcal * k, it.protein * k, it.fat * k, it.carbs * k), it.source, it.confidence)
                 }
-                if (items.isNotEmpty()) return items
+                // заготовка вместо ответа («Пример позиции», «требуется запрос») = модель не увидела текст
+                val stub = items.any { it.name.startsWith("Пример") || it.source.contains("запрос пользователя") }
+                if (items.isNotEmpty() && !stub) return items
                 // пустой ответ: переспрашиваем с исходным текстом (ответ на tool_use обязателен)
                 b.addMessage(m).addUserMessageOfBlockParams(listOf(
                     ContentBlockParam.ofToolResult(ToolResultBlockParam.builder().toolUseId(tool.id())
@@ -148,7 +161,7 @@ class Claude(apiKey: String, private val model: String, baseUrl: String = "") {
             }
             b.addMessage(m) // pause_turn: сервер продолжит сам; end_turn без инструмента — напоминаем
             if (m.stopReason().orElse(null) != StopReason.PAUSE_TURN)
-                b.addUserMessage("Верни результат вызовом report_foods. Если точных данных нет — дай оценку, items не может быть пустым.")
+                b.userText("Верни результат вызовом report_foods. Если точных данных нет — дай оценку, items не может быть пустым.")
         }
         error("Модель не вернула результат" + last.takeIf { it.isNotBlank() }?.let { ": ${it.take(300)}" }.orEmpty())
     }
@@ -162,7 +175,7 @@ class Claude(apiKey: String, private val model: String, baseUrl: String = "") {
 
     private fun planDayAt(method: String, prompt: String, limit: Long): Pair<List<Pair<String, Int>>, String> {
         val b = base(method, OutputConfig.Effort.LOW).maxTokens(8000L)
-            .addTool(if (level > 0) PLAN_TOOL else PLAN_TOOL.toBuilder().strict(false).build()).addUserMessage(prompt)
+            .addTool(if (level > 0) PLAN_TOOL else PLAN_TOOL.toBuilder().strict(false).build()).userText(prompt)
         repeat(2) {
             if (used > limit) error("Остановлено: израсходовано $used токенов (лимит $limit)")
             val m = call(b)
@@ -172,7 +185,7 @@ class Claude(apiKey: String, private val model: String, baseUrl: String = "") {
                 return r.items.map { it.id to it.sets.coerceIn(1, 6) } to r.note
             }
             b.addMessage(m)
-            if (m.stopReason().orElse(null) != StopReason.PAUSE_TURN) b.addUserMessage("Верни план вызовом report_plan.")
+            if (m.stopReason().orElse(null) != StopReason.PAUSE_TURN) b.userText("Верни план вызовом report_plan.")
         }
         error("Модель не вернула план")
     }
@@ -183,7 +196,7 @@ class Claude(apiKey: String, private val model: String, baseUrl: String = "") {
     private fun analyzeAt(method: String, report: String, facts: String, note: String): String {
         val m = call(
             base(method, OutputConfig.Effort.MEDIUM)
-                .addUserMessage("Отчёт приложения:\n$report\n\nДанные (JSON):\n$facts\n\nКомментарий пользователя: ${note.ifBlank { "—" }}")
+                .userText("Отчёт приложения:\n$report\n\nДанные (JSON):\n$facts\n\nКомментарий пользователя: ${note.ifBlank { "—" }}")
         )
         return text(m).ifBlank { error("Пустой ответ модели") }
     }
@@ -195,7 +208,7 @@ class Claude(apiKey: String, private val model: String, baseUrl: String = "") {
 
     /** Минимальный запрос для проверки ключа/адреса/модели. */
     fun ping(): String {
-        val m = call(MessageCreateParams.builder().model(model).maxTokens(1024L).addUserMessage("Ответь одним словом: ок"))
+        val m = call(MessageCreateParams.builder().model(model).maxTokens(1024L).userText("Ответь одним словом: ок"))
         return text(m).ifBlank { "ок" } + " · модель ${m.model()}"
     }
 
