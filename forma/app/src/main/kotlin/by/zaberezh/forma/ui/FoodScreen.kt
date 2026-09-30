@@ -89,7 +89,7 @@ fun FoodScreen() {
                     else Secondary("Вручную", { draft = (draft ?: emptyList()) + FoodItem(text.ifBlank { "Продукт" }, 100.0, Macro()) })
                 }
                 Err(err); Note(info)
-                if (err != null) Buttons {
+                if (err != null || info != null) Buttons {
                     Flat("Скопировать отладку", { c.copy(Claude.debugText()) }, C.muted)
                     Flat("Сбросить режим API", { Claude.startLevel = 3; err = null }, C.muted)
                 }
