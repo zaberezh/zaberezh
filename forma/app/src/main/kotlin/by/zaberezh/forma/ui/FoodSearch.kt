@@ -42,7 +42,7 @@ object FoodSearch {
                 }
             }
             busy.value = false
-            val spent = ai?.used?.takeIf { it > 0 }?.let { "потрачено ~${"%,d".format(it).replace(',', ' ')} токенов" }
+            val spent = ai?.let { a -> a.used.takeIf { it > 0 }?.let { "режим: ${a.mode} · потрачено ~${"%,d".format(it).replace(',', ' ')} токенов" } }
             r.onSuccess { draft.value = (draft.value ?: emptyList()) + it; info.value = spent ?: "из библиотеки, без ИИ" }
                 .onFailure { err.value = Claude.explain(it) + (spent?.let { "\n$it" } ?: "") }
             if (!visible) Notify.post(app, 5, if (r.isSuccess) "КБЖУ посчитано" else "КБЖУ: ошибка",
