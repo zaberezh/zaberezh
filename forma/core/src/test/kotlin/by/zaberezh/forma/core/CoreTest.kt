@@ -126,6 +126,14 @@ class CoreTest {
         assertTrue(noLongRun(p.plan.toSet(), mon))
     }
 
+    @Test fun weighReminderTimes() {
+        val st = Settings()
+        val fri = mon.plusDays(4)
+        assertEquals(fri.atTime(7, 20), by.zaberezh.forma.core.body.nextWeighTime(st, fri.atTime(6, 0)))
+        assertEquals(mon.plusDays(5).atTime(11, 0), by.zaberezh.forma.core.body.nextWeighTime(st, fri.atTime(8, 0)))   // пт после 7:20 → сб 11:00
+        assertEquals(mon.plusDays(7).atTime(7, 20), by.zaberezh.forma.core.body.nextWeighTime(st, mon.plusDays(6).atTime(12, 0))) // вс днём → пн 7:20
+    }
+
     @Test fun doubleProgression() {
         val ex = prog.ex("bench")!! // 3x6-10, шаг 2.5
         assertNull(nextTarget(ex, emptyList()).weight)
