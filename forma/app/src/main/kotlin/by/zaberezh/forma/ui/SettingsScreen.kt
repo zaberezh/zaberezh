@@ -92,6 +92,7 @@ fun SettingsScreen() {
     var bedReminder by remember(st) { mutableStateOf(st.bedReminder) }
     var weekends by remember(st) { mutableStateOf(st.gymWeekends) }
     var weighOn by remember(st) { mutableStateOf(st.weighReminder) }
+    var supersets by remember(st) { mutableStateOf(st.supersets) }
     var url by remember(st) { mutableStateOf(st.apiUrl) }
     var model by remember(st) { mutableStateOf(st.model) }
     var msg by remember { mutableStateOf<String?>(null) }
@@ -122,7 +123,7 @@ fun SettingsScreen() {
             sessionsPerWeek = d("sessions", 3.0).toInt().coerceIn(1, 5), minVisitMin = d("visit", 75.0).toInt(),
             morningHour = d("hour", 8.0).toInt().coerceIn(0, 23), morningMinute = d("minute", 0.0).toInt().coerceIn(0, 59),
             checkupDays = d("checkup", 14.0).toInt().coerceIn(7, 60),
-            gymWeekends = weekends, weighReminder = weighOn,
+            gymWeekends = weekends, weighReminder = weighOn, supersets = supersets,
             weighHour = d("wH", 7.0).toInt().coerceIn(0, 23), weighMinute = d("wM", 20.0).toInt().coerceIn(0, 59),
             weighWeekendHour = d("weH", 11.0).toInt().coerceIn(0, 23), weighWeekendMinute = d("weM", 0.0).toInt().coerceIn(0, 59),
             apiKey = key.trim(), apiUrl = url.trim(), model = model.trim().ifEmpty { "claude-opus-5-5" },
@@ -157,6 +158,10 @@ fun SettingsScreen() {
                 Line {
                     Text("Выходные — тоже дни зала", Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
                     Switch(checked = weekends, onCheckedChange = { weekends = it })
+                }
+                Line {
+                    Text("Суперсеты: чередовать пары мышц (жим ↔ тяга, бицепс ↔ трицепс)", Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+                    Switch(checked = supersets, onCheckedChange = { supersets = it })
                 }
                 Primary("Сохранить", { saveAll(); msg = "Сохранено" }, Modifier.fillMaxWidth())
                 Note(msg)
