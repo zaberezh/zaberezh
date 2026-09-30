@@ -7,6 +7,7 @@ import by.zaberezh.forma.core.ai.Claude
 import by.zaberezh.forma.core.food.FoodItem
 import by.zaberezh.forma.core.food.Edostavka
 import by.zaberezh.forma.core.food.LibraryResolver
+import by.zaberezh.forma.core.food.WebHints
 import by.zaberezh.forma.core.food.shopResolve
 import by.zaberezh.forma.sys.Notify
 import kotlinx.coroutines.CoroutineScope
@@ -50,7 +51,11 @@ object FoodSearch {
                                 how = "с edostavka.by"; missing = "Не найдено: «$rest» — добавь вручную или задай API-ключ."
                             } else error("Не нашёл на edostavka.by, а API-ключ не задан (Настройки → Claude). Можно ввести КБЖУ вручную.")
                             // 2) остальное — Claude, с найденными страницами магазина как подсказкой
-                            else -> shop.items + Claude(st.apiKey, st.model, st.apiUrl).also { x -> ai = x }.foods(rest, shop.hints).also {
+                            else -> shop.items + Claude(st.apiKey, st.model, st.apiUrl).also { x -> ai = x }.foods(rest, shop.hints,
+                                // поиск калорийности в интернете прямо с телефона (у посредника веб-поиска может не быть)
+                                shop.unresolved.take(3).flatMap { part -> runCatching { WebHints.find(part) }.getOrDefault(emptyList()).take(4) }
+                                    .also { Claude.debug("интернет: найдено строк ${it.size}") },
+                            ).also {
                                 how = if (shop.items.isEmpty()) "Claude" else "${shop.items.size} с edostavka.by + Claude"
                             }
                         }

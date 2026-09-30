@@ -107,6 +107,7 @@ class Claude(apiKey: String, private val model: String, baseUrl: String = "") {
     private fun <T> withFallback(web: Boolean = true, block: () -> T): T {
         while (true) {
             try { return block() } catch (e: Exception) {
+                if (e is NoWebTools) { level = 1; startLevel = 1; debug("веб-поиск посредника не работает → без него"); continue }
                 if (!unsupported(e) || level == 0) throw e
                 // 4xx — провайдер точно не умеет: запоминаем. 5xx может быть разовым сбоем — упрощаем только этот запрос.
                 val permanent = (e as AnthropicServiceException).statusCode() in 400..499
@@ -119,15 +120,21 @@ class Claude(apiKey: String, private val model: String, baseUrl: String = "") {
     val mode: String get() = MODE_NAMES[level]
 
     /** [hints] — страницы магазина, найденные приложением: модель берёт цифры оттуда, если это тот продукт. */
-    fun foods(meal: String, hints: List<ShopPage> = emptyList()): List<FoodItem> = withFallback { foodsAt(meal, hints) }
+    fun foods(meal: String, hints: List<ShopPage> = emptyList(), web: List<String> = emptyList()): List<FoodItem> =
+        withFallback { foodsAt(meal, hints, web) }
 
-    private fun foodsAt(meal: String, hints: List<ShopPage>): List<FoodItem> {
+    /** Посредник не выполняет серверный веб-поиск (модель вызвала поиск, а результатов нет). */
+    private class NoWebTools : RuntimeException("посредник не поддерживает веб-поиск")
+
+    private fun foodsAt(meal: String, hints: List<ShopPage>, webHints: List<String>): List<FoodItem> {
         val web = level >= 2
         val loc = UserLocation.builder().city("Minsk").country("BY").timezone("Europe/Minsk").build()
         // текст еды дублируется в system: если посредник всё же потеряет сообщение, модель его увидит
         val hintText = if (hints.isEmpty()) "" else "\n\nСтраницы edostavka.by, найденные приложением (если это тот продукт — бери цифры отсюда, source = url):\n" +
             hints.joinToString("\n") { "${it.url} | ${it.title} | ${it.snippet.take(220)}" }
-        val b = base(FOOD_SYSTEM + "\n\nЗапрос пользователя (что он съел): «$meal»" + hintText, OutputConfig.Effort.LOW)
+        val webText = if (webHints.isEmpty()) "" else "\n\nНайдено в интернете приложением (выдача поисковика, используй, если подходит):\n" +
+            webHints.joinToString("\n") { "— ${it.take(300)}" }
+        val b = base(FOOD_SYSTEM + "\n\nЗапрос пользователя (что он съел): «$meal»" + hintText + webText, OutputConfig.Effort.LOW)
             .apply {
                 if (web && modernSearch) addTool(WebSearchTool20260209.builder().maxUses(MAX_SEARCHES).userLocation(loc).build())
                 else if (web) addTool(WebSearchTool20250305.builder().maxUses(MAX_SEARCHES).userLocation(loc).build())
@@ -143,6 +150,9 @@ class Claude(apiKey: String, private val model: String, baseUrl: String = "") {
             val m = call(b)
             last = text(m)
             val tool = m.content().firstNotNullOfOrNull { it.toolUse().orElse(null)?.takeIf { t -> t.name() == "report_foods" } }
+            // модель пошла искать, а посредник поиск не выполнил → дальше без серверного веб-поиска
+            if (tool == null && web && m.content().any { it.isServerToolUse() } &&
+                m.content().none { it.isWebSearchToolResult() || it.isWebFetchToolResult() }) throw NoWebTools()
             if (tool != null) {
                 val r = LENIENT.decodeFromJsonElement(FoodReport.serializer(), toJson(tool._input().convert(Map::class.java)))
                 val items = r.items.filter { it.grams > 0 && it.kcal >= 0 }.map {
@@ -167,6 +177,7 @@ class Claude(apiKey: String, private val model: String, baseUrl: String = "") {
             if (m.stopReason().orElse(null) != StopReason.PAUSE_TURN)
                 b.userText("Верни результат вызовом report_foods. Если точных данных нет — дай оценку, items не может быть пустым.")
         }
+        if (web) throw NoWebTools() // 3 попытки с поиском впустую — пробуем без него
         error("Модель не вернула результат" + last.takeIf { it.isNotBlank() }?.let { ": ${it.take(300)}" }.orEmpty())
     }
 
@@ -286,7 +297,13 @@ class Claude(apiKey: String, private val model: String, baseUrl: String = "") {
               Не нашёл точного — оцени и честно пометь.
             - source: адрес страницы, откуда взяты цифры, или «оценка: …» с кратким обоснованием.
             - confidence: high — цифры со страницы именно этого товара/блюда; medium — близкий аналог; low — оценка.
-            - Если количество не указано — масса упаковки/стандартной порции. Напитки тоже позиции.
+            - Если количество не указано — масса стандартной порции блюда; для магазинного продукта «целиком» (йогурт, батончик) — упаковка.
+              Напитки тоже позиции.
+            - Добавки к блюду считаются ПОРЦИЕЙ, а не упаковкой, если не сказано иное: соус/кетчуп/майонез 20 г,
+              сметана 30 г, варенье/джем 20 г, мёд 15 г, сыр 20 г (ломтик), сливочное масло 10 г, сгущёнка 20 г, сахар 5 г (ложка).
+              Соус к блюду — отдельной позицией.
+            - Фастфуд (хот-дог, шаурма, бургер) без указания заведения — типичная порция: состав по словам пользователя
+              («без ничего» = только булка и сосиска), оценка по стандартным компонентам.
             - items никогда не бывает пустым.
             Результат верни только вызовом инструмента report_foods, без текста.
         """.trimIndent()
