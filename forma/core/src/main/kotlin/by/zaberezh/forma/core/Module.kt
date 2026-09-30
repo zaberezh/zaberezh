@@ -41,6 +41,9 @@ data class Settings(
     val minVisitMin: Int = 75,
     val morningHour: Int = 8,
     val morningMinute: Int = 0,
+    val weighReminder: Boolean = true,  // напоминание взвеситься
+    val weighHour: Int = 7, val weighMinute: Int = 20,               // будни
+    val weighWeekendHour: Int = 11, val weighWeekendMinute: Int = 0, // выходные
     val checkupDays: Int = 14,
     val apiKey: String = "",
     val model: String = "claude-opus-5-5",

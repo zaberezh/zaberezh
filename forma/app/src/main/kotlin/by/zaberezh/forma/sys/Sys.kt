@@ -80,6 +80,7 @@ class BootReceiver : BroadcastReceiver() {
     override fun onReceive(c: Context, i: Intent) {
         Morning.schedule(c)
         Evening.schedule(c)
+        Weigh.schedule(c)
         Geo.register(c) // геозоны сбрасываются после перезагрузки
     }
 }

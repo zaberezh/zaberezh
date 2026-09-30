@@ -56,6 +56,17 @@ fun trendWeight(s: Store, to: LocalDate): Double? {
     return ema
 }
 
+/** Ближайшее время напоминания взвеситься: будни и выходные — своё время. */
+fun nextWeighTime(st: by.zaberezh.forma.core.Settings, now: java.time.LocalDateTime): java.time.LocalDateTime {
+    for (i in 0L..7L) {
+        val d = now.toLocalDate().plusDays(i)
+        val weekend = d.dayOfWeek.value >= 6
+        val t = if (weekend) d.atTime(st.weighWeekendHour, st.weighWeekendMinute) else d.atTime(st.weighHour, st.weighMinute)
+        if (t.isAfter(now)) return t
+    }
+    return now.plusDays(1)
+}
+
 /** % жира по формуле ВМС США (мужчины): талия, шея, рост в см. */
 fun navyBodyFat(waist: Double, neck: Double, height: Double): Double? =
     if (neck <= 0 || waist <= neck) null else 495 / (1.0324 - 0.19077 * log10(waist - neck) + 0.15456 * log10(height)) - 450
@@ -69,11 +80,9 @@ object BodyModule : Module {
     override fun morning(ctx: Ctx): List<String> {
         val out = mutableListOf<String>()
         val s = ctx.store
-        val lastW = WEIGHT.all(s).lastOrNull()
-        if (lastW != null && lastW.first.day != ctx.today) out += "Взвешивание: натощак, после туалета"
         val lm = lastMeasure(s)?.first?.day
         val days = lm?.let { ChronoUnit.DAYS.between(it, ctx.today) }
-        if (days == null || days >= 28) out += "Замеры + фото: " + (days?.let { "прошло $it дн." } ?: "ещё не делались")
+        if (days == null || days >= 28) out += "Замеры: " + (days?.let { "прошло $it дн." } ?: "ещё не делались")
         return out
     }
 

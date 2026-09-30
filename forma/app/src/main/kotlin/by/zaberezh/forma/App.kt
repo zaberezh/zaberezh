@@ -7,6 +7,7 @@ import by.zaberezh.forma.data.SqlStore
 import by.zaberezh.forma.sys.Evening
 import by.zaberezh.forma.sys.Geo
 import by.zaberezh.forma.sys.Morning
+import by.zaberezh.forma.sys.Weigh
 import by.zaberezh.forma.sys.Notify
 
 object Forma {
@@ -22,6 +23,7 @@ class App : Application() {
         Notify.channels(this)
         Morning.schedule(this)
         Evening.schedule(this)
+        Weigh.schedule(this)
         Geo.register(this)
     }
 }

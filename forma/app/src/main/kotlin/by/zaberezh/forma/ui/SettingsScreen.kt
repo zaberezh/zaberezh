@@ -37,6 +37,7 @@ import by.zaberezh.forma.core.ai.Claude
 import by.zaberezh.forma.core.r1
 import by.zaberezh.forma.sys.Evening
 import by.zaberezh.forma.sys.Geo
+import by.zaberezh.forma.sys.Weigh
 import by.zaberezh.forma.sys.SleepSync
 import by.zaberezh.forma.sys.Morning
 import by.zaberezh.forma.sys.granted
@@ -60,6 +61,10 @@ private val ROUTINE = listOf(
     F("hour", "Уведомление", "ч"), F("minute", "Минуты", "мин"),
     F("checkup", "Чекап каждые", "дн"),
 )
+private val WEIGH = listOf(
+    F("wH", "Взвеситься, будни", "ч"), F("wM", "Будни", "мин"),
+    F("weH", "Выходные", "ч"), F("weM", "Выходные", "мин"),
+)
 private val SLEEP = listOf(F("sleepH", "Цель сна", "ч"), F("wakeH", "Подъём", "ч"), F("wakeM", "Подъём", "мин"))
 
 @SuppressLint("MissingPermission")
@@ -78,12 +83,15 @@ fun SettingsScreen() {
             "gain" to p.gainKgPerWeek.toString(), "protein" to p.proteinPerKg.toString(), "fat" to p.fatShare.toString(),
             "kcal" to (st.kcalOverride?.toString() ?: ""), "sessions" to st.sessionsPerWeek.toString(), "visit" to st.minVisitMin.toString(),
             "hour" to st.morningHour.toString(), "minute" to "%02d".format(st.morningMinute), "checkup" to st.checkupDays.toString(),
+            "wH" to st.weighHour.toString(), "wM" to "%02d".format(st.weighMinute),
+            "weH" to st.weighWeekendHour.toString(), "weM" to "%02d".format(st.weighWeekendMinute),
             "sleepH" to st.sleepTargetH.r1(), "wakeH" to st.wakeHour.toString(), "wakeM" to "%02d".format(st.wakeMinute),
         )
     }
     var key by remember(st) { mutableStateOf(st.apiKey) }
     var bedReminder by remember(st) { mutableStateOf(st.bedReminder) }
     var weekends by remember(st) { mutableStateOf(st.gymWeekends) }
+    var weighOn by remember(st) { mutableStateOf(st.weighReminder) }
     var url by remember(st) { mutableStateOf(st.apiUrl) }
     var model by remember(st) { mutableStateOf(st.model) }
     var msg by remember { mutableStateOf<String?>(null) }
@@ -114,11 +122,14 @@ fun SettingsScreen() {
             sessionsPerWeek = d("sessions", 3.0).toInt().coerceIn(1, 5), minVisitMin = d("visit", 75.0).toInt(),
             morningHour = d("hour", 8.0).toInt().coerceIn(0, 23), morningMinute = d("minute", 0.0).toInt().coerceIn(0, 59),
             checkupDays = d("checkup", 14.0).toInt().coerceIn(7, 60),
-            gymWeekends = weekends,
+            gymWeekends = weekends, weighReminder = weighOn,
+            weighHour = d("wH", 7.0).toInt().coerceIn(0, 23), weighMinute = d("wM", 20.0).toInt().coerceIn(0, 59),
+            weighWeekendHour = d("weH", 11.0).toInt().coerceIn(0, 23), weighWeekendMinute = d("weM", 0.0).toInt().coerceIn(0, 59),
             apiKey = key.trim(), apiUrl = url.trim(), model = model.trim().ifEmpty { "claude-opus-5-5" },
         ))
         Morning.schedule(c)
         Evening.schedule(c)
+        Weigh.schedule(c)
     }
 
     @Composable
@@ -138,6 +149,11 @@ fun SettingsScreen() {
         item {
             Block("Режим") {
                 grid(ROUTINE)
+                Line {
+                    Text("Напоминание взвеситься", Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+                    Switch(checked = weighOn, onCheckedChange = { weighOn = it })
+                }
+                grid(WEIGH)
                 Line {
                     Text("Выходные — тоже дни зала", Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
                     Switch(checked = weekends, onCheckedChange = { weekends = it })
@@ -240,7 +256,7 @@ fun SettingsScreen() {
                     Primary("Экспорт", { export.launch("forma-${ctx.today}.json") }, Modifier.weight(1f))
                     Secondary("Импорт", { importer.launch(arrayOf("application/json", "*/*")) }, Modifier.weight(1f))
                 }
-                Muted("Все данные хранятся только на телефоне. Экспорт — резервная копия без фото и без API-ключа.")
+                Muted("Все данные хранятся только на телефоне. Экспорт — резервная копия без API-ключа.")
             }
         }
     }
