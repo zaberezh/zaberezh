@@ -5,7 +5,9 @@ import androidx.compose.runtime.mutableStateOf
 import by.zaberezh.forma.core.Ctx
 import by.zaberezh.forma.core.ai.Claude
 import by.zaberezh.forma.core.food.FoodItem
+import by.zaberezh.forma.core.food.Edostavka
 import by.zaberezh.forma.core.food.LibraryResolver
+import by.zaberezh.forma.core.food.shopResolve
 import by.zaberezh.forma.sys.Notify
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -34,17 +36,31 @@ object FoodSearch {
         scope.launch {
             val st = ctx.settings
             var ai: Claude? = null
+            var how = ""
+            var missing: String? = null
             val r = withContext(Dispatchers.IO) {
                 runCatching {
-                    LibraryResolver(ctx.store).resolve(q)
-                        ?: st.apiKey.takeIf { it.isNotBlank() }?.let { Claude(it, st.model, st.apiUrl).also { x -> ai = x }.foods(q) }
-                        ?: error("Нет в библиотеке, а API-ключ не задан (Настройки → Claude). Можно ввести КБЖУ вручную.")
+                    LibraryResolver(ctx.store).resolve(q)?.also { how = "из своей библиотеки, без ИИ" } ?: run {
+                        // 1) магазинные продукты — прямо с edostavka.by (точно и бесплатно)
+                        val shop = shopResolve(q, Edostavka(log = { Claude.debug("Едоставка: $it") }))
+                        val rest = shop.unresolved.joinToString(", ")
+                        when {
+                            rest.isEmpty() -> shop.items.also { how = "с edostavka.by, без ИИ" }
+                            st.apiKey.isBlank() -> if (shop.items.isNotEmpty()) shop.items.also {
+                                how = "с edostavka.by"; missing = "Не найдено: «$rest» — добавь вручную или задай API-ключ."
+                            } else error("Не нашёл на edostavka.by, а API-ключ не задан (Настройки → Claude). Можно ввести КБЖУ вручную.")
+                            // 2) остальное — Claude, с найденными страницами магазина как подсказкой
+                            else -> shop.items + Claude(st.apiKey, st.model, st.apiUrl).also { x -> ai = x }.foods(rest, shop.hints).also {
+                                how = if (shop.items.isEmpty()) "Claude" else "${shop.items.size} с edostavka.by + Claude"
+                            }
+                        }
+                    }
                 }
             }
             busy.value = false
-            val spent = ai?.let { a -> a.used.takeIf { it > 0 }?.let { "режим: ${a.mode} · потрачено ~${"%,d".format(it).replace(',', ' ')} токенов" } }
-            r.onSuccess { draft.value = (draft.value ?: emptyList()) + it; info.value = spent ?: "из библиотеки, без ИИ" }
-                .onFailure { err.value = Claude.explain(it) + (spent?.let { "\n$it" } ?: "") }
+            val spent = ai?.let { a -> a.used.takeIf { it > 0 }?.let { " · режим: ${a.mode} · ~${"%,d".format(it).replace(',', ' ')} токенов" } } ?: ""
+            r.onSuccess { draft.value = (draft.value ?: emptyList()) + it; info.value = how + spent; err.value = missing }
+                .onFailure { err.value = Claude.explain(it) + spent }
             if (!visible) Notify.post(app, 5, if (r.isSuccess) "КБЖУ посчитано" else "КБЖУ: ошибка",
                 listOf(if (r.isSuccess) "«$q» — проверь и сохрани во вкладке «Еда»" else (err.value ?: "")))
         }
