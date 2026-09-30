@@ -15,7 +15,9 @@ import com.anthropic.errors.NotFoundException
 import com.anthropic.errors.PermissionDeniedException
 import com.anthropic.errors.RateLimitException
 import com.anthropic.errors.UnauthorizedException
+import com.anthropic.models.messages.ContentBlockParam
 import com.anthropic.models.messages.Message
+import com.anthropic.models.messages.ToolResultBlockParam
 import com.anthropic.models.messages.MessageCreateParams
 import com.anthropic.models.messages.OutputConfig
 import com.anthropic.models.messages.StopReason
@@ -58,8 +60,23 @@ class Claude(apiKey: String, private val model: String, baseUrl: String = "") {
         }
 
     private fun call(b: MessageCreateParams.Builder): Message {
-        val m = client.messages().create(b.build())
+        val m = try { client.messages().create(b.build()) } catch (e: Exception) {
+            debug("${MODE_NAMES[level]} · ОШИБКА ${(e as? AnthropicServiceException)?.statusCode() ?: ""}: ${e.message?.take(500)}")
+            throw e
+        }
         runCatching { used += m.usage().inputTokens() + m.usage().outputTokens() }
+        runCatching {
+            debug("${MODE_NAMES[level]} · stop=${m.stopReason().orElse(null)} · вход ${m.usage().inputTokens()} / выход ${m.usage().outputTokens()} · " +
+                m.content().joinToString(", ") { b -> when {
+                    b.isText() -> "text«${b.asText().text().take(200)}»"
+                    b.isToolUse() -> "tool ${b.asToolUse().name()} ${b.asToolUse()._input().toString().take(300)}"
+                    b.isServerToolUse() -> "server_tool"
+                    b.isWebSearchToolResult() -> "search_result"
+                    b.isWebFetchToolResult() -> "fetch_result"
+                    b.isThinking() -> "thinking"
+                    else -> "other"
+                } })
+        }
         if (m.stopReason().orElse(null) == StopReason.REFUSAL) error("Claude отказался отвечать на запрос")
         return m
     }
@@ -78,12 +95,17 @@ class Claude(apiKey: String, private val model: String, baseUrl: String = "") {
     /** Выполнить с понижением уровня при «не умеет»; найденный рабочий уровень запоминается до перезапуска. */
     private fun <T> withFallback(web: Boolean = true, block: () -> T): T {
         while (true) {
-            try { return block().also { if (web) startLevel = level } } catch (e: Exception) {
+            try { return block() } catch (e: Exception) {
                 if (!unsupported(e) || level == 0) throw e
-                if (web) { level--; startLevel = level } else level = 0 // без веб-инструментов упрощать нечего, кроме режима совместимости
+                // 4xx — провайдер точно не умеет: запоминаем. 5xx может быть разовым сбоем — упрощаем только этот запрос.
+                val permanent = (e as AnthropicServiceException).statusCode() in 400..499
+                if (web) { level--; if (permanent) startLevel = level } else level = 0
             }
         }
     }
+
+    /** Режим последнего запроса — показываем пользователю. */
+    val mode: String get() = MODE_NAMES[level]
 
     fun foods(meal: String): List<FoodItem> = withFallback { foodsAt(meal) }
 
@@ -99,7 +121,7 @@ class Claude(apiKey: String, private val model: String, baseUrl: String = "") {
                 else if (level >= 3) addTool(WebFetchTool20250910.builder().maxUses(MAX_FETCHES).maxContentTokens(FETCH_TOKENS).build())
             }
             .addTool(if (level > 0) REPORT_TOOL else REPORT_TOOL.toBuilder().strict(false).build())
-            .addUserMessage(meal)
+            .addUserMessage("Я съел: «$meal». Посчитай КБЖУ каждой позиции.")
         // Каждый повтор заново отправляет результаты поиска — поэтому не больше 3 запросов.
         var last = ""
         repeat(3) {
@@ -112,8 +134,17 @@ class Claude(apiKey: String, private val model: String, baseUrl: String = "") {
                     val k = 100.0 / it.grams
                     FoodItem(it.name, it.grams, Macro(it.kcal * k, it.protein * k, it.fat * k, it.carbs * k), it.source, it.confidence)
                 }
-                if (items.isEmpty()) error("Модель не вернула ни одной позиции" + r.note.takeIf { it.isNotBlank() }?.let { ": $it" }.orEmpty())
-                return items
+                if (items.isNotEmpty()) return items
+                // пустой ответ: переспрашиваем с исходным текстом (ответ на tool_use обязателен)
+                b.addMessage(m).addUserMessageOfBlockParams(listOf(
+                    ContentBlockParam.ofToolResult(ToolResultBlockParam.builder().toolUseId(tool.id())
+                        .content("Пусто — так нельзя.").isError(true).build()),
+                    ContentBlockParam.ofText("Текст пользователя: «$meal». Это название продукта/блюда (возможно бренд). " +
+                        (if (web) "Найди его КБЖУ в интернете (e-dostavka.by, сайт производителя)" else "Определи продукт по названию") +
+                        " и верни через report_foods; если точно не найти — дай оценку по похожему продукту с confidence=low."),
+                ))
+                last = r.note
+                return@repeat
             }
             b.addMessage(m) // pause_turn: сервер продолжит сам; end_turn без инструмента — напоминаем
             if (m.stopReason().orElse(null) != StopReason.PAUSE_TURN)
@@ -183,6 +214,12 @@ class Claude(apiKey: String, private val model: String, baseUrl: String = "") {
          * 0 — режим совместимости (без effort и строгих схем). Стартуем с последнего рабочего.
          */
         @Volatile var startLevel = 3
+        val MODE_NAMES = listOf("совместимость", "без интернета", "поиск", "поиск + страницы")
+
+        /** Журнал последних ответов API — кнопка «Скопировать отладку». */
+        private val log = ArrayDeque<String>()
+        @Synchronized fun debug(line: String) { log.addLast(line); while (log.size > 12) log.removeFirst() }
+        @Synchronized fun debugText(): String = "Forma отладка API\n" + log.joinToString("\n")
 
         const val MAX_SEARCHES = 5L
         const val MAX_FETCHES = 3L
