@@ -30,7 +30,7 @@ import kotlinx.serialization.Serializable
 /** Тонкая обёртка над Claude API: поиск КБЖУ (веб-поиск) и разбор чекапа. */
 class Claude(apiKey: String, private val model: String, baseUrl: String = "") {
     private val official = baseUrl.isBlank() || "api.anthropic.com" in baseUrl
-    private val client: AnthropicClient = AnthropicOkHttpClient.builder().apiKey(apiKey).apply {
+    private val client: AnthropicClient = AnthropicOkHttpClient.builder().apiKey(apiKey).maxRetries(1).apply {
         // посредники принимают ключ либо в x-api-key, либо в Authorization: Bearer — шлём оба
         if (!official) baseUrl(baseUrl.trim().trimEnd('/').removeSuffix("/v1")).authToken(apiKey)
     }.build()
@@ -48,7 +48,8 @@ class Claude(apiKey: String, private val model: String, baseUrl: String = "") {
         .maxTokens(16000L)
         .system(system)
         .apply {
-            if (!haiku) outputConfig(OutputConfig.builder().effort(effort).build()) // Haiku не поддерживает effort
+            // Haiku не поддерживает effort; в режиме совместимости не шлём ничего необязательного
+            if (!haiku && level > 0) outputConfig(OutputConfig.builder().effort(effort).build())
             // Серверный fallback при отказе классификатора (поддерживается новыми моделями).
             if (official && model in FALLBACK_MODELS) {
                 putAdditionalHeader("anthropic-beta", "server-side-fallback-2026-07-01")
@@ -67,28 +68,37 @@ class Claude(apiKey: String, private val model: String, baseUrl: String = "") {
 
     /** Разбор приёма пищи в позиции с КБЖУ. Для заведений Минска ищет данные в интернете. */
     /** Уровни: 2 = поиск + открытие страниц (точные КБЖУ с карточек товаров), 1 = только поиск, 0 = без интернета. */
-    fun foods(meal: String): List<FoodItem> {
-        var level = 2
+    /** Текущий уровень возможностей провайдера (см. [startLevel]). */
+    private var level = startLevel
+
+    /** Ошибка «провайдер не умеет»: запрос отклонён или сбой на стороне посредника (не ключ, не права, не лимит). */
+    private fun unsupported(e: Throwable) =
+        e is AnthropicServiceException && e.statusCode() !in setOf(401, 403, 429)
+
+    /** Выполнить с понижением уровня при «не умеет»; найденный рабочий уровень запоминается до перезапуска. */
+    private fun <T> withFallback(web: Boolean = true, block: () -> T): T {
         while (true) {
-            try { return foods(meal, level) } catch (e: BadRequestException) {
-                if (level == 0) throw e
-                level-- // посредник не поддерживает инструмент — пробуем проще
+            try { return block().also { if (web) startLevel = level } } catch (e: Exception) {
+                if (!unsupported(e) || level == 0) throw e
+                if (web) { level--; startLevel = level } else level = 0 // без веб-инструментов упрощать нечего, кроме режима совместимости
             }
         }
     }
 
-    private fun foods(meal: String, level: Int): List<FoodItem> {
-        val web = level >= 1
+    fun foods(meal: String): List<FoodItem> = withFallback { foodsAt(meal) }
+
+    private fun foodsAt(meal: String): List<FoodItem> {
+        val web = level >= 2
         val loc = UserLocation.builder().city("Minsk").country("BY").timezone("Europe/Minsk").build()
         val b = base(FOOD_SYSTEM, OutputConfig.Effort.LOW)
             .apply {
                 if (web && modernSearch) addTool(WebSearchTool20260209.builder().maxUses(MAX_SEARCHES).userLocation(loc).build())
                 else if (web) addTool(WebSearchTool20250305.builder().maxUses(MAX_SEARCHES).userLocation(loc).build())
                 // открыть карточку товара/меню — точные цифры вместо средних; объём страницы ограничен
-                if (level >= 2 && modernSearch) addTool(WebFetchTool20260209.builder().maxUses(MAX_FETCHES).maxContentTokens(FETCH_TOKENS).build())
-                else if (level >= 2) addTool(WebFetchTool20250910.builder().maxUses(MAX_FETCHES).maxContentTokens(FETCH_TOKENS).build())
+                if (level >= 3 && modernSearch) addTool(WebFetchTool20260209.builder().maxUses(MAX_FETCHES).maxContentTokens(FETCH_TOKENS).build())
+                else if (level >= 3) addTool(WebFetchTool20250910.builder().maxUses(MAX_FETCHES).maxContentTokens(FETCH_TOKENS).build())
             }
-            .addTool(REPORT_TOOL)
+            .addTool(if (level > 0) REPORT_TOOL else REPORT_TOOL.toBuilder().strict(false).build())
             .addUserMessage(meal)
         // Каждый повтор заново отправляет результаты поиска — поэтому не больше 3 запросов.
         var last = ""
@@ -116,8 +126,12 @@ class Claude(apiKey: String, private val model: String, baseUrl: String = "") {
      * План тренировки на день. Один-два запроса без веб-поиска, ответ ограничен 8000 токенами.
      * [limit] — потолок токенов на весь вызов: при превышении останавливаемся.
      */
-    fun planDay(method: String, prompt: String, limit: Long = 200_000): Pair<List<Pair<String, Int>>, String> {
-        val b = base(method, OutputConfig.Effort.LOW).maxTokens(8000L).addTool(PLAN_TOOL).addUserMessage(prompt)
+    fun planDay(method: String, prompt: String, limit: Long = 200_000): Pair<List<Pair<String, Int>>, String> =
+        withFallback(web = false) { planDayAt(method, prompt, limit) }
+
+    private fun planDayAt(method: String, prompt: String, limit: Long): Pair<List<Pair<String, Int>>, String> {
+        val b = base(method, OutputConfig.Effort.LOW).maxTokens(8000L)
+            .addTool(if (level > 0) PLAN_TOOL else PLAN_TOOL.toBuilder().strict(false).build()).addUserMessage(prompt)
         repeat(2) {
             if (used > limit) error("Остановлено: израсходовано $used токенов (лимит $limit)")
             val m = call(b)
@@ -133,7 +147,9 @@ class Claude(apiKey: String, private val model: String, baseUrl: String = "") {
     }
 
     /** Анализ чекапа по методике. */
-    fun analyze(method: String, report: String, facts: String, note: String): String {
+    fun analyze(method: String, report: String, facts: String, note: String): String = withFallback(web = false) { analyzeAt(method, report, facts, note) }
+
+    private fun analyzeAt(method: String, report: String, facts: String, note: String): String {
         val m = call(
             base(method, OutputConfig.Effort.MEDIUM)
                 .addUserMessage("Отчёт приложения:\n$report\n\nДанные (JSON):\n$facts\n\nКомментарий пользователя: ${note.ifBlank { "—" }}")
@@ -162,6 +178,12 @@ class Claude(apiKey: String, private val model: String, baseUrl: String = "") {
     )
 
     companion object {
+        /**
+         * Уровни: 3 — поиск + открытие страниц, 2 — только поиск, 1 — без интернета,
+         * 0 — режим совместимости (без effort и строгих схем). Стартуем с последнего рабочего.
+         */
+        @Volatile var startLevel = 3
+
         const val MAX_SEARCHES = 5L
         const val MAX_FETCHES = 3L
         const val FETCH_TOKENS = 4000L   // КБЖУ на страницах товара/продукта — в начале, больше не нужно
@@ -181,7 +203,9 @@ class Claude(apiKey: String, private val model: String, baseUrl: String = "") {
             is NotFoundException -> "Не найдено (404): неверный адрес API или модель недоступна у этого провайдера."
             is RateLimitException -> "Лимит запросов/баланс (429). Подожди или пополни баланс."
             is BadRequestException -> "Запрос отклонён (400): ${e.message?.take(200)}"
-            is AnthropicServiceException -> "Ошибка сервера ${e.statusCode()}: ${e.message?.take(200)}"
+            is AnthropicServiceException -> if (e.statusCode() >= 500)
+                "Ошибка провайдера ${e.statusCode()}: сбой у посредника или он не поддерживает запрос даже в простом режиме. ${e.message?.take(200)}"
+            else "Ошибка сервера ${e.statusCode()}: ${e.message?.take(200)}"
             is AnthropicIoException -> "Нет связи с API: проверь интернет/VPN и адрес."
             else -> e.message ?: e.toString()
         }
