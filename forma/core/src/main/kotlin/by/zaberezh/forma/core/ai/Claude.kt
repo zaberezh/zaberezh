@@ -3,6 +3,7 @@ package by.zaberezh.forma.core.ai
 import by.zaberezh.forma.core.food.FoodItem
 import by.zaberezh.forma.core.food.FoodResolver
 import by.zaberezh.forma.core.food.Macro
+import by.zaberezh.forma.core.food.ShopPage
 import by.zaberezh.forma.core.report.toJson
 import by.zaberezh.forma.core.store.JSON
 import com.anthropic.client.AnthropicClient
@@ -117,13 +118,16 @@ class Claude(apiKey: String, private val model: String, baseUrl: String = "") {
     /** Режим последнего запроса — показываем пользователю. */
     val mode: String get() = MODE_NAMES[level]
 
-    fun foods(meal: String): List<FoodItem> = withFallback { foodsAt(meal) }
+    /** [hints] — страницы магазина, найденные приложением: модель берёт цифры оттуда, если это тот продукт. */
+    fun foods(meal: String, hints: List<ShopPage> = emptyList()): List<FoodItem> = withFallback { foodsAt(meal, hints) }
 
-    private fun foodsAt(meal: String): List<FoodItem> {
+    private fun foodsAt(meal: String, hints: List<ShopPage>): List<FoodItem> {
         val web = level >= 2
         val loc = UserLocation.builder().city("Minsk").country("BY").timezone("Europe/Minsk").build()
         // текст еды дублируется в system: если посредник всё же потеряет сообщение, модель его увидит
-        val b = base(FOOD_SYSTEM + "\n\nЗапрос пользователя (что он съел): «$meal»", OutputConfig.Effort.LOW)
+        val hintText = if (hints.isEmpty()) "" else "\n\nСтраницы edostavka.by, найденные приложением (если это тот продукт — бери цифры отсюда, source = url):\n" +
+            hints.joinToString("\n") { "${it.url} | ${it.title} | ${it.snippet.take(220)}" }
+        val b = base(FOOD_SYSTEM + "\n\nЗапрос пользователя (что он съел): «$meal»" + hintText, OutputConfig.Effort.LOW)
             .apply {
                 if (web && modernSearch) addTool(WebSearchTool20260209.builder().maxUses(MAX_SEARCHES).userLocation(loc).build())
                 else if (web) addTool(WebSearchTool20250305.builder().maxUses(MAX_SEARCHES).userLocation(loc).build())
