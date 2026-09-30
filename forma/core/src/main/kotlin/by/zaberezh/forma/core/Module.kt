@@ -38,7 +38,7 @@ data class Settings(
     ),
     val sessionsPerWeek: Int = 3,
     val gymWeekends: Boolean = true,    // выходные тоже могут быть днями зала
-    val supersets: Boolean = true,      // чередовать пары мышц (агонист–антагонист)
+    val supersets: Boolean = false,     // суперсеты не используются (решение пользователя)
     val minVisitMin: Int = 75,
     val morningHour: Int = 8,
     val morningMinute: Int = 0,
@@ -76,6 +76,7 @@ fun migrateSettings(store: Store) {
         if (store.kvGet(PROGRAM.key)?.contains("черновик") == true) store.kvPut(PROGRAM.key, null)
         st = st.copy(schema = 3)
     }
+    if (st.schema < 4) st = st.copy(supersets = false, schema = 4) // v4: суперсеты выключены
     SETTINGS.set(store, st)
 }
 
