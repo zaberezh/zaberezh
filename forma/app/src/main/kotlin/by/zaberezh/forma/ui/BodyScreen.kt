@@ -33,9 +33,6 @@ import by.zaberezh.forma.core.body.BodyModule
 import by.zaberezh.forma.core.body.MEASURE
 import by.zaberezh.forma.core.body.MEASURE_FIELDS
 import by.zaberezh.forma.core.body.Measure
-import by.zaberezh.forma.core.body.PHOTO
-import by.zaberezh.forma.core.body.POSES
-import by.zaberezh.forma.core.body.Photo
 import by.zaberezh.forma.core.body.WEIGHT
 import by.zaberezh.forma.core.body.Weight
 import by.zaberezh.forma.core.body.navyBodyFat
@@ -101,62 +98,5 @@ fun BodyScreen() {
                 Note(saved)
             }
         }
-        item {
-            var pending by remember { mutableStateOf<Pair<File, String>?>(null) }
-            val shot = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { ok ->
-                pending?.let { (f, pose) -> if (ok && f.length() > 0) PHOTO.save(s, Photo(f.absolutePath, pose)) else f.delete() }
-                pending = null
-            }
-            Block("Фото формы") {
-                Muted("Раз в месяц: одно место, свет и расстояние.")
-                Line {
-                    POSES.forEach { (id, label) ->
-                        Secondary(label.replaceFirstChar { it.uppercase() }, {
-                            val dir = File(c.filesDir, "photos").apply { mkdirs() }
-                            val f = File(dir, "${ctx.today}_${id}_${System.currentTimeMillis()}.jpg")
-                            pending = f to id
-                            val uri: Uri = FileProvider.getUriForFile(c, c.packageName + ".files", f)
-                            shot.launch(uri)
-                        }, Modifier.weight(1f))
-                    }
-                }
-                val all = PHOTO.all(s)
-                POSES.forEach { (id, label) ->
-                    val list = all.filter { it.second.pose == id }
-                    if (list.isNotEmpty()) {
-                        Text("${label.replaceFirstChar { it.uppercase() }} · ${list.size} фото", style = MaterialTheme.typography.bodyMedium)
-                        Line {
-                            listOf(list.first(), list.last()).distinctBy { it.first.id }.forEach { (e, p) ->
-                                Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                    Thumb(p.path)
-                                    Muted(DM.format(e.day))
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
     }
-}
-
-@Composable
-private fun Thumb(path: String) {
-    val bmp = remember(path) { runCatching { loadThumb(path) }.getOrNull() }
-    if (bmp != null) Image(
-        bmp.asImageBitmap(), null,
-        Modifier.fillMaxWidth().aspectRatio(0.75f).clip(RoundedCornerShape(12.dp)),
-        contentScale = ContentScale.Crop,
-    )
-}
-
-private fun loadThumb(path: String): Bitmap? {
-    val b = BitmapFactory.decodeFile(path, BitmapFactory.Options().apply { inSampleSize = 4 }) ?: return null
-    val deg = when (ExifInterface(path).getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL)) {
-        ExifInterface.ORIENTATION_ROTATE_90 -> 90f
-        ExifInterface.ORIENTATION_ROTATE_180 -> 180f
-        ExifInterface.ORIENTATION_ROTATE_270 -> 270f
-        else -> 0f
-    }
-    return if (deg == 0f) b else Bitmap.createBitmap(b, 0, 0, b.width, b.height, Matrix().apply { postRotate(deg) }, true)
 }
