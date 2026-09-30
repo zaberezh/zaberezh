@@ -16,6 +16,7 @@ import by.zaberezh.forma.core.food.adaptiveTdee
 import by.zaberezh.forma.core.gym.GymModule
 import by.zaberezh.forma.core.gym.PROGRAM
 import by.zaberezh.forma.core.gym.Planner
+import by.zaberezh.forma.core.gym.PlanItem
 import by.zaberezh.forma.core.gym.SetLog
 import by.zaberezh.forma.core.gym.WORKOUT
 import by.zaberezh.forma.core.gym.Workout
@@ -132,6 +133,24 @@ class CoreTest {
         assertEquals(fri.atTime(7, 20), by.zaberezh.forma.core.body.nextWeighTime(st, fri.atTime(6, 0)))
         assertEquals(mon.plusDays(5).atTime(11, 0), by.zaberezh.forma.core.body.nextWeighTime(st, fri.atTime(8, 0)))   // пт после 7:20 → сб 11:00
         assertEquals(mon.plusDays(7).atTime(7, 20), by.zaberezh.forma.core.body.nextWeighTime(st, mon.plusDays(6).atTime(12, 0))) // вс днём → пн 7:20
+    }
+
+    @Test fun orderAndSupersets() {
+        val s = store()
+        val p = PROGRAM.get(s)
+        val items = listOf("curl", "lateral_raise", "squat", "bench", "pushdown", "lat_pulldown", "hanging_raise").map { PlanItem(it, 3) }
+        val a = Planner.arrange(p, items, supersets = true)
+        // базовые первыми: верх (спина/грудь) → ноги; руки и пресс — в конце
+        assertEquals(listOf("lat_pulldown", "bench"), a.take(2).map { it.ex })
+        assertEquals(a[0].pair, a[1].pair)                           // тяга ↔ жим — суперсет
+        val squat = a.first { it.ex == "squat" }
+        val squatMate = a.filter { it.pair != null && it.pair == squat.pair && it.ex != "squat" }.map { it.ex }
+        assertTrue(squatMate.isEmpty() || squatMate.single() in setOf("lateral_raise", "hanging_raise"), "$a")
+        assertEquals(a.first { it.ex == "curl" }.pair, a.first { it.ex == "pushdown" }.pair) // бицепс ↔ трицепс
+        assertTrue(a.indexOfFirst { it.ex == "curl" } > a.indexOfFirst { it.ex == "lat_pulldown" })
+        // без суперсетов — тот же порядок, без пар
+        val b = Planner.arrange(p, items, supersets = false)
+        assertTrue(b.all { it.pair == null }); assertEquals("lat_pulldown", b.first().ex)
     }
 
     @Test fun doubleProgression() {

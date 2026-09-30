@@ -67,6 +67,15 @@ import java.time.format.DateTimeFormatter
 import java.time.format.TextStyle
 
 const val ACTIVE = "gym.active"
+
+private const val SUPERSET_HOW = "A1/A2 — суперсет: подход первого → 60–90 с → подход второго → 60–90 с → снова первое. " +
+    "У каждой мышцы выходит 2,5–3 мин отдыха, рост тот же, тренировка на 30–40% короче. Выключить — в настройках."
+
+/** Метки A1, A2, B1… по парам плана. */
+fun pairLabels(items: List<PlanItem>): Map<String, String> {
+    val n = HashMap<String, Int>()
+    return items.filter { it.pair != null }.associate { i -> val k = (n[i.pair!!] ?: 0) + 1; n[i.pair] = k; i.ex to "${i.pair}$k" }
+}
 private val DM = DateTimeFormatter.ofPattern("d MMM", RU)
 private val DMHM = DateTimeFormatter.ofPattern("d MMM, HH:mm", RU)
 private val DAY = DateTimeFormatter.ofPattern("EEEE, d MMMM", RU)
@@ -212,12 +221,15 @@ private fun DayPlanBlock(ctx: Ctx, date: LocalDate) {
         if (plan.source != "auto") Muted(if (plan.source == "claude") "Составлено Claude · «Авто» вернёт автоплан" else "Изменено вручную · «Авто» вернёт автоплан")
 
         val targets = GymModule.targets(s, plan)
+        val labels = pairLabels(plan.items)
         if (plan.items.isEmpty()) Muted("База упражнений пуста — добавь упражнения ниже, и план соберётся сам.")
+        if (plan.items.any { it.pair != null }) Muted(SUPERSET_HOW)
         plan.items.forEachIndexed { i, item ->
             val ex = p.ex(item.ex) ?: return@forEachIndexed
             val t = targets.firstOrNull { it.ex.id == item.ex }
             if (i > 0) HorizontalDivider(color = C.line)
             Line {
+                labels[item.ex]?.let { Pill(it, C.accent) }
                 Column(Modifier.weight(1f)) {
                     Text(ex.name, style = MaterialTheme.typography.bodyLarge)
                     Muted("${item.sets} подх. · " + (t?.weight?.let { "${it.r1()} кг × ${t.reps.joinToString(",")}" } ?: "подбор веса"))
@@ -341,7 +353,10 @@ private fun WorkoutScreen(ctx: Ctx, id: String) {
         }
         items(ids, key = { it }) { exId ->
             val pair = targets[exId] ?: return@items
+            val item = plan.items.firstOrNull { it.ex == exId }
+            val mate = item?.pair?.let { l -> plan.items.firstOrNull { it.pair == l && it.ex != exId } }?.let { p.ex(it.ex)?.name }
             ExerciseCard(pair.first, pair.second, w.sets.filter { it.ex == exId },
+                superset = mate?.let { "${pairLabels(plan.items)[exId]} · суперсет с «$it»: подход → 60–90 с → подход второго" },
                 onAdd = { set -> save(w.copy(sets = w.sets + set)); lastSet = System.currentTimeMillis() },
                 onUndo = {
                     val i = w.sets.indexOfLast { it.ex == exId }
@@ -376,13 +391,14 @@ private fun WorkoutScreen(ctx: Ctx, id: String) {
 }
 
 @Composable
-private fun ExerciseCard(ex: Exercise, t: Target?, done: List<SetLog>, onAdd: (SetLog) -> Unit, onUndo: () -> Unit) {
+private fun ExerciseCard(ex: Exercise, t: Target?, done: List<SetLog>, superset: String? = null, onAdd: (SetLog) -> Unit, onUndo: () -> Unit) {
     var wt by remember(ex.id, done.size) { mutableStateOf((done.lastOrNull()?.w ?: t?.weight)?.r1() ?: "") }
     var rp by remember(ex.id, done.size) { mutableStateOf((t?.reps?.getOrNull(done.size) ?: done.lastOrNull()?.r)?.toString() ?: "") }
     val complete = done.size >= ex.sets
     Block(ex.name, trailing = { Pill("${done.size}/${ex.sets}", if (complete) C.good else C.muted) }) {
+        if (superset != null) Text(superset, style = MaterialTheme.typography.bodySmall, color = C.accent)
         Stat("Цель", t?.weight?.let { "${it.r1()} кг × ${t.reps.joinToString(", ")}" } ?: "подобрать вес")
-        Muted("${ex.repMin}–${ex.repMax} повт. · в запасе ${ex.rir} · отдых ${ex.restSec / 60.0} мин" +
+        Muted("${ex.repMin}–${ex.repMax} повт. · в запасе ${ex.rir} · " + (if (superset != null) "между упражнениями пары 60–90 с" else "отдых ${ex.restSec / 60.0} мин") +
             (t?.note?.takeIf { it.isNotEmpty() }?.let { " · $it" } ?: ""))
         if (done.isNotEmpty()) Buttons {
             done.forEach { Pill("${it.w.r1()} × ${it.r}", C.good) }

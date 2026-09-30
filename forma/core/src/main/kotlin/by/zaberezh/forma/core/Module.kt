@@ -38,6 +38,7 @@ data class Settings(
     ),
     val sessionsPerWeek: Int = 3,
     val gymWeekends: Boolean = true,    // выходные тоже могут быть днями зала
+    val supersets: Boolean = true,      // чередовать пары мышц (агонист–антагонист)
     val minVisitMin: Int = 75,
     val morningHour: Int = 8,
     val morningMinute: Int = 0,

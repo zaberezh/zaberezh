@@ -111,7 +111,8 @@ object GymModule : Module {
      */
     fun planFor(ctx: Ctx, date: LocalDate, focus: String? = null): DayPlan {
         val s = ctx.store
-        if (focus == null) storedPlan(s, date)?.let { return it }
+        val p0 = program(s)
+        if (focus == null) storedPlan(s, date)?.let { return it.copy(items = Planner.arrange(p0, it.items, ctx.settings.supersets)) }
         val p = program(s)
         val log = Planner.muscleLog(p, sessions(s)).toMutableList()
         val used = lastUsed(s).toMutableMap()
@@ -121,7 +122,8 @@ object GymModule : Module {
             log += d to Planner.planMuscles(p, pl)
             pl.items.forEach { used[it.ex] = d }
         }
-        return Planner.build(p, date, log, used, ctx.settings.sessionsPerWeek, focus)
+        val plan = Planner.build(p, date, log, used, ctx.settings.sessionsPerWeek, focus)
+        return plan.copy(items = Planner.arrange(p, plan.items, ctx.settings.supersets))
     }
 
     /** Цели по упражнениям плана (двойная прогрессия; число подходов — из плана). */

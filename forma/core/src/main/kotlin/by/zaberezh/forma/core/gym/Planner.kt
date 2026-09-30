@@ -5,8 +5,8 @@ import kotlinx.serialization.Serializable
 import java.time.LocalDate
 import java.time.temporal.ChronoUnit
 
-/** Упражнение в плане дня: сколько рабочих подходов. */
-@Serializable data class PlanItem(val ex: String, val sets: Int)
+/** Упражнение в плане дня: рабочие подходы и метка суперсета (A, B… — упражнения с одной меткой чередуются). */
+@Serializable data class PlanItem(val ex: String, val sets: Int, val pair: String? = null)
 
 /**
  * План тренировки на конкретную дату. Сохраняется, только когда его правили руками или начали тренировку —
@@ -117,9 +117,75 @@ object Planner {
             perMain[main(e)] = (perMain[main(e)] ?: 0) + 1
             e.muscles.forEach { (m, k) -> need[m] = ((need[m] ?: 0.0) - k * sets).coerceAtLeast(0.0) }
         }
-        val ordered = chosen.sortedWith(compareByDescending<Pair<Exercise, Int>> { it.first.muscles.size > 1 }
-            .thenByDescending { it.first.muscles.values.sum() })
-        return DayPlan(date.toString(), ordered.map { PlanItem(it.first.id, it.second) }, focus)
+        return DayPlan(date.toString(), chosen.map { PlanItem(it.first.id, it.second) }, focus)
+    }
+
+    // ---------- порядок и суперсеты ----------
+
+    private enum class Kind { PUSH, PULL, LEGS, ARMS_FLEX, ARMS_EXT, OTHER }
+
+    private fun main(e: Exercise) = e.muscles.maxByOrNull { it.value }?.key ?: ""
+
+    private fun kind(e: Exercise): Kind = when (main(e)) {
+        "chest", "front_delts" -> Kind.PUSH
+        "triceps" -> if (e.muscles.size > 1) Kind.PUSH else Kind.ARMS_EXT
+        "back", "rear_delts" -> Kind.PULL
+        "biceps" -> if (e.muscles.size > 1) Kind.PULL else Kind.ARMS_FLEX
+        "quads", "hams", "glutes", "calves" -> Kind.LEGS
+        else -> Kind.OTHER // средняя дельта, пресс, предплечья
+    }
+
+    /** Порядок изоляции: визуальный приоритет → руки → мелкие (пресс, икры, предплечья) в конце. */
+    private val ISO_RANK = mapOf("side_delts" to 0, "rear_delts" to 1, "chest" to 2, "back" to 2, "quads" to 3, "hams" to 3, "glutes" to 3,
+        "biceps" to 4, "triceps" to 4, "front_delts" to 5, "calves" to 6, "forearms" to 7, "abs" to 8)
+
+    /**
+     * Порядок упражнений и пары суперсетов.
+     * - Порядок на гипертрофию почти не влияет (Nunes 2021, 11 исследований), но первым упражнениям достаются
+     *   больший прирост силы и больше повторов (Simão 2012) → сначала базовые на приоритетные мышцы (спина, грудь),
+     *   ноги, затем изоляция по приоритету (средняя дельта первой), руки ближе к концу — чтобы не «убить»
+     *   бицепс/трицепс до тяг и жимов, где они вспомогательные. Предутомление пользы не даёт (Trindade 2019).
+     * - Суперсеты агонист–антагонист (жим ↔ тяга, бицепс ↔ трицепс) дают тот же рост и силу при ~30–50% меньшем
+     *   времени и сохраняют объём (Robbins 2010; мета-анализ Sports Med 2025; RCT «Less time, same gains» 2025).
+     *   Суперсеты на одну мышцу режут объём — не делаем. Тяжёлые базовые на ноги — отдельно (системная усталость),
+     *   допускается пара с мелкой изоляцией, которая им не мешает (махи, пресс).
+     */
+    fun arrange(p: Program, items: List<PlanItem>, supersets: Boolean): List<PlanItem> {
+        val known = items.filter { p.ex(it.ex) != null }
+        val (comp, iso) = known.partition { p.ex(it.ex)!!.muscles.size > 1 }
+        val compOrder = comp.sortedWith(compareBy<PlanItem> { if (kind(p.ex(it.ex)!!) == Kind.LEGS) 1 else 0 }
+            .thenByDescending { PRIORITY[main(p.ex(it.ex)!!)] ?: 1.0 })
+        val isoOrder = iso.sortedBy { ISO_RANK[main(p.ex(it.ex)!!)] ?: 5 }
+        val ordered = (compOrder + isoOrder).map { it.copy(pair = null) }
+        if (!supersets) return ordered
+
+        fun fits(a: Exercise, b: Exercise): Boolean {
+            val ka = kind(a); val kb = kind(b)
+            val ca = a.muscles.size > 1; val cb = b.muscles.size > 1
+            return when {
+                ka == Kind.PUSH && kb == Kind.PULL || ka == Kind.PULL && kb == Kind.PUSH -> ca == cb // базовое с базовым, изоляция с изоляцией
+                ka == Kind.ARMS_FLEX && kb == Kind.ARMS_EXT || ka == Kind.ARMS_EXT && kb == Kind.ARMS_FLEX -> true
+                ka == Kind.LEGS && ca -> kb == Kind.OTHER && !cb
+                kb == Kind.LEGS && cb -> ka == Kind.OTHER && !ca
+                ka == Kind.LEGS && kb == Kind.OTHER || ka == Kind.OTHER && kb == Kind.LEGS -> true
+                ka == Kind.OTHER && kb == Kind.OTHER -> main(a) != main(b)
+                else -> false
+            }
+        }
+        val out = mutableListOf<PlanItem>()
+        val used = BooleanArray(ordered.size)
+        var label = 'A'
+        for (i in ordered.indices) {
+            if (used[i]) continue
+            used[i] = true
+            val a = p.ex(ordered[i].ex)!!
+            val j = (i + 1 until ordered.size).firstOrNull { !used[it] && fits(a, p.ex(ordered[it].ex)!!) }
+            if (j == null) { out += ordered[i]; continue }
+            used[j] = true
+            out += ordered[i].copy(pair = label.toString()); out += ordered[j].copy(pair = label.toString())
+            label++
+        }
+        return out
     }
 
     /** Короткое описание дня: главные мышцы плана. */
