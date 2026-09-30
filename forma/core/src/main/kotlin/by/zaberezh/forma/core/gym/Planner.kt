@@ -31,6 +31,7 @@ val FOCUS: Map<String, Pair<String, Set<String>>> = linkedMapOf(
     "shoulders" to ("Плечи" to setOf("side_delts", "front_delts", "rear_delts")),
     "legs" to ("Ноги" to setOf("quads", "hams", "glutes", "calves")),
     "abs" to ("Пресс" to setOf("abs")),
+    "forearms" to ("Предплечья" to setOf("forearms")),
 )
 
 /** Недельный объём по умолчанию (тяжёлые подходы): мин–макс. */
@@ -38,11 +39,18 @@ val DEFAULT_VOLUME: Map<String, List<Int>> = mapOf(
     "chest" to listOf(8, 14), "back" to listOf(10, 16), "side_delts" to listOf(8, 16), "rear_delts" to listOf(4, 10),
     "biceps" to listOf(6, 12), "triceps" to listOf(6, 12), "quads" to listOf(6, 12), "hams" to listOf(4, 10),
     "glutes" to listOf(0, 12), "front_delts" to listOf(0, 12), "calves" to listOf(0, 8), "abs" to listOf(0, 8),
-    "forearms" to listOf(0, 8),
+    "forearms" to listOf(6, 10),   // акцент пользователя: предплечья
 )
 
+/** Мелкие мышцы: упражнение с такой главной мышцей — изоляция, даже если задевает ещё одну (молотки, обратный хват). */
+private val SMALL = setOf("biceps", "triceps", "forearms", "calves", "abs", "side_delts", "rear_delts")
+
+/** Базовое (многосуставное) упражнение: несколько мышц и главная — крупная. */
+fun isCompound(e: Exercise): Boolean =
+    e.muscles.size > 1 && (e.muscles.maxByOrNull { it.value }?.key ?: "") !in SMALL
+
 /** Визуальный приоритет (V-силуэт): средняя дельта, спина, грудь, руки. */
-private val PRIORITY = mapOf("side_delts" to 1.3, "back" to 1.2, "chest" to 1.15, "biceps" to 1.1, "triceps" to 1.1)
+private val PRIORITY = mapOf("side_delts" to 1.3, "back" to 1.2, "chest" to 1.15, "forearms" to 1.15, "biceps" to 1.1, "triceps" to 1.1)
 
 /**
  * Составитель тренировки дня по методике:
@@ -104,7 +112,7 @@ object Planner {
             val best = p.exercises.filter { e -> chosen.none { it.first.id == e.id } && (perMain[main(e)] ?: 0) < (if (main(e) in focusSet) 3 else 2) }
                 .map { e ->
                     var score = e.muscles.entries.sumOf { (m, k) -> k * (need[m] ?: 0.0) }
-                    if (e.muscles.size > 1) score *= 1.15                                 // базовые — вперёд
+                    if (isCompound(e)) score *= 1.15                                      // базовые — вперёд
                     if ((perMain[main(e)] ?: 0) >= 1) score *= 0.5                        // второе на ту же мышцу — реже
                     lastUsed[e.id]?.let { if (ChronoUnit.DAYS.between(it, date) in 1..3) score *= 0.7 }
                     e to score
@@ -152,7 +160,7 @@ object Planner {
      */
     fun arrange(p: Program, items: List<PlanItem>, supersets: Boolean): List<PlanItem> {
         val known = items.filter { p.ex(it.ex) != null }
-        val (comp, iso) = known.partition { p.ex(it.ex)!!.muscles.size > 1 }
+        val (comp, iso) = known.partition { isCompound(p.ex(it.ex)!!) }
         val compOrder = comp.sortedWith(compareBy<PlanItem> { if (kind(p.ex(it.ex)!!) == Kind.LEGS) 1 else 0 }
             .thenByDescending { PRIORITY[main(p.ex(it.ex)!!)] ?: 1.0 })
         val isoOrder = iso.sortedBy { ISO_RANK[main(p.ex(it.ex)!!)] ?: 5 }

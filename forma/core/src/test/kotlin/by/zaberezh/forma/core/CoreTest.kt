@@ -153,6 +153,31 @@ class CoreTest {
         assertTrue(b.all { it.pair == null }); assertEquals("lat_pulldown", b.first().ex)
     }
 
+    @Test fun forearmEmphasis() {
+        val s = MemoryStore()
+        PROGRAM.set(s, prog)
+        SETTINGS.set(s, Settings(schema = 4))
+        migrateSettings(s) // v5: добавляет упражнения на предплечья
+        val p = PROGRAM.get(s)
+        assertEquals(3, p.exercises.count { (it.muscles["forearms"] ?: 0.0) >= 1.0 })
+        migrateSettings(s) // повторно не дублирует
+        assertEquals(p.exercises.size, PROGRAM.get(s).exercises.size)
+        // за неделю предплечья попадают в план, всегда в конце (после тяг)
+        val ctx = Ctx(s, mon)
+        val week = GymModule.week(ctx).plan.map { GymModule.planFor(ctx, it) }
+        val fa = week.sumOf { pl -> pl.items.filter { (p.ex(it.ex)!!.muscles["forearms"] ?: 0.0) >= 1.0 }.sumOf { it.sets } }
+        assertTrue(fa >= 5, "подходов на предплечья за неделю: $fa")
+        week.forEach { pl ->
+            val i = pl.items.indexOfFirst { (p.ex(it.ex)!!.muscles["forearms"] ?: 0.0) >= 1.0 }
+            val lastPull = pl.items.indexOfLast { by.zaberezh.forma.core.gym.isCompound(p.ex(it.ex)!!) }
+            if (i >= 0) assertTrue(i > lastPull, "предплечья после базовых: ${pl.items}")
+        }
+        // акцент дня «Предплечья»
+        val f = GymModule.planFor(ctx, mon, "forearms")
+        assertTrue(f.items.count { (p.ex(it.ex)!!.muscles["forearms"] ?: 0.0) >= 1.0 } >= 2)
+        assertEquals(mapOf("forearms" to 1.0, "biceps" to 0.5), by.zaberezh.forma.core.gym.guessMuscles("Подъём штанги обратным хватом"))
+    }
+
     @Test fun doubleProgression() {
         val ex = prog.ex("bench")!! // 3x6-10, шаг 2.5
         assertNull(nextTarget(ex, emptyList()).weight)
@@ -217,7 +242,7 @@ class CoreTest {
         assertTrue(GymModule.planFor(Ctx(s, mon), mon).items.isEmpty())
         s.kvPut(PROGRAM.key, JSON.encodeToString(Program.serializer(), prog)) // старый черновик
         migrateSettings(s)
-        assertTrue(PROGRAM.get(s).exercises.isEmpty())
+        assertTrue(PROGRAM.get(s).exercises.all { it.id.startsWith("fa_") }) // черновик удалён, остались только упражнения на предплечья
     }
 
     @Test fun settingsMigrationDropsWalking() {

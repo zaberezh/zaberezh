@@ -37,7 +37,7 @@ fun guessMuscles(name: String): Map<String, Double> {
         has(n, "ягодичн", "мостик", "отведение ног") -> mapOf("glutes" to 1.0)
         has(n, "икр", "носк") -> mapOf("calves" to 1.0)
         has(n, "мах", "развед") && has(n, "наклон", "задн") -> mapOf("rear_delts" to 1.0)
-        has(n, "к лицу", "face", "задн", "обратн") -> mapOf("rear_delts" to 1.0)
+        has(n, "к лицу", "face", "задн") || has(n, "обратн") && has(n, "развед", "бабочк") -> mapOf("rear_delts" to 1.0)
         has(n, "мах", "в стороны", "разведение рук") -> mapOf("side_delts" to 1.0)
         has(n, "жим") && has(n, "стоя", "сидя", "над голов", "армейск", "плеч", "шраг") && !has(n, "лежа") ->
             mapOf("front_delts" to 1.0, "side_delts" to 0.5, "triceps" to 0.5)
@@ -48,8 +48,10 @@ fun guessMuscles(name: String): Map<String, Double> {
         has(n, "подтяг", "верхн", "вертикальн", "пулдаун") -> mapOf("back" to 1.0, "biceps" to 0.5)
         has(n, "тяга") -> mapOf("back" to 1.0, "rear_delts" to 0.5, "biceps" to 0.5)
         has(n, "трицепс", "разгибан", "француз") -> mapOf("triceps" to 1.0)
-        has(n, "бицепс", "молот", "сгибан", "подъем штанги", "подъем гантел", "скотт") -> mapOf("biceps" to 1.0)
-        has(n, "предплеч", "запяст") -> mapOf("forearms" to 1.0)
+        has(n, "предплеч", "запяст", "вис на", "фермер", "кистев") -> mapOf("forearms" to 1.0)
+        has(n, "обратн") && has(n, "хват") -> mapOf("forearms" to 1.0, "biceps" to 0.5)
+        has(n, "молот") -> mapOf("biceps" to 1.0, "forearms" to 0.5)
+        has(n, "бицепс", "сгибан", "подъем штанги", "подъем гантел", "скотт") -> mapOf("biceps" to 1.0)
         has(n, "пресс", "скручив", "подъем ног", "планк", "ролик") -> mapOf("abs" to 1.0)
         else -> emptyMap()
     }
@@ -96,3 +98,13 @@ fun Program.upsert(id: String?, i: ExerciseInput): Program {
 
 fun Program.remove(id: String): Program =
     copy(exercises = exercises.filter { it.id != id }, days = days.map { it.copy(exercises = it.exercises - id) })
+
+/** Упражнения на предплечья, которые добавляются в базу, если там ничего на предплечья нет. */
+val FOREARM_SEED = listOf(
+    Exercise("fa_wrist_curl", "Сгибания запястий с гантелями (ладони вверх)", mapOf("forearms" to 1.0), sets = 3, repMin = 12, repMax = 20, step = 1.0, rir = 1, restSec = 90,
+        note = "Предплечья на скамье, кисть свисает; опускай гантель до пальцев и поднимай запястьем, без рывков."),
+    Exercise("fa_wrist_ext", "Разгибания запястий с гантелями (ладони вниз)", mapOf("forearms" to 1.0), sets = 3, repMin = 12, repMax = 20, step = 1.0, rir = 1, restSec = 90,
+        note = "Та же позиция, ладони вниз; вес меньше, чем в сгибаниях."),
+    Exercise("fa_reverse_curl", "Подъём штанги обратным хватом", mapOf("forearms" to 1.0, "biceps" to 0.5), sets = 3, repMin = 8, repMax = 12, step = 2.5, rir = 1, restSec = 90,
+        note = "Хват сверху на ширине плеч, локти прижаты — нагружает плечелучевую и разгибатели."),
+)
