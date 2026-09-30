@@ -74,7 +74,7 @@ private const val SUPERSET_HOW = "A1/A2 — суперсет: подход пе�
 /** Метки A1, A2, B1… по парам плана. */
 fun pairLabels(items: List<PlanItem>): Map<String, String> {
     val n = HashMap<String, Int>()
-    return items.filter { it.pair != null }.associate { i -> val k = (n[i.pair!!] ?: 0) + 1; n[i.pair] = k; i.ex to "${i.pair}$k" }
+    return items.mapNotNull { i -> i.pair?.let { l -> val k = (n[l] ?: 0) + 1; n[l] = k; i.ex to "$l$k" } }.toMap()
 }
 private val DM = DateTimeFormatter.ofPattern("d MMM", RU)
 private val DMHM = DateTimeFormatter.ofPattern("d MMM, HH:mm", RU)
