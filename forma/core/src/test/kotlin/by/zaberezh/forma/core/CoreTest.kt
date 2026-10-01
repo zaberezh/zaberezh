@@ -16,6 +16,7 @@ import by.zaberezh.forma.core.food.adaptiveTdee
 import by.zaberezh.forma.core.gym.GymModule
 import by.zaberezh.forma.core.gym.PROGRAM
 import by.zaberezh.forma.core.gym.Planner
+import by.zaberezh.forma.core.gym.FOREARM_SEED
 import by.zaberezh.forma.core.gym.PlanItem
 import by.zaberezh.forma.core.gym.SetLog
 import by.zaberezh.forma.core.gym.WORKOUT
@@ -135,22 +136,28 @@ class CoreTest {
         assertEquals(mon.plusDays(7).atTime(7, 20), by.zaberezh.forma.core.body.nextWeighTime(st, mon.plusDays(6).atTime(12, 0))) // вс днём → пн 7:20
     }
 
-    @Test fun orderAndSupersets() {
+    @Test fun orderByBlocks() {
         val s = store()
         val p = PROGRAM.get(s)
-        val items = listOf("curl", "lateral_raise", "squat", "bench", "pushdown", "lat_pulldown", "hanging_raise").map { PlanItem(it, 3) }
-        val a = Planner.arrange(p, items, supersets = true)
-        // базовые первыми: верх (спина/грудь) → ноги; руки и пресс — в конце
-        assertEquals(listOf("lat_pulldown", "bench"), a.take(2).map { it.ex })
-        assertEquals(a[0].pair, a[1].pair)                           // тяга ↔ жим — суперсет
-        val squat = a.first { it.ex == "squat" }
-        val squatMate = a.filter { it.pair != null && it.pair == squat.pair && it.ex != "squat" }.map { it.ex }
-        assertTrue(squatMate.isEmpty() || squatMate.single() in setOf("lateral_raise", "hanging_raise"), "$a")
-        assertEquals(a.first { it.ex == "curl" }.pair, a.first { it.ex == "pushdown" }.pair) // бицепс ↔ трицепс
-        assertTrue(a.indexOfFirst { it.ex == "curl" } > a.indexOfFirst { it.ex == "lat_pulldown" })
-        // без суперсетов — тот же порядок, без пар
-        val b = Planner.arrange(p, items, supersets = false)
-        assertTrue(b.all { it.pair == null }); assertEquals("lat_pulldown", b.first().ex)
+        val items = listOf("curl", "lateral_raise", "squat", "bench", "pushdown", "lat_pulldown", "hanging_raise", "ohp", "face_pull")
+            .filter { p.ex(it) != null }.map { PlanItem(it, 3) }
+        // блоками: ноги → жимы (грудь → дельты → трицепс) → тяги (спина → бицепс) → пресс
+        val a = Planner.arrange(p, items, supersets = false).map { it.ex }
+        assertEquals(listOf("squat", "bench", "ohp", "lateral_raise", "pushdown", "lat_pulldown", "face_pull", "curl", "hanging_raise")
+            .filter { p.ex(it) != null }, a)
+        // акцент «Спина» — тяги первыми, пресс всё равно последний
+        val b = Planner.arrange(p, items, supersets = false, focus = "back").map { it.ex }
+        assertEquals("lat_pulldown", b.first()); assertEquals("hanging_raise", b.last())
+        // суперсеты (выключены по умолчанию) по-прежнему собирают пары жим ↔ тяга, бицепс ↔ трицепс
+        val c = Planner.arrange(p, items, supersets = true)
+        assertEquals(c.first { it.ex == "curl" }.pair, c.first { it.ex == "pushdown" }.pair)
+    }
+
+    @Test fun gripWorkLastEvenWithBackFocus() {
+        val p = prog.copy(exercises = prog.exercises + FOREARM_SEED)
+        val items = listOf("fa_reverse_curl", "bench", "lat_pulldown", "squat", "hanging_raise").map { PlanItem(it, 3) }
+        assertEquals(listOf("squat", "bench", "lat_pulldown", "fa_reverse_curl", "hanging_raise"), Planner.arrange(p, items, false).map { it.ex })
+        assertEquals(listOf("lat_pulldown", "squat", "bench", "fa_reverse_curl", "hanging_raise"), Planner.arrange(p, items, false, "back").map { it.ex })
     }
 
     @Test fun forearmEmphasis() {
