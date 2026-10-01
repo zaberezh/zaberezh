@@ -68,6 +68,7 @@ fun ReportScreen() {
     val secs = remember(ctx, from, to) { Checkup.sections(ctx, from, to) }
     val text = remember(secs) { Checkup.render(from, to, secs) }
     val facts = remember(secs) { Checkup.facts(ctx, from, to, secs) }
+    val history = remember(ctx) { CHECKUP.all(s).reversed() }   // новые сверху
 
     if (picking) RangeDialog(from, to, ctx.today, { picking = false }) { a, b -> fromDay = a.toEpochDay(); toDay = b.toEpochDay() }
     Screen {
@@ -79,7 +80,7 @@ fun ReportScreen() {
                     Text("—", color = C.muted)
                     DateChip("по", to, Modifier.weight(1f)) { picking = true }
                 }
-                val last = CHECKUP.all(s).lastOrNull()?.second?.to?.let(LocalDate::parse)
+                val last = history.firstOrNull()?.second?.to?.let(LocalDate::parse)
                 Buttons {
                     listOf(7L, 14L, 30L, 90L).forEach { d ->
                         val on = to == ctx.today && n == d
@@ -115,7 +116,7 @@ fun ReportScreen() {
                 Buttons {
                     Secondary("Сохранить без анализа", { CHECKUP.save(s, CheckupRec(from.toString(), to.toString(), text, facts)); info = "Сохранено" })
                     Secondary("Копировать для чата", {
-                        c.copy("Чекап из моего трекера Forma. Проанализируй по методике, без мотивации: что идёт, что нет, что конкретно поменять.\n\n" +
+                        c.copy("Чекап из моего трекера Grind. Проанализируй по методике, без мотивации: что идёт, что нет, что конкретно поменять.\n\n" +
                             "МЕТОДИКА:\n$METHOD\n\nОТЧЁТ:\n$text\n\nДАННЫЕ:\n$facts\n\nКОММЕНТАРИЙ: ${note.ifBlank { "—" }}")
                         info = "Скопировано"
                     })
@@ -123,7 +124,6 @@ fun ReportScreen() {
                 Err(err); Note(info)
             }
         }
-        val history = CHECKUP.all(s).reversed()
         if (history.isNotEmpty()) item { Muted("История чекапов") }
         items(history, key = { it.first.id }) { (e, r) ->
             val title = "${DM.format(LocalDate.parse(r.from))} — ${DM.format(LocalDate.parse(r.to))}"
