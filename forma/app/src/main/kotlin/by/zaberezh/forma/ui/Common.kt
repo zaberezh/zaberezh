@@ -98,6 +98,14 @@ fun rememberCtx(): Ctx {
     return remember(v) { Ctx(Forma.store) }
 }
 
+/** Русское окончание по числу: 1 пара, 2 пары, 5 пар, 11 пар, 21 пара. */
+fun plural(n: Int, one: String, few: String, many: String) = when {
+    n % 100 in 11..14 -> many
+    n % 10 == 1 -> one
+    n % 10 in 2..4 -> few
+    else -> many
+}
+
 fun String.num(): Double? = trim().replace(',', '.').toDoubleOrNull()
 
 fun Context.copy(text: String) =

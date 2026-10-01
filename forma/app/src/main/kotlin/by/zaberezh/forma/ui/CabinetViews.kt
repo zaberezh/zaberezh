@@ -104,13 +104,6 @@ private fun short(d: String) = d.take(5)   // dd.MM.yyyy → dd.MM
 
 private fun hours(n: Int) = "$n ч"
 
-/** Русское число: 1 справка, 2 справки, 5 справок. */
-private fun plural(n: Int, one: String, few: String, many: String) = when {
-    n % 100 in 11..14 -> many
-    n % 10 == 1 -> one
-    n % 10 in 2..4 -> few
-    else -> many
-}
 
 private fun people(n: Int) = "$n " + plural(n, "человек", "человека", "человек")
 
