@@ -64,8 +64,8 @@ private val WEIGH = listOf(
 private val SLEEP = listOf(F("sleepH", "Цель сна", "ч"), F("wakeH", "Подъём", "ч"), F("wakeM", "Подъём", "мин"))
 
 @SuppressLint("MissingPermission")
-/** Экспорт за годы весит единицы мегабайт; больше — чужой файл, в память не читаем. */
-private const val IMPORT_MAX = 64 shl 20
+/** Экспорт за годы весит единицы мегабайт; файл больше — не читаем: его разбор не поместился бы в память. */
+private const val IMPORT_MAX = 16 shl 20
 
 @Composable
 fun SettingsScreen() {
@@ -113,7 +113,7 @@ fun SettingsScreen() {
         uri?.let { u ->
             msg = runCatching {
                 val bytes = c.contentResolver.openInputStream(u)!!.use { it.readUpTo(IMPORT_MAX + 1) }
-                require(bytes.size <= IMPORT_MAX) { "Файл больше ${IMPORT_MAX shr 20} МБ — это точно не экспорт Grind" }
+                require(bytes.size <= IMPORT_MAX) { "Файл больше ${IMPORT_MAX shr 20} МБ — слишком большой для импорта" }
                 val n = Forma.store.importJson(bytes.decodeToString())
                 by.zaberezh.forma.sys.Secrets.migrate(c, Forma.store)
                 Reminders.scheduleAll(c)   // в файле могли быть другие часы напоминаний
