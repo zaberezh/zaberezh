@@ -110,9 +110,9 @@ fun ScheduleScreen() {
         scope.launch { downloadTimetable(s).onFailure { err = it.message ?: "Ошибка загрузки" }; loading = false }
     }
     LaunchedEffect(prefs.group) {
-        // расписание, скачанное прошлой версией, без ссылок на фото — перекачать сразу
-        val noPhotos = tt.lessons.any { it.teachers.isNotEmpty() } && tt.lessons.none { l -> l.photos.any(String::isNotBlank) }
-        if (tt.group != prefs.group || noPhotos || System.currentTimeMillis() - tt.fetchedAt > 3 * 24 * 3600_000L) refresh()
+        // расписание, скачанное прошлой версией приложения (без фото преподавателей), перекачивается сразу
+        val old = tt.lessons.isNotEmpty() && tt.format < Bsuir.FORMAT
+        if (tt.group != prefs.group || old || System.currentTimeMillis() - tt.fetchedAt > 3 * 24 * 3600_000L) refresh()
     }
 
     // лента: неделя назад и 10 недель вперёд
