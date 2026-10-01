@@ -34,7 +34,7 @@
         </aapt:attr>
     </path>
     <group android:translateX="-1.2" android:translateY="-1" android:scaleX="1.03" android:scaleY="1.03">
-        <path android:pathData="M73,22 C79,29 80,35 75.5,41 C77.5,36.5 74.5,33 72.5,32 C72.5,36.5 68.5,37.5 69.5,42 C64.5,38 65.5,31 73,22 Z" android:fillColor="#FFFFB03A" android:fillAlpha="0.25" />
+        <path android:pathData="M70,27 C76,34 77,40 72.5,46 C74.5,41.5 71.5,38 69.5,37 C69.5,41.5 65.5,42.5 66.5,47 C61.5,43 62.5,36 70,27 Z" android:fillColor="#FFFFB03A" android:fillAlpha="0.25" />
     </group>
-    <path android:pathData="M73,22 C79,29 80,35 75.5,41 C77.5,36.5 74.5,33 72.5,32 C72.5,36.5 68.5,37.5 69.5,42 C64.5,38 65.5,31 73,22 Z" android:fillColor="#FFFFB03A" />
+    <path android:pathData="M70,27 C76,34 77,40 72.5,46 C74.5,41.5 71.5,38 69.5,37 C69.5,41.5 65.5,42.5 66.5,47 C61.5,43 62.5,36 70,27 Z" android:fillColor="#FFFFB03A" />
 </vector>
