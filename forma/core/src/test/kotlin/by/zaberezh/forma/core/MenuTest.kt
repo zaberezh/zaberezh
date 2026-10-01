@@ -60,6 +60,25 @@ class MenuTest {
         assertTrue(Menus.resolve("донер").items.isEmpty())   // без «кинза» — не их донер
     }
 
+    @Test fun makPerPortionValues() {
+        val r = Menus.resolve("мак: вишневый пирожок, шейк шоколадный, 2 кукиса шоколадных, сырный соус")
+        assertEquals(listOf("Мак · Вишневый пирожок", "Мак · Молочный коктейль шоколадный средний 0,4",
+            "Мак · Шоколадный кукис", "Мак · Соус Сырный"), r.items.map { it.name })
+        val kcal = r.items.map { Math.round(it.total.kcal).toInt() }
+        assertEquals(listOf(249, 337, 390, 75), kcal)                    // на порцию — как в приложении, ×2 кукиса
+        assertEquals(5.5, one("макдак ванильный коктейль").total.f, 0.01)
+        assertTrue(Menus.resolve("вишневый пирожок").items.isEmpty())   // без «мак» — не их
+        assertEquals("Мак · Мак Бургер", one("мак бургер").name)
+        assertEquals("Мак · Мак Бургер", one("бигмак из мака").name)
+        assertEquals("Мак · Чизбургер", one("чизбургер мак").name)
+        assertEquals("Мак · Двойной Чизбургер", one("мак двойной чизбургер").name)
+        assertEquals("Мак · Фри средняя порция", one("мак фри").name)
+        assertEquals("Мак · Фри большая порция", one("мак картошка фри большая").name)
+        assertEquals(151.0, one("мак 10 наггетсов").grams)
+        assertEquals("Мак · Сыр фри", one("мак сыр фри").name)
+        assertEquals(434.0, Math.round(one("мак стрипсы 5").total.kcal).toDouble())
+    }
+
     @Test fun ignoredWithoutChainOrSignature() {
         val r = Menus.resolve("кола 0,5, фри, гречка")
         assertTrue(r.items.isEmpty())
