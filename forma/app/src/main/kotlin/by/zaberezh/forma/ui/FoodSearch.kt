@@ -7,6 +7,7 @@ import by.zaberezh.forma.core.ai.Claude
 import by.zaberezh.forma.core.food.FoodItem
 import by.zaberezh.forma.core.food.Edostavka
 import by.zaberezh.forma.core.food.LibraryResolver
+import by.zaberezh.forma.core.food.Menus
 import by.zaberezh.forma.core.food.WebHints
 import by.zaberezh.forma.core.food.shopResolve
 import by.zaberezh.forma.sys.Notify
@@ -41,17 +42,23 @@ object FoodSearch {
             var missing: String? = null
             val r = withContext(Dispatchers.IO) {
                 runCatching {
-                    LibraryResolver(ctx.store).resolve(q)?.also { how = "из своей библиотеки, без ИИ" } ?: run {
+                    // 0) меню сетей (KFC) — точные цифры из официальной таблицы, без ИИ и интернета
+                    val menu = Menus.resolve(q)
+                    val rest = if (menu.items.isEmpty()) q else menu.rest.joinToString(", ")
+                    val fromMenu = if (menu.items.isEmpty()) "" else "${menu.items.size} из меню KFC"
+                    if (rest.isBlank()) return@runCatching menu.items.also { how = "$fromMenu, без ИИ" }
+                    menu.items + (LibraryResolver(ctx.store).resolve(rest)?.also { how = "из своей библиотеки, без ИИ" } ?: run {
                         // 1) магазинные продукты — прямо с edostavka.by (точно и бесплатно)
-                        val shop = shopResolve(q, Edostavka(log = { Claude.debug("Едоставка: $it") }))
-                        val rest = shop.unresolved.joinToString(", ")
+                        val shop = shopResolve(rest, Edostavka(log = { Claude.debug("Едоставка: $it") }))
+                        val left = shop.unresolved.joinToString(", ")
+                        val have = menu.items.size + shop.items.size
                         when {
-                            rest.isEmpty() -> shop.items.also { how = "с edostavka.by, без ИИ" }
-                            st.apiKey.isBlank() -> if (shop.items.isNotEmpty()) shop.items.also {
-                                how = "с edostavka.by"; missing = "Не найдено: «$rest» — добавь вручную или задай API-ключ."
+                            left.isEmpty() -> shop.items.also { how = "с edostavka.by, без ИИ" }
+                            st.apiKey.isBlank() -> if (have > 0) shop.items.also {
+                                how = if (shop.items.isEmpty()) "" else "с edostavka.by"; missing = "Не найдено: «$left» — добавь вручную или задай API-ключ."
                             } else error("Не нашёл на edostavka.by, а API-ключ не задан (Настройки → Claude). Можно ввести КБЖУ вручную.")
                             // 2) остальное — Claude, с найденными страницами магазина как подсказкой
-                            else -> shop.items + Claude(st.apiKey, st.model, st.apiUrl).also { x -> ai = x }.foods(rest, shop.hints,
+                            else -> shop.items + Claude(st.apiKey, st.model, st.apiUrl).also { x -> ai = x }.foods(left, shop.hints,
                                 // поиск калорийности в интернете прямо с телефона (у посредника веб-поиска может не быть)
                                 shop.unresolved.take(3).flatMap { part -> runCatching { WebHints.find(part) }.getOrDefault(emptyList()).take(4) }
                                     .also { Claude.debug("интернет: найдено строк ${it.size}") },
@@ -59,7 +66,7 @@ object FoodSearch {
                                 how = if (shop.items.isEmpty()) "Claude" else "${shop.items.size} с edostavka.by + Claude"
                             }
                         }
-                    }
+                    }).also { how = listOf(fromMenu, how).filter { it.isNotEmpty() }.joinToString(" + ") }
                 }
             }
             busy.value = false

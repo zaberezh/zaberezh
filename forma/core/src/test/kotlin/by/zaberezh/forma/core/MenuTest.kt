@@ -1,0 +1,59 @@
+package by.zaberezh.forma.core
+
+import by.zaberezh.forma.core.food.Menus
+import by.zaberezh.forma.core.food.splitParts
+import kotlin.math.abs
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertTrue
+
+class MenuTest {
+    private fun one(text: String) = Menus.resolve(text).also { assertEquals(emptyList(), it.rest, "остаток для «$text»") }.items.single()
+
+    @Test fun menuLoadsAllRowsWithSaneNumbers() {
+        val kfc = Menus.all.single()
+        assertTrue(kfc.items.size > 150, "позиций: ${kfc.items.size}")
+        kfc.items.filter { it.per100.kcal > 20 }.forEach { m ->
+            val calc = m.per100.p * 4 + m.per100.f * 9 + m.per100.c * 4
+            assertTrue(abs(calc - m.per100.kcal) / m.per100.kcal < 0.7, "${m.name}: $calc vs ${m.per100.kcal}")
+        }
+    }
+
+    @Test fun picksDefaultAndExplicitVariants() {
+        assertEquals("KFC · Твистер оригинальный", one("кфс твистер").name)
+        assertEquals(184.0, one("кфс твистер").grams)
+        assertEquals("KFC · Твистер острый", one("твистер острый").name)                     // «твистер» сам включает меню
+        assertEquals("KFC · Твистер де люкс острый", one("твистер делюкс острый").name)
+        assertEquals("KFC · Зингер бургер", one("зингер").name)
+        assertEquals("KFC · Зингер бургер смарт", one("зингер смарт").name)
+        assertEquals("KFC · Тост с сыром и беконом", one("кфс тост с сыром и беконом").name)
+    }
+
+    @Test fun sizesAndCounts() {
+        assertEquals(500.0, one("кфс кола 0,5").grams)
+        assertEquals("KFC · Кока-кола без сахара 0,4", one("кфс кола без сахара").name)
+        assertEquals(117.0, one("кфс 9 наггетсов").grams)
+        assertEquals(156.0, one("кфс наггетсы 12 шт").grams)               // нет такой порции — 13 г за штуку
+        assertEquals(135.0, one("кфс крылья 5").grams)
+        assertEquals(368.0, one("2 твистера кфс").grams)
+        assertEquals(200.0, one("кфс картошка фри большая").grams)
+        assertEquals(60.0, one("кфс фри малая").grams)
+        assertEquals(24.0, one("кфс соус сырный").grams)
+        assertEquals(150.0, one("кфс фри 150г").grams)
+    }
+
+    @Test fun mixedMealLeavesForeignPartsForOtherSteps() {
+        val r = Menus.resolve("кфс: твистер острый, фри, кола 0,5, гречка 200г")
+        assertEquals(listOf("KFC · Твистер острый", "KFC · Картофель фри средний", "KFC · Кока-кола 0,5"), r.items.map { it.name })
+        assertEquals(listOf("гречка 200г"), r.rest)
+        val k = r.items.sumOf { it.total.kcal }
+        assertTrue(abs(k - (178 * 2.40 + 100 * 2.91 + 500 * 0.425)) < 1, "ккал $k")
+    }
+
+    @Test fun ignoredWithoutChainOrSignature() {
+        val r = Menus.resolve("кола 0,5, фри, гречка")
+        assertTrue(r.items.isEmpty())
+        assertEquals(listOf("кола 0,5", "фри", "гречка"), r.rest)
+        assertEquals(listOf("кола 0,5", "яйца 2"), splitParts("кола 0,5, яйца 2"))
+    }
+}
