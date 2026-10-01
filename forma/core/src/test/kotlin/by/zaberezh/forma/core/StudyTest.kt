@@ -128,4 +128,18 @@ class StudyTest {
         assertEquals(2, thu(17).size)
         assertTrue(by.zaberezh.forma.core.study.Bsuir.on(tt.copy(group = "421701"), java.time.LocalDate.of(2026, 9, 3)).isEmpty())
     }
+
+    @Test fun waterGlassesAndGoal() {
+        val s = by.zaberezh.forma.core.store.MemoryStore()
+        val day = LocalDate.of(2026, 10, 2)
+        val noon = day.atTime(12, 0).atZone(by.zaberezh.forma.core.store.ZONE).toInstant().toEpochMilli()
+        by.zaberezh.forma.core.body.saveWeight(s, day, 70.5, noon)
+        assertEquals(2000, by.zaberezh.forma.core.daily.WaterLog.goalMl(s))        // 70,5 кг × 30 мл ≈ 8 стаканов
+        repeat(3) { by.zaberezh.forma.core.daily.WaterLog.add(s, noon + it) }
+        by.zaberezh.forma.core.daily.WaterLog.add(s, noon - 86_400_000)            // вчерашний не считается
+        assertEquals(750, by.zaberezh.forma.core.daily.WaterLog.ml(s, day))
+        assertEquals(37, by.zaberezh.forma.core.daily.WaterLog.percent(s, day))
+        by.zaberezh.forma.core.daily.WaterLog.undo(s, day)
+        assertEquals(500, by.zaberezh.forma.core.daily.WaterLog.ml(s, day))
+    }
 }

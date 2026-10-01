@@ -10,6 +10,7 @@ import by.zaberezh.forma.Forma
 import by.zaberezh.forma.core.SETTINGS
 import by.zaberezh.forma.core.body.WEIGHT
 import by.zaberezh.forma.core.body.nextWeighTime
+import by.zaberezh.forma.core.daily.WaterLog
 import by.zaberezh.forma.core.daily.nextWaterTime
 import by.zaberezh.forma.core.store.ZONE
 import by.zaberezh.forma.core.store.today
@@ -55,7 +56,31 @@ object Water {
 
 class WaterReceiver : BroadcastReceiver() {
     override fun onReceive(c: Context, i: Intent) {
-        runCatching { Notify.post(c, 7, "Попей воды", listOf("Стакан воды — 200–250 мл.")) }
+        runCatching {
+            val s = Forma.store
+            val day = today()
+            val left = (WaterLog.goalMl(s) - WaterLog.ml(s, day)).coerceAtLeast(0)
+            // нажатие на уведомление (или кнопку) = выпил стакан
+            val drank = PendingIntent.getBroadcast(c, 8, Intent(c, WaterDrankReceiver::class.java),
+                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+            if (left > 0) Notify.post(c, 7, "Попей воды",
+                listOf("Нажми, когда выпьешь стакан (${WaterLog.GLASS_ML} мл) — засчитаю.", "Сегодня ${WaterLog.ml(s, day)} из ${WaterLog.goalMl(s)} мл · ${WaterLog.percent(s, day)}%"),
+                tap = drank, actions = listOf(android.app.Notification.Action.Builder(null, "Выпил стакан", drank).build()))
+        }
         Water.schedule(c)
+    }
+}
+
+/** Нажали на «Попей воды»: +1 стакан и короткое подтверждение с прогрессом. */
+class WaterDrankReceiver : BroadcastReceiver() {
+    override fun onReceive(c: Context, i: Intent) {
+        runCatching {
+            val s = Forma.store
+            WaterLog.add(s)
+            val day = today()
+            val p = WaterLog.percent(s, day)
+            Notify.post(c, 7, if (p >= 100) "Норма воды выполнена 💧" else "Засчитано +${WaterLog.GLASS_ML} мл",
+                listOf("Сегодня ${WaterLog.ml(s, day)} из ${WaterLog.goalMl(s)} мл · $p%"), timeoutMs = 5000)
+        }
     }
 }

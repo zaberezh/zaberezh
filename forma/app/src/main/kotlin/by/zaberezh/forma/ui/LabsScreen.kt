@@ -60,6 +60,8 @@ fun LabsScreen() {
     val toSubmit = labs.filter { it.second.stage == 1 }
     val done = labs.filter { it.second.stage == 2 }
     var showDone by remember { mutableStateOf(false) }
+    // раскрытые лабы — на уровне экрана: отметка задания перестраивает список, но лаба остаётся открытой
+    val open = remember { androidx.compose.runtime.mutableStateMapOf<String, Boolean>() }
 
     val homework = Study.open(s, ctx.today)
     Screen {
@@ -94,15 +96,15 @@ fun LabsScreen() {
         }
         active.groupBy { it.second.subject }.forEach { (subject, list) ->
             item { Text(subject, style = MaterialTheme.typography.labelLarge, color = C.muted, modifier = Modifier.padding(start = 4.dp, top = 4.dp)) }
-            list.forEach { (e, lab) -> item(key = e.id) { LabCard(s, e.id, lab) } }
+            list.forEach { (e, lab) -> item(key = e.id) { LabCard(s, e.id, lab, open[e.id] == true) { open[e.id] = it } } }
         }
         if (toSubmit.isNotEmpty()) {
             item { Text("Нужно сдать", style = MaterialTheme.typography.labelLarge, color = C.warn, modifier = Modifier.padding(start = 4.dp, top = 4.dp)) }
-            toSubmit.forEach { (e, lab) -> item(key = e.id) { LabCard(s, e.id, lab) } }
+            toSubmit.forEach { (e, lab) -> item(key = e.id) { LabCard(s, e.id, lab, open[e.id] == true) { open[e.id] = it } } }
         }
         if (done.isNotEmpty()) {
             item { Flat(if (showDone) "Скрыть сданные (${done.size})" else "Сданные (${done.size})", { showDone = !showDone }, C.muted) }
-            if (showDone) done.forEach { (e, lab) -> item(key = e.id) { LabCard(s, e.id, lab) } }
+            if (showDone) done.forEach { (e, lab) -> item(key = e.id) { LabCard(s, e.id, lab, open[e.id] == true) { open[e.id] = it } } }
         }
     }
 }
@@ -170,14 +172,13 @@ private fun ProgressRing(percent: Int, stage: Int, size: Dp = 40.dp, onClick: ()
 }
 
 @Composable
-private fun LabCard(s: Store, id: String, lab: Lab) {
-    var expanded by remember(id) { mutableStateOf(false) }
+private fun LabCard(s: Store, id: String, lab: Lab, expanded: Boolean, setExpanded: (Boolean) -> Unit) {
     var rename by remember { mutableStateOf<Pair<String, (String) -> Unit>?>(null) }
     Block {
         Column(Modifier.animateContentSize(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Line {
                 ProgressRing(lab.percent, lab.stage) { Study.advance(s, id) }
-                Column(Modifier.weight(1f).clickable { expanded = !expanded }) {
+                Column(Modifier.weight(1f).clickable { setExpanded(!expanded) }) {
                     Text(lab.name, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium,
                         textDecoration = if (lab.submitted) TextDecoration.LineThrough else null, color = if (lab.submitted) C.muted else C.text)
                     when (lab.stage) {
@@ -188,7 +189,7 @@ private fun LabCard(s: Store, id: String, lab: Lab) {
                 }
                 if (lab.stage == 1) Pill("сдать", C.warn)
                 else Text("${lab.percent}%", style = MaterialTheme.typography.titleSmall, color = if (lab.submitted) C.good else C.accent,
-                    modifier = Modifier.clickable { expanded = !expanded })
+                    modifier = Modifier.clickable { setExpanded(!expanded) })
             }
             if (lab.total > 0) Box(Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(2.dp)).background(C.line)) {
                 Box(Modifier.fillMaxWidth(lab.percent / 100f).height(4.dp).clip(RoundedCornerShape(2.dp))
