@@ -33,7 +33,8 @@ import kotlinx.serialization.Serializable
 /** Тонкая обёртка над Claude API: поиск КБЖУ (веб-поиск) и разбор чекапа. */
 class Claude(apiKey: String, private val model: String, baseUrl: String = "") {
     private val official = baseUrl.isBlank() || "api.anthropic.com" in baseUrl
-    private val client: AnthropicClient = AnthropicOkHttpClient.builder().apiKey(apiKey).maxRetries(1).apply {
+    private val client: AnthropicClient = AnthropicOkHttpClient.builder().apiKey(apiKey).maxRetries(1)
+        .timeout(java.time.Duration.ofSeconds(90)).apply {   // по умолчанию 10 мин — поиск «висел»
         // посредники принимают ключ либо в x-api-key, либо в Authorization: Bearer — шлём оба
         if (!official) baseUrl(baseUrl.trim().trimEnd('/').removeSuffix("/v1")).authToken(apiKey)
     }.build()

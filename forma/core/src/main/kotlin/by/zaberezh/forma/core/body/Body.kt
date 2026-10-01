@@ -33,6 +33,19 @@ val MEASURE_FIELDS = listOf(
 )
 val POSES = listOf("front" to "спереди", "side" to "сбоку", "back" to "сзади")
 
+/** Вес за день — одна запись: повторное сохранение в тот же день заменяет её (и чистит старые дубли). */
+fun saveWeight(s: Store, day: LocalDate, kg: Double, now: Long = System.currentTimeMillis()) {
+    WEIGHT.all(s, day.startMs(), day.endMs()).forEach { s.delete(it.first.id) }
+    val ts = now.coerceIn(day.startMs(), day.endMs())
+    WEIGHT.save(s, Weight(kg), ts = ts, id = "weight:$day")
+}
+
+fun weightOn(s: Store, day: LocalDate): Double? = WEIGHT.all(s, day.startMs(), day.endMs()).lastOrNull()?.second?.kg
+
+/** Последние дни с весом: по одной записи на день (последняя за день), новые первыми. */
+fun weightDays(s: Store, n: Int): List<Pair<LocalDate, Double>> =
+    WEIGHT.all(s).groupBy { it.first.day }.map { (d, l) -> d to l.last().second.kg }.sortedByDescending { it.first }.take(n)
+
 fun latestWeight(s: Store): Double? = WEIGHT.all(s).lastOrNull()?.second?.kg
 
 /** Дневные веса (среднее за день), по возрастанию. */

@@ -122,7 +122,7 @@ class Edostavka(private val fetch: (String) -> String? = ::httpGet, private val 
 
         fun httpGet(url: String): String? = runCatching {
             val c = URL(url).openConnection() as HttpURLConnection
-            c.connectTimeout = 8000; c.readTimeout = 10000; c.instanceFollowRedirects = true
+            c.connectTimeout = 6000; c.readTimeout = 8000; c.instanceFollowRedirects = true
             c.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0 Mobile Safari/537.36")
             c.setRequestProperty("Accept-Language", "ru-RU,ru;q=0.9")
             try { if (c.responseCode in 200..299) c.inputStream.bufferedReader().readText() else null } finally { c.disconnect() }
