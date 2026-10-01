@@ -34,12 +34,8 @@ import kotlinx.serialization.Serializable
 
 /** Тонкая обёртка над Claude API: поиск КБЖУ (веб-поиск) и разбор чекапа. */
 class Claude(apiKey: String, private val model: String, baseUrl: String = "") {
-    private val official = baseUrl.isBlank() || "api.anthropic.com" in baseUrl
-    private val client: AnthropicClient = AnthropicOkHttpClient.builder().apiKey(apiKey).maxRetries(1)
-        .timeout(java.time.Duration.ofSeconds(90)).apply {   // по умолчанию 10 мин — поиск «висел»
-        // посредники принимают ключ либо в x-api-key, либо в Authorization: Bearer — шлём оба
-        if (!official) baseUrl(baseUrl.trim().trimEnd('/').removeSuffix("/v1")).authToken(apiKey)
-    }.build()
+    private val official = isOfficial(baseUrl)
+    private val client: AnthropicClient = clientFor(apiKey, baseUrl)
 
     /** Токены, потраченные этим клиентом (вход + выход) — показываем пользователю. */
     var used = 0L
@@ -273,6 +269,25 @@ class Claude(apiKey: String, private val model: String, baseUrl: String = "") {
     )
 
     companion object {
+        private fun isOfficial(baseUrl: String) = baseUrl.isBlank() || "api.anthropic.com" in baseUrl
+
+        private var shared: Triple<String, String, AnthropicClient>? = null
+
+        /**
+         * Один HTTP-клиент на ключ и адрес API: соединение переиспользуется (повторный запрос быстрее),
+         * а пулы потоков и сокетов не плодятся на каждый поиск. Сменился ключ/адрес — новый клиент.
+         */
+        @Synchronized private fun clientFor(apiKey: String, baseUrl: String): AnthropicClient {
+            shared?.let { (k, u, c) -> if (k == apiKey && u == baseUrl) return c }
+            val c = AnthropicOkHttpClient.builder().apiKey(apiKey).maxRetries(1)
+                .timeout(java.time.Duration.ofSeconds(90)).apply {   // по умолчанию 10 мин — поиск «висел»
+                    // посредники принимают ключ либо в x-api-key, либо в Authorization: Bearer — шлём оба
+                    if (!isOfficial(baseUrl)) baseUrl(baseUrl.trim().trimEnd('/').removeSuffix("/v1")).authToken(apiKey)
+                }.build()
+            shared = Triple(apiKey, baseUrl, c)
+            return c
+        }
+
         /**
          * Уровни: 3 — поиск + открытие страниц, 2 — только поиск, 1 — без интернета,
          * 0 — режим совместимости (без effort и строгих схем). Стартуем с последнего рабочего.
