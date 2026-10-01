@@ -13,8 +13,11 @@ import android.net.Uri
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -35,6 +38,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import by.zaberezh.forma.core.study.Cabinet
@@ -223,9 +227,10 @@ private fun Cabinet(session: IisSession, onExpired: () -> Unit, onLogout: () -> 
         if (sec == null) {
             Iis.SECTIONS.chunked(2).forEach { row ->
                 item {
-                    androidx.compose.foundation.layout.Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    // одна высота у плиток в ряду (и одинаковая структура у всех — сетка ровная)
+                    androidx.compose.foundation.layout.Row(Modifier.height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         row.forEach { x ->
-                            SectionTile(x, summaryOf(data[x.id]?.getOrNull()), busy[x.id] == true, data[x.id]?.isFailure == true, Modifier.weight(1f)) { open = x }
+                            SectionTile(x, tileOf(data[x.id]?.getOrNull()), busy[x.id] == true, data[x.id]?.isFailure == true, Modifier.weight(1f).fillMaxHeight()) { open = x }
                         }
                         if (row.size == 1) androidx.compose.foundation.layout.Spacer(Modifier.weight(1f))
                     }
@@ -251,17 +256,23 @@ private fun Cabinet(session: IisSession, onExpired: () -> Unit, onLogout: () -> 
 }
 
 @Composable
-private fun SectionTile(sec: IisSection, summary: String?, loading: Boolean, failed: Boolean, modifier: Modifier, onClick: () -> Unit) = Card(
-    modifier.heightIn(min = 104.dp).clickable(onClick = onClick), shape = RoundedCornerShape(16.dp),
+private fun SectionTile(sec: IisSection, info: TileInfo?, loading: Boolean, failed: Boolean, modifier: Modifier, onClick: () -> Unit) = Card(
+    modifier.clickable(onClick = onClick), shape = RoundedCornerShape(16.dp),
     colors = CardDefaults.cardColors(containerColor = C.card),
 ) {
-    Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Text(sec.title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, color = C.accent)
-        when {
-            summary != null -> Text(summary, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
-            loading -> Muted("загружаю…")
-            failed -> Text("не загрузилось", style = MaterialTheme.typography.bodySmall, color = C.bad)
-        }
-        Muted(sec.about)
+    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(sec.title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, color = C.accent,
+            maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text(
+            info?.value ?: if (loading) "…" else "—",
+            Modifier.padding(top = 4.dp), style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold,
+            color = info?.color ?: C.muted, maxLines = 1, overflow = TextOverflow.Ellipsis,
+        )
+        // подпись всегда в две строки: высота у всех плиток одинаковая
+        Text(
+            info?.caption ?: when { loading -> "загружаю…"; failed -> "не загрузилось — открой и нажми «Обновить»"; else -> sec.about },
+            style = MaterialTheme.typography.bodySmall, color = if (info == null && failed) C.bad else C.muted,
+            minLines = 2, maxLines = 2, overflow = TextOverflow.Ellipsis,
+        )
     }
 }
