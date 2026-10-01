@@ -12,7 +12,7 @@
 
     <application
         android:name=".App"
-        android:label="Forma"
+        android:label="Grind"
         android:icon="@mipmap/ic_launcher"
         android:allowBackup="false"
         android:fullBackupContent="@xml/backup_rules"
