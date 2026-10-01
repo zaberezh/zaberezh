@@ -47,7 +47,6 @@ import by.zaberezh.forma.core.gym.Planner
 import by.zaberezh.forma.core.gym.Program
 import by.zaberezh.forma.core.gym.SetLog
 import by.zaberezh.forma.core.gym.Target
-import by.zaberezh.forma.core.gym.VISIT
 import by.zaberezh.forma.core.gym.WORKOUT
 import by.zaberezh.forma.core.gym.Workout
 import by.zaberezh.forma.core.gym.aiPlanPrompt
@@ -61,7 +60,6 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.time.DayOfWeek
-import java.time.Instant
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.time.format.TextStyle
@@ -77,7 +75,6 @@ fun pairLabels(items: List<PlanItem>): Map<String, String> {
     return items.mapNotNull { i -> i.pair?.let { l -> val k = (n[l] ?: 0) + 1; n[l] = k; i.ex to "$l$k" } }.toMap()
 }
 private val DM = DateTimeFormatter.ofPattern("d MMM", RU)
-private val DMHM = DateTimeFormatter.ofPattern("d MMM, HH:mm", RU)
 private val DAY = DateTimeFormatter.ofPattern("EEEE, d MMMM", RU)
 
 @Composable
@@ -117,17 +114,6 @@ private fun GymHome(ctx: Ctx) {
                         }
                         DeleteButton("тренировку") { s.delete(e.id) }
                     }
-                }
-            }
-        }
-        item {
-            Block("Визиты по геолокации") {
-                val names = ctx.settings.gyms.associate { it.id to it.name.substringBefore(" (") }
-                val v = VISIT.all(s).takeLast(8).reversed()
-                if (v.isEmpty()) Muted("Пока нет. Нужно разрешение геолокации «Разрешить всегда» (Настройки).")
-                v.forEach { (_, x) ->
-                    Stat(DMHM.format(Instant.ofEpochMilli(x.start).atZone(ZONE)) + " · " + (names[x.gym] ?: x.gym),
-                        "${x.minutes} мин", if (x.minutes >= ctx.settings.minVisitMin) C.good else C.muted)
                 }
             }
         }

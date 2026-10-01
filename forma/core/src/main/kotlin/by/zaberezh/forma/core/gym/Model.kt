@@ -49,13 +49,7 @@ data class Workout(
     val note: String = "",
 )
 
-@Serializable
-data class Visit(val gym: String, val start: Long, val end: Long) {
-    val minutes: Long get() = (end - start) / 60_000
-}
-
 val WORKOUT = Kind("gym.workout", Workout.serializer())
-val VISIT = Kind("gym.visit", Visit.serializer())
 val PROGRAM = Pref("gym.program", Program.serializer()) { defaultProgram() }
 
 val MUSCLES = linkedMapOf(

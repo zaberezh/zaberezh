@@ -11,7 +11,6 @@ import android.os.PowerManager
 import android.provider.Settings as AndroidSettings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.CircularProgressIndicator
@@ -39,15 +38,11 @@ import by.zaberezh.forma.core.gym.SPLITS
 import by.zaberezh.forma.core.ai.Claude
 import by.zaberezh.forma.core.r1
 import by.zaberezh.forma.sys.Evening
-import by.zaberezh.forma.sys.Geo
 import by.zaberezh.forma.sys.Weigh
 import by.zaberezh.forma.sys.Water
 import by.zaberezh.forma.sys.SleepSync
 import by.zaberezh.forma.sys.Morning
 import by.zaberezh.forma.sys.granted
-import com.google.android.gms.location.LocationServices
-import com.google.android.gms.location.Priority
-import com.google.android.gms.tasks.CancellationTokenSource
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -61,7 +56,7 @@ private val GOALS = listOf(
     F("kcal", "Калории вручную", "ккал"),
 )
 private val ROUTINE = listOf(
-    F("sessions", "Тренировок", "в нед"), F("session", "Тренировка", "мин"), F("visit", "Мин. визит", "мин"),
+    F("sessions", "Тренировок", "в нед"), F("session", "Тренировка", "мин"),
     F("hour", "Уведомление", "ч"), F("minute", "Минуты", "мин"),
     F("checkup", "Чекап каждые", "дн"),
 )
@@ -85,7 +80,7 @@ fun SettingsScreen() {
         mutableStateMapOf(
             "age" to p.age.toString(), "height" to p.heightCm.r1(), "activity" to p.activity.toString(),
             "gain" to p.gainKgPerWeek.toString(), "protein" to p.proteinPerKg.toString(), "fat" to p.fatShare.toString(),
-            "kcal" to (st.kcalOverride?.toString() ?: ""), "sessions" to st.sessionsPerWeek.toString(), "session" to st.sessionMin.toString(), "visit" to st.minVisitMin.toString(),
+            "kcal" to (st.kcalOverride?.toString() ?: ""), "sessions" to st.sessionsPerWeek.toString(), "session" to st.sessionMin.toString(),
             "hour" to st.morningHour.toString(), "minute" to "%02d".format(st.morningMinute), "checkup" to st.checkupDays.toString(),
             "wH" to st.weighHour.toString(), "wM" to "%02d".format(st.weighMinute),
             "weH" to st.weighWeekendHour.toString(), "weM" to "%02d".format(st.weighWeekendMinute),
@@ -97,7 +92,6 @@ fun SettingsScreen() {
     var weekends by remember(st) { mutableStateOf(st.gymWeekends) }
     var split by remember(st) { mutableStateOf(st.split) }
     var water by remember(st) { mutableStateOf(st.waterReminder) }
-    var geo by remember(st) { mutableStateOf(st.geo) }
     var weighOn by remember(st) { mutableStateOf(st.weighReminder) }
     var url by remember(st) { mutableStateOf(st.apiUrl) }
     var model by remember(st) { mutableStateOf(st.model) }
@@ -106,8 +100,7 @@ fun SettingsScreen() {
     var apiErr by remember { mutableStateOf<String?>(null) }
     var checking by remember { mutableStateOf(false) }
     var available by remember { mutableStateOf(listOf<String>()) }
-    val perms = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { Geo.register(c); refresh++ }
-    val bg = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { Geo.register(c); refresh++ }
+    val perms = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { refresh++ }
     val export = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
         uri?.let { c.contentResolver.openOutputStream(it)?.use { o -> o.write(Forma.store.exportJson().toByteArray()) }; msg = "Экспортировано" }
     }
@@ -126,10 +119,10 @@ fun SettingsScreen() {
                 gainKgPerWeek = d("gain", 0.1), proteinPerKg = d("protein", 2.0), fatShare = d("fat", 0.25),
             ),
             kcalOverride = f["kcal"]?.num()?.toInt(),
-            sessionsPerWeek = d("sessions", 3.0).toInt().coerceIn(1, 5), sessionMin = d("session", 90.0).toInt().coerceIn(40, 150), minVisitMin = d("visit", 75.0).toInt(),
+            sessionsPerWeek = d("sessions", 3.0).toInt().coerceIn(1, 5), sessionMin = d("session", 90.0).toInt().coerceIn(40, 150),
             morningHour = d("hour", 8.0).toInt().coerceIn(0, 23), morningMinute = d("minute", 0.0).toInt().coerceIn(0, 59),
             checkupDays = d("checkup", 14.0).toInt().coerceIn(7, 60),
-            gymWeekends = weekends, split = split, weighReminder = weighOn, waterReminder = water, geo = geo,
+            gymWeekends = weekends, split = split, weighReminder = weighOn, waterReminder = water,
             weighHour = d("wH", 7.0).toInt().coerceIn(0, 23), weighMinute = d("wM", 20.0).toInt().coerceIn(0, 59),
             weighWeekendHour = d("weH", 11.0).toInt().coerceIn(0, 23), weighWeekendMinute = d("weM", 0.0).toInt().coerceIn(0, 59),
             apiKey = key.trim(), apiUrl = url.trim(), model = model.trim().ifEmpty { "claude-opus-5-5" },
@@ -138,7 +131,6 @@ fun SettingsScreen() {
         Evening.schedule(c)
         Weigh.schedule(c)
         Water.schedule(c)
-        Geo.register(c)
     }
 
     @Composable
@@ -168,11 +160,6 @@ fun SettingsScreen() {
                     Switch(checked = water, onCheckedChange = { water = it })
                 }
                 Muted("Будни — с ${st.waterWeekdayFrom}:00 до ${st.waterTo}:00, выходные — с ${st.waterWeekendFrom}:00 до ${st.waterTo}:00.")
-                Line {
-                    Text("Учёт зала по геолокации", Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
-                    Switch(checked = geo, onCheckedChange = { geo = it })
-                }
-                if (!geo) Muted("Выключено: тренировка засчитывается по записанным подходам.")
                 Line {
                     Text("Выходные — тоже дни зала", Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
                     Switch(checked = weekends, onCheckedChange = { weekends = it })
@@ -267,20 +254,11 @@ fun SettingsScreen() {
             Block("Разрешения") {
                 refresh.let { }
                 val notif = Build.VERSION.SDK_INT < 33 || c.granted(Manifest.permission.POST_NOTIFICATIONS)
-                val fine = c.granted(Manifest.permission.ACCESS_FINE_LOCATION)
-                val always = c.granted(Manifest.permission.ACCESS_BACKGROUND_LOCATION)
                 val battery = c.getSystemService(PowerManager::class.java).isIgnoringBatteryOptimizations(c.packageName)
-                PermRow(if (st.geo) "Уведомления и геолокация" else "Уведомления", notif && (fine || !st.geo)) {
-                    perms.launch(listOfNotNull(
-                        if (st.geo) Manifest.permission.ACCESS_FINE_LOCATION else null, if (st.geo) Manifest.permission.ACCESS_COARSE_LOCATION else null,
-                        if (Build.VERSION.SDK_INT >= 33) Manifest.permission.POST_NOTIFICATIONS else null,
-                    ).toTypedArray())
+                PermRow("Уведомления", notif) {
+                    perms.launch(listOfNotNull(if (Build.VERSION.SDK_INT >= 33) Manifest.permission.POST_NOTIFICATIONS else null).toTypedArray())
                 }
                 HorizontalDivider(color = C.line)
-                if (st.geo) {
-                    PermRow("Геолокация «Разрешить всегда»", always, enabled = fine) { bg.launch(Manifest.permission.ACCESS_BACKGROUND_LOCATION) }
-                    HorizontalDivider(color = C.line)
-                }
                 PermRow("История использования (сон)", SleepSync.hasAccess(c)) {
                     c.startActivity(Intent(AndroidSettings.ACTION_USAGE_ACCESS_SETTINGS))
                 }
@@ -288,28 +266,7 @@ fun SettingsScreen() {
                 PermRow("Без ограничений батареи", battery) {
                     c.startActivity(Intent(AndroidSettings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:" + c.packageName)))
                 }
-                Muted("Samsung: Настройки → Батарея → Ограничения фоновой работы — убери Forma из «спящих», иначе уведомления и геозоны могут не срабатывать.")
-            }
-        }
-        if (st.geo) item {
-            Block("Залы") {
-                st.gyms.forEachIndexed { i, g ->
-                    if (i > 0) HorizontalDivider(color = C.line)
-                    Column {
-                        Text(g.name, style = MaterialTheme.typography.bodyLarge)
-                        Muted("%.5f, %.5f · радиус %d м".format(g.lat, g.lon, g.radiusM.toInt()))
-                    }
-                    Secondary("Я сейчас здесь — уточнить точку", {
-                        LocationServices.getFusedLocationProviderClient(c)
-                            .getCurrentLocation(Priority.PRIORITY_HIGH_ACCURACY, CancellationTokenSource().token)
-                            .addOnSuccessListener { loc ->
-                                if (loc == null) { msg = "Нет координат, попробуй ещё раз"; return@addOnSuccessListener }
-                                val cur = SETTINGS.get(s)
-                                SETTINGS.set(s, cur.copy(gyms = cur.gyms.map { if (it.id == g.id) it.copy(lat = loc.latitude, lon = loc.longitude) else it }))
-                                Geo.register(c)
-                            }
-                    }, Modifier.fillMaxWidth(), enabled = c.granted(Manifest.permission.ACCESS_FINE_LOCATION))
-                }
+                Muted("Samsung: Настройки → Батарея → Ограничения фоновой работы — убери Forma из «спящих», иначе уведомления могут не приходить.")
             }
         }
         item {
