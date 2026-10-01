@@ -6,6 +6,8 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -38,6 +40,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -58,6 +61,7 @@ import by.zaberezh.forma.core.r1
 import kotlin.math.roundToInt
 
 // ---------- палитра ----------
+/** Два раздела одного приложения: те же серые, акцент — голубой у «Здоровья», лавандовый у «Учёбы» (той же яркости). */
 object C {
     val bg = Color(0xFF0D0F12)
     val card = Color(0xFF16191E)
@@ -65,14 +69,19 @@ object C {
     val line = Color(0xFF2A2F37)
     val text = Color(0xFFE8EAED)
     val muted = Color(0xFF8E97A3)
-    val accent = Color(0xFF7FB4FF)
+    val health = Color(0xFF7FB4FF)
+    val study = Color(0xFFB79CFF)
     val good = Color(0xFF5FD08C)
     val warn = Color(0xFFF2C94C)
     val bad = Color(0xFFFF6B6B)
+
+    /** 0 — «Здоровье», 1 — «Учёба». Чтение в композиции перекрашивает весь экран. */
+    var section by mutableIntStateOf(0)
+    val accent: Color get() = if (section == 1) study else health
 }
 
-val Scheme = darkColorScheme(
-    primary = C.accent, onPrimary = Color(0xFF0A1A30),
+fun scheme(accent: Color) = darkColorScheme(
+    primary = accent, onPrimary = if (accent == C.study) Color(0xFF1C1033) else Color(0xFF0A1A30),
     background = C.bg, onBackground = C.text,
     surface = C.bg, onSurface = C.text,
     surfaceVariant = C.card, onSurfaceVariant = C.muted,
@@ -267,3 +276,12 @@ fun DayDot(label: String, done: Boolean, planned: Boolean, today: Boolean, modif
         Text(when { done -> "✓"; planned -> "зал"; else -> "" }, color = if (done) C.bg else C.accent, style = MaterialTheme.typography.labelMedium)
     }
 }
+
+/** Кружок-галочка: пустой — не сделано, зелёный с ✓ — сделано. */
+@Composable
+fun CheckCircle(done: Boolean, onClick: () -> Unit, size: androidx.compose.ui.unit.Dp = 24.dp) = Box(
+    Modifier.size(size).clip(RoundedCornerShape(50)).background(if (done) C.good else C.bg)
+        .border(2.dp, if (done) C.good else C.muted, RoundedCornerShape(50))
+        .clickable(onClick = onClick),
+    contentAlignment = Alignment.Center,
+) { if (done) Text("✓", color = C.bg, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold) }
