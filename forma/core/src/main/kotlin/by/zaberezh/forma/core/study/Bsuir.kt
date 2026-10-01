@@ -57,6 +57,8 @@ data class Timetable(
     val format: Int = 0,
     val anchorDate: String? = null,
     val anchorWeek: Int? = null,
+    val examsStart: String? = null,   // начало сессии (ИИС: startExamsDate)
+    val examsEnd: String? = null,
 )
 
 /** Группа и подгруппа (0 — обе). */
@@ -83,8 +85,8 @@ fun adoptGroup(s: by.zaberezh.forma.core.store.Store, group: String): Boolean {
  * Учебная неделя БГУИР — цикл из 4 недель; пара идёт в недели из своего weekNumber.
  */
 object Bsuir {
-    /** Текущая версия разбора расписания (2 — фото преподавателей по id). */
-    const val FORMAT = 2
+    /** Текущая версия разбора расписания (2 — фото преподавателей по id, 3 — даты сессии). */
+    const val FORMAT = 3
 
     private const val API = "https://iis.bsuir.by/api/v1"
     private val DMY = DateTimeFormatter.ofPattern("dd.MM.yyyy")
@@ -141,7 +143,8 @@ object Bsuir {
             lessons += lesson(o, LocalDate.parse(d).dayOfWeek.value).copy(date = d, weeks = emptyList())
         }
         return Timetable(group, lessons.sortedWith(compareBy({ it.weekday }, { it.start })),
-            date(root["startDate"].str()), date(root["endDate"].str()), now, format = FORMAT)
+            date(root["startDate"].str()), date(root["endDate"].str()), now, format = FORMAT,
+            examsStart = date(root["startExamsDate"].str()), examsEnd = date(root["endExamsDate"].str()))
     }
 
     /** Номер учебной недели 1–4 на дату: от якоря с сервера или от 1 сентября (неделя 1). */

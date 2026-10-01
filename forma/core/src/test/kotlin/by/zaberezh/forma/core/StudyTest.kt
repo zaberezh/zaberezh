@@ -156,4 +156,19 @@ class StudyTest {
         // вечером понедельника — будильник на вторник
         assertEquals(mon.plusDays(1).atTime(7, 10), Study.nextWake(tt(1 to "08:30", 2 to "08:30"), mon.atTime(21, 0)))
     }
+
+    @Test fun sessionCountdownAndExams() {
+        val tt = by.zaberezh.forma.core.study.Timetable("653502", listOf(
+            by.zaberezh.forma.core.study.Lesson("МА", "Математический анализ", "Консультация", "10:00", date = "2027-01-09"),
+            by.zaberezh.forma.core.study.Lesson("МА", "Математический анализ", "Экзамен", "09:00", date = "2027-01-10"),
+            by.zaberezh.forma.core.study.Lesson("ОАиП", type = "Экзамен", start = "09:00", date = "2027-01-15"),
+            by.zaberezh.forma.core.study.Lesson("Физ", type = "ПЗ", start = "11:40", weekday = 4),
+        ), examsStart = "2027-01-08", examsEnd = "2027-01-28")
+        val s = by.zaberezh.forma.core.study.Session.of(tt, LocalDate.of(2026, 12, 30))
+        assertEquals(9, s.daysLeft); assertFalse(s.running)
+        assertEquals(3, s.items.size); assertEquals(2, s.exams.size)
+        val during = by.zaberezh.forma.core.study.Session.of(tt, LocalDate.of(2027, 1, 12))
+        assertTrue(during.running); assertEquals(1, during.exams.size)
+        assertFalse(by.zaberezh.forma.core.study.Session.of(tt.copy(lessons = emptyList(), examsStart = null), LocalDate.of(2026, 12, 30)).known)
+    }
 }
