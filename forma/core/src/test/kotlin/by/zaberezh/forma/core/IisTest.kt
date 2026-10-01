@@ -66,4 +66,25 @@ class IisTest {
         assertEquals("Лабораторная работа", l.typeFull)
         assertTrue(l.photos.single().startsWith("https://"))
     }
+
+    @Test fun browserHeadersAndRetryOn503() {
+        var calls = 0
+        val flaky = Http { _, _, _, h ->
+            calls++
+            assertTrue(h["User-Agent"]!!.startsWith("Mozilla/")); assertEquals("https://iis.bsuir.by", h["Origin"])
+            if (calls == 1) HttpResp(503, "") else HttpResp(200, "{}", listOf("JSESSIONID=z; Path=/"))
+        }
+        assertEquals("JSESSIONID=z", Iis.login(flaky, "1", "p", pause = {}).cookie)
+        assertEquals(2, calls)
+        val down = Http { _, _, _, _ -> HttpResp(503, "") }
+        val e = assertFailsWith<IisError> { Iis.login(down, "1", "p", pause = {}) }
+        assertTrue(e.message!!.contains("недоступен"))
+    }
+
+    @Test fun photoLinksNormalized() {
+        assertEquals("https://iis.bsuir.by/api/v1/employees/photo/1", Iis.photoUrl("http://iis.bsuir.by/api/v1/employees/photo/1"))
+        assertEquals("https://iis.bsuir.by/api/v1/employees/photo/1", Iis.photoUrl("/api/v1/employees/photo/1"))
+        assertEquals("https://iis.bsuir.by/p.jpg", Iis.photoUrl("//iis.bsuir.by/p.jpg"))
+        assertEquals("", Iis.photoUrl(null)); assertEquals("", Iis.photoUrl("data:image/png;base64,AAA"))
+    }
 }
