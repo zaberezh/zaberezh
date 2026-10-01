@@ -23,7 +23,7 @@ class IisError(msg: String) : RuntimeException(msg)
 /** Сессия ЛК: только cookie сессии (пароль нигде не хранится) и данные профиля из ответа на вход. */
 data class IisSession(val cookie: String, val profile: String = "")
 
-data class IisSection(val id: String, val title: String, val path: String, val about: String)
+data class IisSection(val id: String, val title: String, val about: String)
 
 /**
  * Личный кабинет ИИС БГУИР (iis.bsuir.by/api/v1). Безопасность:
@@ -35,14 +35,14 @@ object Iis {
     const val HOST = "https://iis.bsuir.by"
     const val BASE = "$HOST/api/v1"
 
-    // адреса — как у веб-версии ИИС (сверено с рабочим клиентом MyIIS)
+    // загрузка и разбор — Cabinet.load; адреса сверены с веб-версией ИИС
     val SECTIONS = listOf(
-        IisSection("cv", "Персональные данные", "/personal-information", "ФИО, факультет, курс, группа"),
-        IisSection("markbook", "Зачётная книжка", "/markbook", "оценки по семестрам, средний балл"),
-        IisSection("rating", "Успеваемость", "/personal-rating", "текущие отметки по предметам"),
-        IisSection("omissions", "Пропуски", "/omissions-by-student", "пропущенные часы"),
-        IisSection("group", "Моя группа", "/student-groups/user-group-info", "куратор, староста, студенты"),
-        IisSection("certificates", "Справки", "/certificate", "заказанные справки"),
+        IisSection("rating", "Успеваемость", "отметки, лабы и сроки сдачи"),
+        IisSection("markbook", "Зачётная книжка", "итоговые оценки по семестрам"),
+        IisSection("omissions", "Пропуски", "часы по месяцам и по предметам"),
+        IisSection("group", "Моя группа", "куратор, староста, одногруппники"),
+        IisSection("certificates", "Справки", "заказанные справки и их статус"),
+        IisSection("cv", "Обо мне", "факультет, специальность, контакты"),
     )
 
     private fun cookieOf(setCookies: List<String>) = setCookies.map { it.substringBefore(';').trim() }.filter { '=' in it && !it.endsWith("=") }
@@ -134,6 +134,7 @@ object Iis {
         val u = when {
             l.isEmpty() || l.startsWith("data:") -> return ""
             l.startsWith("//") -> "https:$l"
+            l.startsWith("null/") -> "$HOST/" + l.removePrefix("null/")
             l.startsWith("/") -> HOST + l
             l.startsWith("http://") -> "https://" + l.removePrefix("http://")
             else -> l

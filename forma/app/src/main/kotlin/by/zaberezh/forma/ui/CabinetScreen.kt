@@ -10,7 +10,6 @@ import android.webkit.WebViewClient
 import androidx.activity.compose.BackHandler
 import android.content.Intent
 import android.net.Uri
-import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -23,7 +22,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -39,12 +37,13 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import by.zaberezh.forma.core.study.Cabinet
+import by.zaberezh.forma.core.study.CabinetData
 import by.zaberezh.forma.core.study.Iis
 import by.zaberezh.forma.core.study.IisSection
 import by.zaberezh.forma.core.study.IisSession
 import by.zaberezh.forma.core.study.IisUnauthorized
-import by.zaberezh.forma.core.study.JCard
-import by.zaberezh.forma.core.study.JsonView
+import by.zaberezh.forma.core.study.Person
 import by.zaberezh.forma.sys.SecureStore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -186,34 +185,36 @@ private fun LoginForm(notice: String?, onLogin: (IisSession) -> Unit, onSite: ()
 private fun Cabinet(session: IisSession, onExpired: () -> Unit, onLogout: () -> Unit) {
     val c = LocalContext.current
     val scope = rememberCoroutineScope()
-    val profile = remember(session) { Iis.profile(session.profile) }
     var open by remember { mutableStateOf<IisSection?>(null) }
-    val data = remember { mutableStateMapOf<String, Result<List<JCard>>>() }
-    var loading by remember { mutableStateOf<String?>(null) }
+    val data = remember { mutableStateMapOf<String, Result<CabinetData>>() }
+    val busy = remember { mutableStateMapOf<String, Boolean>() }
+    BackHandler(enabled = open != null) { open = null }
 
-    fun load(sec: IisSection, force: Boolean = false) {
-        if (!force && data[sec.id]?.isSuccess == true) return
-        loading = sec.id
-        scope.launch {
-            val r = withContext(Dispatchers.IO) { runCatching { JsonView.cards(Iis.get(Iis.jdk, session, sec.path)) } }
-            loading = null
-            if (r.exceptionOrNull() is IisUnauthorized) onExpired() else data[sec.id] = r
-        }
+    suspend fun fetch(id: String) {
+        busy[id] = true
+        val r = withContext(Dispatchers.IO) { runCatching { Cabinet.load(Iis.jdk, session, id) } }
+        busy[id] = false
+        if (r.exceptionOrNull() is IisUnauthorized) onExpired() else data[id] = r
     }
-    LaunchedEffect(open) { open?.let { load(it) } }
+    // всё сразу в фоне: плитки показывают сводку, а раздел открывается мгновенно
+    LaunchedEffect(session) { Iis.SECTIONS.forEach { if (data[it.id]?.isSuccess != true) fetch(it.id) } }
 
+    val fromLogin = remember(session) { Cabinet.person(null, null, session.profile) }
+    val person = data["cv"]?.getOrNull() as? Person ?: fromLogin
     Screen {
         item {
             Block {
                 Line {
-                    RemoteImage(profile?.photo.orEmpty(), 56.dp, profile?.fio?.split(" ")?.take(2)?.mapNotNull { it.firstOrNull() }?.joinToString("") ?: "ИИС")
+                    RemoteImage(person.photo, 56.dp, initials(person.fio).filter(Char::isUpperCase).take(2).ifBlank { "ИИС" }, session.cookie)
                     Column(Modifier.weight(1f)) {
-                        Text(profile?.fio?.ifBlank { null } ?: "Личный кабинет", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                        profile?.group?.takeIf { it.isNotBlank() }?.let { Muted("Группа $it") }
+                        Text(person.fio.ifBlank { "Личный кабинет" }, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                        Muted(listOfNotNull(
+                            person.group.ifBlank { null }?.let { "группа $it" }, person.course?.let { "$it курс" }, person.faculty.ifBlank { null },
+                        ).joinToString(" · ").replaceFirstChar { it.uppercase() })
                     }
                 }
                 Line {
-                    Secondary("Открыть на сайте", { c.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://iis.bsuir.by"))) }, Modifier.weight(1f))
+                    Secondary("Сайт ИИС", { c.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://iis.bsuir.by"))) }, Modifier.weight(1f))
                     Secondary("Выйти", { scope.launch { withContext(Dispatchers.IO) { Iis.logout(Iis.jdk, session) }; onLogout() } }, Modifier.weight(1f))
                 }
             }
@@ -223,7 +224,9 @@ private fun Cabinet(session: IisSession, onExpired: () -> Unit, onLogout: () -> 
             Iis.SECTIONS.chunked(2).forEach { row ->
                 item {
                     androidx.compose.foundation.layout.Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        row.forEach { x -> SectionTile(x, Modifier.weight(1f)) { open = x } }
+                        row.forEach { x ->
+                            SectionTile(x, summaryOf(data[x.id]?.getOrNull()), busy[x.id] == true, data[x.id]?.isFailure == true, Modifier.weight(1f)) { open = x }
+                        }
                         if (row.size == 1) androidx.compose.foundation.layout.Spacer(Modifier.weight(1f))
                     }
                 }
@@ -233,52 +236,32 @@ private fun Cabinet(session: IisSession, onExpired: () -> Unit, onLogout: () -> 
                 Line {
                     Secondary("‹ Разделы", { open = null })
                     Text(sec.title, Modifier.weight(1f), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                    if (loading == sec.id) CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
-                    else Flat("Обновить", { load(sec, force = true) })
+                    if (busy[sec.id] == true) CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
+                    else Flat("Обновить", { scope.launch { fetch(sec.id) } })
                 }
             }
             val r = data[sec.id]
-            r?.exceptionOrNull()?.let { e -> item { Block { Err(e.message ?: "Ошибка"); Muted("Раздел можно открыть на сайте ИИС кнопкой выше.") } } }
-            r?.getOrNull()?.let { cards ->
-                if (cards.isEmpty()) item { Block { Muted("Пусто.") } }
-                cards.forEach { card -> item { CardView(card) } }
+            when {
+                r == null -> item { Block { Line { CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp); Muted("Загружаю из ИИС…") } } }
+                r.isFailure -> item { Block { Err(r.exceptionOrNull()?.message ?: "Ошибка"); Muted("Попробуй «Обновить» или открой раздел на сайте ИИС.") } }
+                else -> cabinetSection(r.getOrThrow(), person.fio)
             }
         }
     }
 }
 
 @Composable
-private fun SectionTile(sec: IisSection, modifier: Modifier, onClick: () -> Unit) = Card(
-    modifier.heightIn(min = 96.dp).clickable(onClick = onClick), shape = RoundedCornerShape(16.dp),
+private fun SectionTile(sec: IisSection, summary: String?, loading: Boolean, failed: Boolean, modifier: Modifier, onClick: () -> Unit) = Card(
+    modifier.heightIn(min = 104.dp).clickable(onClick = onClick), shape = RoundedCornerShape(16.dp),
     colors = CardDefaults.cardColors(containerColor = C.card),
 ) {
     Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Text(sec.title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, color = C.accent)
+        when {
+            summary != null -> Text(summary, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+            loading -> Muted("загружаю…")
+            failed -> Text("не загрузилось", style = MaterialTheme.typography.bodySmall, color = C.bad)
+        }
         Muted(sec.about)
-    }
-}
-
-/** Карточка ответа ИИС: поля строками, вложенное — раскрывающимися подкарточками. */
-@Composable
-private fun CardView(card: JCard) = Block(card.title.ifBlank { null }) {
-    card.rows.forEach { (k, v) -> if (k.isBlank()) Text(v, style = MaterialTheme.typography.bodyMedium) else Stat(k, v) }
-    card.children.forEachIndexed { i, ch ->
-        if (i > 0 || card.rows.isNotEmpty()) HorizontalDivider(color = C.line)
-        SubCard(ch)
-    }
-}
-
-@Composable
-private fun SubCard(card: JCard) {
-    var open by remember(card) { mutableStateOf(card.children.isEmpty() && card.rows.size <= 4) }
-    Column(Modifier.animateContentSize().fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Line {
-            Text(card.title.ifBlank { "—" }, Modifier.weight(1f).clickable { open = !open }, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
-            Flat(if (open) "Свернуть" else "Подробнее", { open = !open }, C.muted)
-        }
-        if (open) {
-            card.rows.forEach { (k, v) -> if (k.isBlank()) Muted(v) else Stat(k, v) }
-            card.children.forEach { ch -> Column(Modifier.padding(start = 12.dp)) { SubCard(ch) } }
-        }
     }
 }
