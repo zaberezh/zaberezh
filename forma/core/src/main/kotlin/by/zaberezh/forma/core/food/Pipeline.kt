@@ -7,7 +7,7 @@ data class FoodResult(val items: List<FoodItem>, val how: String, val missing: L
 
 /**
  * Поиск КБЖУ по шагам — от мгновенного и точного к медленному:
- * 1) меню сетей (KFC) → 2) своя библиотека → 3) таблица частых продуктов (банан, гречка, яйца…) — всё офлайн;
+ * 1) меню заведений (KFC, Кинза) → 2) своя библиотека → 3) таблица частых продуктов (банан, гречка, яйца…) — всё офлайн;
  * 4) edostavka.by (магазинные товары, точные цифры) → 5) интернет без ИИ (поисковик + сайты калорийности);
  * 6) Claude — только то, что не нашлось нигде.
  * Сетевые шаги делят общий бюджет времени, поэтому поиск не «висит».
@@ -32,7 +32,7 @@ class FoodPipeline(
         fun add(step: String, found: List<FoodItem>) { if (found.isNotEmpty()) { items += found; how[step] = (how[step] ?: 0) + found.size } }
 
         val menu = Menus.resolve(text)
-        add("KFC", menu.items)
+        add("меню заведения", menu.items)
         var rest = if (menu.items.isEmpty()) splitParts(text) else menu.rest.flatMap(::splitParts)
 
         val lib = LibraryResolver(store)

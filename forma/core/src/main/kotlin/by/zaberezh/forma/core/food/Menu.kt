@@ -151,7 +151,7 @@ class Menu(
 
 /** Все меню сетей. Новая сеть — новый файл в resources/menus и строка здесь. */
 object Menus {
-    val all: List<Menu> by lazy { listOf("kfc").map(Menu::load) }
+    val all: List<Menu> by lazy { listOf("kfc", "kinza").map(Menu::load) }
 
     /** Общие продукты (банан, гречка, яйца…) — средние значения из таблиц калорийности и вес штуки. */
     val basic: Menu by lazy { Menu.load("basic") }
