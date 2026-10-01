@@ -34,9 +34,11 @@ import by.zaberezh.forma.core.body.MEASURE
 import by.zaberezh.forma.core.body.MEASURE_FIELDS
 import by.zaberezh.forma.core.body.Measure
 import by.zaberezh.forma.core.body.WEIGHT
-import by.zaberezh.forma.core.body.Weight
 import by.zaberezh.forma.core.body.navyBodyFat
+import by.zaberezh.forma.core.body.saveWeight
 import by.zaberezh.forma.core.body.trendWeight
+import by.zaberezh.forma.core.body.weightDays
+import by.zaberezh.forma.core.body.weightOn
 import by.zaberezh.forma.core.body.weightRate
 import by.zaberezh.forma.core.r1
 import by.zaberezh.forma.core.r2
@@ -53,7 +55,8 @@ fun BodyScreen() {
     val c = LocalContext.current
     Screen {
         item {
-            var w by remember { mutableStateOf("") }
+            val todayW = weightOn(s, ctx.today)
+            var w by remember(todayW) { mutableStateOf(todayW?.r1() ?: "") }
             val all = WEIGHT.all(s)
             val trend = trendWeight(s, ctx.today)
             val rate = weightRate(s, ctx.today)
@@ -66,10 +69,12 @@ fun BodyScreen() {
                 Stat("Цель", "+${goal.r2()} кг/нед")
                 Line {
                     Field("Вес сегодня", w, { w = it }, Modifier.weight(1f), suffix = "кг")
-                    Primary("Сохранить", { w.num()?.let { WEIGHT.save(s, Weight(it)); w = "" } })
+                    Primary(if (todayW == null) "Сохранить" else "Изменить", { w.num()?.let { saveWeight(s, ctx.today, it) } })
                 }
-                if (all.isNotEmpty()) Buttons {
-                    all.takeLast(10).reversed().forEach { (e, x) -> Pill("${DM.format(e.day)}: ${x.kg.r1()}", C.muted) }
+                if (todayW != null) Muted("Сегодня уже записано ${todayW.r1()} кг — новое значение заменит его.")
+                val days = weightDays(s, 10)
+                if (days.isNotEmpty()) Buttons {
+                    days.forEach { (d, kg) -> Pill("${DM.format(d)}: ${kg.r1()}", C.muted) }
                 }
             }
         }
