@@ -349,3 +349,15 @@ fun CheckCircle(done: Boolean, onClick: () -> Unit, size: androidx.compose.ui.un
         .clickable(onClick = onClick),
     contentAlignment = Alignment.Center,
 ) { if (done) Text("✓", color = C.bg, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold) }
+
+/** Прочитать не больше [max] байт: чужой огромный файл или ответ не забьёт память (readNBytes — только с Android 13). */
+internal fun java.io.InputStream.readUpTo(max: Int): ByteArray {
+    val out = java.io.ByteArrayOutputStream()
+    val buf = ByteArray(32 shl 10)
+    while (out.size() < max) {
+        val n = read(buf, 0, minOf(buf.size, max - out.size()))
+        if (n < 0) break
+        out.write(buf, 0, n)
+    }
+    return out.toByteArray()
+}

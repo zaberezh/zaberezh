@@ -34,10 +34,7 @@ private val photos = android.util.LruCache<String, ImageBitmap>(64)
  * [cookie] (сессия ИИС для своего фото) уходит только на https://iis.bsuir.by.
  */
 private fun load(start: String, cookie: String?): ImageBitmap? {
-    if (start.startsWith("data:image")) {
-        val bytes = Base64.decode(start.substringAfter(','), Base64.DEFAULT)
-        return BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
-    }
+    if (start.startsWith("data:image")) return decodeSmall(Base64.decode(start.substringAfter(','), Base64.DEFAULT))
     var url = start
     repeat(4) {
         val c = URL(url).openConnection() as HttpURLConnection
@@ -48,13 +45,29 @@ private fun load(start: String, cookie: String?): ImageBitmap? {
             c.setRequestProperty("Referer", "${Iis.HOST}/")
             if (cookie != null && url.startsWith("${Iis.HOST}/")) c.setRequestProperty("Cookie", cookie)
             when (c.responseCode) {
-                in 200..299 -> return c.inputStream.use { BitmapFactory.decodeStream(it) }?.asImageBitmap()
+                in 200..299 -> return decodeSmall(c.inputStream.use { it.readUpTo(MAX_BYTES + 1) }.takeIf { it.size <= MAX_BYTES } ?: return null)
                 in 300..399 -> url = URL(URL(url), c.getHeaderField("Location") ?: return null).toString().takeIf { it.startsWith("https://") } ?: return null
                 else -> return null
             }
         } finally { c.disconnect() }
     }
     return null
+}
+
+private const val MAX_BYTES = 8 shl 20   // больше — не фото профиля; в память не читаем
+private const val MAX_PX = 320           // аватарки на экране ≤ 96 dp — хватит и на плотных экранах
+
+/**
+ * Декодирование с уменьшением: огромная картинка (6000×4000 = ~96 МБ в памяти) не уронит приложение,
+ * а в кэше лежат маленькие копии.
+ */
+private fun decodeSmall(bytes: ByteArray): ImageBitmap? {
+    val o = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    BitmapFactory.decodeByteArray(bytes, 0, bytes.size, o)
+    if (o.outWidth <= 0 || o.outHeight <= 0) return null
+    var sample = 1
+    while (minOf(o.outWidth, o.outHeight) / (sample * 2) >= MAX_PX) sample *= 2
+    return BitmapFactory.decodeByteArray(bytes, 0, bytes.size, BitmapFactory.Options().apply { inSampleSize = sample })?.asImageBitmap()
 }
 
 /** Круглое фото по ссылке или data:image (кэш в памяти); пока грузится или нет фото — инициалы. */
