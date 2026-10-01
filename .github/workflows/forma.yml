@@ -28,11 +28,11 @@ jobs:
         with:
           name: grind-apk
           path: forma/grind.apk
+      # релиз — встроенным gh, без стороннего action: меньше чужого кода с правом записи в репозиторий
       - name: Release (скачать APK с телефона)
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: grind-${{ github.run_number }}
-          name: Grind 0.1.${{ github.run_number }}
-          target_commitish: ${{ github.sha }}
-          files: forma/grind.apk
-          make_latest: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          N: ${{ github.run_number }}
+          SHA: ${{ github.sha }}
+        run: gh release create "grind-$N" grind.apk --title "Grind 0.1.$N" --target "$SHA" --latest --notes "APK для телефона: grind.apk"
