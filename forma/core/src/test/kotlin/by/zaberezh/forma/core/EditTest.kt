@@ -44,9 +44,19 @@ class EditTest {
         assertEquals(1.0, p.exercises.last().bw)
 
         assertFailsWith<IllegalArgumentException> { p.upsert(null, ExerciseInput("Непонятное", 10.0, "10", 3, null, false, null)) }
-        assertEquals(mapOf("abs" to 1.0), p.upsert(null, ExerciseInput("Непонятное", 10.0, "10", 3, "abs", false, null)).exercises.last().muscles)
+        assertEquals(mapOf("abs" to 1.0), p.upsert(null, ExerciseInput("Непонятное", 10.0, "10", 3, setOf("abs"), false, null)).exercises.last().muscles)
 
         p = p.remove(ex.id)
         assertEquals(1, p.exercises.size)
+    }
+
+    @Test fun severalMainMuscles() {
+        assertEquals(setOf("hams", "glutes"), guessMuscles("Румынская тяга").filterValues { it == 1.0 }.keys)
+        assertEquals(setOf("chest", "triceps"), guessMuscles("Брусья").filterValues { it == 1.0 }.keys)
+        var p = defaultProgram()
+        // выбрал сам две основные — обе по 1, угаданная вспомогательная (передняя дельта) осталась ½
+        p = p.upsert(null, ExerciseInput("Жим штанги лёжа", 60.0, "8", 3, setOf("chest", "triceps"), false, null))
+        assertEquals(mapOf("chest" to 1.0, "triceps" to 1.0, "front_delts" to 0.5), p.exercises.single().muscles)
+        assertFailsWith<IllegalArgumentException> { p.upsert(null, ExerciseInput("Жим", 60.0, "8", 3, emptySet(), false, null)) }
     }
 }

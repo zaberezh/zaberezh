@@ -97,15 +97,15 @@ fun ExerciseForm(ctx: Ctx, ex: Exercise?, onDone: () -> Unit, onSaved: (String) 
     }
     var reps by remember(ex) { mutableStateOf(ex?.let { "${it.repMin}-${it.repMax}" } ?: "") }
     var sets by remember(ex) { mutableStateOf((ex?.sets ?: 3).toString()) }
-    var muscle by remember(ex) { mutableStateOf(ex?.muscles?.entries?.firstOrNull { it.value == 1.0 }?.key) }
+    var muscles by remember(ex) { mutableStateOf(ex?.muscles?.filterValues { it >= 1.0 }?.keys ?: emptySet()) }
     var musclePicked by remember(ex) { mutableStateOf(ex != null) }
     var bw by remember(ex) { mutableStateOf(ex?.let { it.bw > 0 } ?: false) }
     var bwPicked by remember(ex) { mutableStateOf(ex != null) }
     var step by remember(ex) { mutableStateOf(ex?.step?.r1() ?: "") }
     var err by remember { mutableStateOf<String?>(null) }
 
-    val guessed = guessMuscles(name).entries.firstOrNull { it.value == 1.0 }?.key
-    val shownMuscle = if (musclePicked) muscle else guessed
+    val guessed = guessMuscles(name).filterValues { it >= 1.0 }.keys
+    val shownMuscles = if (musclePicked) muscles else guessed
     val shownBw = if (bwPicked) bw else guessBodyweight(name) > 0
     val range = parseReps(reps)
 
@@ -118,11 +118,13 @@ fun ExerciseForm(ctx: Ctx, ex: Exercise?, onDone: () -> Unit, onSaved: (String) 
         }
         Muted(range?.let { (lo, hi) -> "Диапазон $lo–$hi: держишь вес, пока во всех подходах не будет $hi, потом +шаг и снова с $lo." }
             ?: "Повторы: сколько делаешь сейчас с этим весом (10) или диапазон (8-12).")
-        Text("Основная мышца" + if (!musclePicked && guessed != null) " (угадано по названию)" else "",
+        Text("Основные мышцы — можно несколько" + if (!musclePicked && guessed.isNotEmpty()) " (угадано по названию)" else "",
             style = MaterialTheme.typography.labelLarge, color = C.muted)
         Buttons {
             MUSCLES.forEach { (id, label) ->
-                FilterChip(selected = shownMuscle == id, onClick = { muscle = id; musclePicked = true }, label = { Text(label) })
+                FilterChip(selected = id in shownMuscles, onClick = {
+                    muscles = if (id in shownMuscles) shownMuscles - id else shownMuscles + id; musclePicked = true
+                }, label = { Text(label) })
             }
         }
         Line {
@@ -136,7 +138,7 @@ fun ExerciseForm(ctx: Ctx, ex: Exercise?, onDone: () -> Unit, onSaved: (String) 
                 runCatching {
                     p.upsert(ex?.id, ExerciseInput(
                         name = name, weight = weight.num(), reps = reps, sets = sets.num()?.toInt() ?: 0,
-                        muscle = shownMuscle, bodyweight = shownBw, step = step.num(),
+                        muscles = if (musclePicked) shownMuscles else null, bodyweight = shownBw, step = step.num(),
                     ))
                 }.onSuccess { np ->
                     PROGRAM.set(s, np)
