@@ -112,7 +112,7 @@ object GymModule : Module {
     fun planFor(ctx: Ctx, date: LocalDate, focus: String? = null): DayPlan {
         val s = ctx.store
         val p0 = program(s)
-        if (focus == null) storedPlan(s, date)?.let { return it.copy(items = Planner.arrange(p0, it.items, ctx.settings.supersets)) }
+        if (focus == null) storedPlan(s, date)?.let { return it.copy(items = Planner.arrange(p0, it.items, ctx.settings.supersets, it.focus)) }
         val p = program(s)
         val log = Planner.muscleLog(p, sessions(s)).toMutableList()
         val used = lastUsed(s).toMutableMap()
@@ -123,7 +123,7 @@ object GymModule : Module {
             pl.items.forEach { used[it.ex] = d }
         }
         val plan = Planner.build(p, date, log, used, ctx.settings.sessionsPerWeek, focus)
-        return plan.copy(items = Planner.arrange(p, plan.items, ctx.settings.supersets))
+        return plan.copy(items = Planner.arrange(p, plan.items, ctx.settings.supersets, focus))
     }
 
     /** Цели по упражнениям плана (двойная прогрессия; число подходов — из плана). */

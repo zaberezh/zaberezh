@@ -128,7 +128,7 @@ object Planner {
         return DayPlan(date.toString(), chosen.map { PlanItem(it.first.id, it.second) }, focus)
     }
 
-    // ---------- порядок и суперсеты ----------
+    // ---------- порядок (и суперсеты — отключены по решению пользователя) ----------
 
     private enum class Kind { PUSH, PULL, LEGS, ARMS_FLEX, ARMS_EXT, OTHER }
 
@@ -143,28 +143,62 @@ object Planner {
         else -> Kind.OTHER // средняя дельта, пресс, предплечья
     }
 
-    /** Порядок изоляции: визуальный приоритет → руки → мелкие (пресс, икры, предплечья) в конце. */
-    private val ISO_RANK = mapOf("side_delts" to 0, "rear_delts" to 1, "chest" to 2, "back" to 2, "quads" to 3, "hams" to 3, "glutes" to 3,
-        "biceps" to 4, "triceps" to 4, "front_delts" to 5, "calves" to 6, "forearms" to 7, "abs" to 8)
+    /** Блоки тренировки: ноги, жимы, тяги (+ мелкие мышцы своей зоны), пресс. */
+    private enum class Block { LEGS, PUSH, PULL, CORE }
+
+    private fun block(m: String) = when (m) {
+        "quads", "hams", "glutes", "calves" -> Block.LEGS
+        "chest", "front_delts", "side_delts", "triceps" -> Block.PUSH
+        "back", "rear_delts", "biceps", "forearms" -> Block.PULL
+        else -> Block.CORE
+    }
+
+    /** Зона внутри блока: дельты — одна зона (армейский и махи подряд), задняя дельта — со спиной. */
+    private fun region(m: String) = when (m) {
+        "front_delts", "side_delts" -> "delts"
+        "rear_delts" -> "back"
+        "quads", "hams", "glutes" -> "legs"
+        else -> m
+    }
+
+    /** Мелкие мышцы — в конце своего блока, хват (предплечья) — самым последним. */
+    private val TAIL = mapOf("triceps" to 1, "biceps" to 1, "calves" to 1, "forearms" to 2, "abs" to 1)
 
     /**
-     * Порядок упражнений и пары суперсетов.
-     * - Порядок на гипертрофию почти не влияет (Nunes 2021, 11 исследований), но первым упражнениям достаются
-     *   больший прирост силы и больше повторов (Simão 2012) → сначала базовые на приоритетные мышцы (спина, грудь),
-     *   ноги, затем изоляция по приоритету (средняя дельта первой), руки ближе к концу — чтобы не «убить»
-     *   бицепс/трицепс до тяг и жимов, где они вспомогательные. Предутомление пользы не даёт (Trindade 2019).
-     * - Суперсеты агонист–антагонист (жим ↔ тяга, бицепс ↔ трицепс) дают тот же рост и силу при ~30–50% меньшем
-     *   времени и сохраняют объём (Robbins 2010; мета-анализ Sports Med 2025; RCT «Less time, same gains» 2025).
-     *   Суперсеты на одну мышцу режут объём — не делаем. Тяжёлые базовые на ноги — отдельно (системная усталость),
-     *   допускается пара с мелкой изоляцией, которая им не мешает (махи, пресс).
+     * Порядок упражнений — блоками, без прыжков между мышцами:
+     * ноги → жимы (грудь → дельты → трицепс) → тяги (спина → бицепс → предплечья) → пресс.
+     * - Внутри зоны сначала базовое, потом изоляция; крупные мышцы раньше мелких (NSCA: многосуставные и крупные
+     *   группы первыми). Мелкие мышцы — в конце своего блока, чтобы не утомить их до жимов и тяг, где они помогают.
+     * - Блок с акцентом дня идёт первым: первым упражнениям достаётся больше повторов и прирост силы (Simão 2012);
+     *   на рост мышц порядок почти не влияет (Nunes 2021). Пресс всегда в конце (держит корпус в базовых).
+     * - Хват (предплечья) — последним, чтобы не подводил в тягах: блок тяг ставится в конец, а если акцент
+     *   на спину вывел его вперёд — упражнения на предплечья переносятся в самый конец.
+     * - Предутомление (изоляция перед базой) пользы не даёт (Trindade 2019).
      */
-    fun arrange(p: Program, items: List<PlanItem>, supersets: Boolean): List<PlanItem> {
+    fun arrange(p: Program, items: List<PlanItem>, supersets: Boolean, focus: String? = null): List<PlanItem> {
         val known = items.filter { p.ex(it.ex) != null }
-        val (comp, iso) = known.partition { isCompound(p.ex(it.ex)!!) }
-        val compOrder = comp.sortedWith(compareBy<PlanItem> { if (kind(p.ex(it.ex)!!) == Kind.LEGS) 1 else 0 }
-            .thenByDescending { PRIORITY[main(p.ex(it.ex)!!)] ?: 1.0 })
-        val isoOrder = iso.sortedBy { ISO_RANK[main(p.ex(it.ex)!!)] ?: 5 }
-        val ordered = (compOrder + isoOrder).map { it.copy(pair = null) }
+        fun ex(i: PlanItem) = p.ex(i.ex)!!
+        val focusSet = focus?.let { FOCUS[it]?.second } ?: emptySet()
+        val lead = focusSet.filter { it != "forearms" && it != "abs" }.map(::block).toSet()
+        val blocks = listOf(Block.LEGS, Block.PUSH, Block.PULL).sortedBy { if (it in lead) 0 else 1 } + Block.CORE
+        val regionRank = known.groupBy { region(main(ex(it))) }.mapValues { (r, l) ->
+            val hasComp = l.any { isCompound(ex(it)) }
+            // зона с базовым — по главной мышце базового (жим лёжа раньше армейского), иначе по изоляции
+            val pri = l.filter { !hasComp || isCompound(ex(it)) }.maxOf { PRIORITY[main(ex(it))] ?: 1.0 } +
+                if (l.any { main(ex(it)) in focusSet }) 1.0 else 0.0
+            (if (hasComp) 0.0 else 10.0) - pri + if (r == "calves") 20.0 else 0.0
+        }
+        var ordered = known.sortedWith(compareBy<PlanItem>(
+            { blocks.indexOf(block(main(ex(it)))) },
+            { TAIL[main(ex(it))] ?: 0 },
+            { regionRank[region(main(ex(it)))] ?: 0.0 },
+            { if (isCompound(ex(it))) 0 else 1 },
+        )).map { it.copy(pair = null) }
+        if (blocks.indexOf(Block.PULL) < 2) {
+            val (grip, rest) = ordered.partition { main(ex(it)) == "forearms" }
+            val core = rest.count { block(main(ex(it))) == Block.CORE }
+            ordered = rest.dropLast(core) + grip + rest.takeLast(core)
+        }
         if (!supersets) return ordered
 
         fun fits(a: Exercise, b: Exercise): Boolean {
