@@ -71,14 +71,6 @@ private val DM = DateTimeFormatter.ofPattern("d MMM", RU)
 private val DOW = DateTimeFormatter.ofPattern("EE", RU)
 private val MONTH = DateTimeFormatter.ofPattern("LLLL", RU)
 
-/** Цвет типа занятия: лекция — зелёный, практика — фиолетовый, лаба — жёлтый, консультация — серый, экзамен/зачёт — красный. */
-fun typeColor(t: String): Color = when (t.uppercase()) {
-    "ЛК" -> C.good
-    "ПЗ" -> C.study
-    "ЛР" -> C.warn
-    "КОНС", "КОНСУЛЬТАЦИЯ" -> C.muted
-    else -> C.bad
-}
 
 /** Насколько далеко назад можно раскрыть ленту (≈ семестр). */
 private const val MAX_PAST_WEEKS = 20
