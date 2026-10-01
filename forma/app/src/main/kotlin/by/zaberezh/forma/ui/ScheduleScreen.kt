@@ -1,25 +1,33 @@
 package by.zaberezh.forma.ui
 
+import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -30,7 +38,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import by.zaberezh.forma.core.food.Edostavka
@@ -45,7 +52,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.time.DayOfWeek
-import java.time.Instant
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.time.temporal.TemporalAdjusters
@@ -53,159 +59,200 @@ import java.time.temporal.TemporalAdjusters
 private val DAYF = DateTimeFormatter.ofPattern("EEEE, d MMMM", RU)
 private val DM = DateTimeFormatter.ofPattern("d MMM", RU)
 private val DOW = DateTimeFormatter.ofPattern("EE", RU)
-private val STAMP = DateTimeFormatter.ofPattern("d MMM, HH:mm", RU)
+private val MONTH = DateTimeFormatter.ofPattern("LLLL", RU)
 
 /** Цвет типа занятия: лекция — акцент раздела, практика — зелёный, лаба — жёлтый, экзамен/зачёт — красный. */
-private fun typeColor(t: String): Color = when (t.uppercase()) {
+fun typeColor(t: String): Color = when (t.uppercase()) {
     "ЛК" -> C.accent
     "ПЗ" -> C.good
     "ЛР" -> C.warn
     else -> C.bad
 }
 
-/** Расписание группы БГУИР на день + ДЗ: записанное на паре появляется на следующем занятии по предмету. */
+private fun monday(d: LocalDate) = d.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
+
+/** Загрузка расписания (общая для экрана и настроек). */
+suspend fun downloadTimetable(s: Store): Result<Unit> {
+    val group = STUDY_PREFS.get(s).group
+    return withContext(Dispatchers.IO) { runCatching { Bsuir.download(group, Edostavka::httpGet) } }.map { TIMETABLE.set(s, it) }
+}
+
+/** Строка ленты: заголовок дня или пара этого дня. */
+private sealed class Row2(val day: LocalDate) {
+    class Head(day: LocalDate, val empty: Boolean) : Row2(day)
+    class Item(day: LocalDate, val lesson: Lesson, val i: Int) : Row2(day)
+}
+
+/**
+ * Расписание лентой: дни идут подряд, листаешь вниз — следующие дни. Сверху закреплена неделя:
+ * стрелки переключают недели, нажатие на день — прокрутка к нему. Нажатие на пару — подробности и ДЗ.
+ */
 @Composable
 fun ScheduleScreen() {
     val ctx = rememberCtx()
     val s = ctx.store
     val tt = TIMETABLE.get(s)
     val prefs = STUDY_PREFS.get(s)
-    var date by remember { mutableStateOf(ctx.today) }
+    val today = ctx.today
     var loading by remember { mutableStateOf(false) }
     var err by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
-
     fun refresh() {
         if (loading) return
         loading = true; err = null
-        scope.launch {
-            val r = withContext(Dispatchers.IO) { runCatching { Bsuir.download(prefs.group, Edostavka::httpGet) } }
-            loading = false
-            r.onSuccess { TIMETABLE.set(s, it) }.onFailure { err = it.message ?: "Ошибка загрузки" }
-        }
+        scope.launch { downloadTimetable(s).onFailure { err = it.message ?: "Ошибка загрузки" }; loading = false }
     }
-    // первое открытие, смена группы или расписанию больше 3 дней — обновить
     LaunchedEffect(prefs.group) {
         if (tt.group != prefs.group || System.currentTimeMillis() - tt.fetchedAt > 3 * 24 * 3600_000L) refresh()
     }
 
-    Screen {
-        if (tt.lessons.isEmpty()) item {
+    // лента: неделя назад и 10 недель вперёд
+    val start = monday(today).minusWeeks(1)
+    val days = (0L until 7 * 11).map(start::plusDays)
+    val rows = remember(tt, prefs.subgroup, start) {
+        days.flatMap { d ->
+            val ls = if (tt.lessons.isEmpty()) emptyList() else Bsuir.on(tt, d, prefs.subgroup)
+            listOf<Row2>(Row2.Head(d, ls.isEmpty())) + ls.mapIndexed { i, l -> Row2.Item(d, l, i) }
+        }
+    }
+    val dayIndex = remember(rows) { rows.withIndex().filter { it.value is Row2.Head }.associate { it.value.day to it.index } }
+    val list = rememberLazyListState(initialFirstVisibleItemIndex = dayIndex[today] ?: 0)
+    val visible by remember(rows) { derivedStateOf { rows.getOrNull(list.firstVisibleItemIndex)?.day ?: today } }
+    fun go(d: LocalDate) { dayIndex[d.coerceIn(days.first(), days.last())]?.let { scope.launch { list.animateScrollToItem(it) } } }
+
+    Column(Modifier.fillMaxSize()) {
+        Box(Modifier.padding(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 8.dp)) {
+            WeekHeader(tt, visible, today, prefs.subgroup, onDay = ::go, onWeek = { k -> go(monday(visible).plusWeeks(k)) })
+        }
+        if (tt.lessons.isEmpty()) Box(Modifier.padding(horizontal = 16.dp)) {
             Block("Расписание группы ${prefs.group}") {
                 if (loading) Line { CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp); Muted("Загружаю с iis.bsuir.by…") }
-                else Muted("Ещё не загружено. Нужен интернет — дальше работает без него.")
+                else Muted("Ещё не загружено. Нужен интернет — дальше работает без него. Группа меняется в настройках.")
                 Err(err)
                 if (!loading) Primary("Загрузить", { refresh() }, Modifier.fillMaxWidth())
             }
         }
-        item { DayHeader(tt, date, ctx.today, prefs.subgroup) { date = it } }
-
-        val lessons = Bsuir.on(tt, date, prefs.subgroup)
-        if (tt.lessons.isNotEmpty() && lessons.isEmpty()) item {
-            Block { Muted(if (date.dayOfWeek == DayOfWeek.SUNDAY) "Воскресенье — пар нет." else "Пар нет.") }
-        }
-        lessons.forEach { l -> item { LessonCard(s, tt, l, date, prefs.subgroup) } }
-
-        val open = Study.open(s, ctx.today)
-        if (open.isNotEmpty()) item {
-            Block("Домашка", trailing = { Pill("${open.size}") }) {
-                open.forEachIndexed { i, (e, hw) ->
-                    if (i > 0) HorizontalDivider(color = C.line)
-                    Line {
-                        CheckCircle(hw.done, { Study.setHomeworkDone(s, e.id, !hw.done) })
-                        Column(Modifier.weight(1f).clickable { date = LocalDate.parse(hw.due) }) {
-                            Text(hw.text, style = MaterialTheme.typography.bodyMedium)
-                            Muted("${hw.subject}${if (hw.type.isNotBlank()) " · ${hw.type}" else ""} · к ${DM.format(LocalDate.parse(hw.due))}")
-                        }
-                    }
+        LazyColumn(
+            Modifier.fillMaxSize(), state = list,
+            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 24.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            items(rows.size, key = { i -> rows[i].let { r -> if (r is Row2.Item) "l${r.day}-${r.i}" else "h${r.day}" } }) { i ->
+                when (val r = rows[i]) {
+                    is Row2.Head -> DayTitle(r.day, today, r.empty, Bsuir.week(tt, r.day))
+                    is Row2.Item -> LessonCard(s, tt, r.lesson, r.day, prefs.subgroup)
                 }
-            }
-        }
-
-        item {
-            var group by remember(prefs.group) { mutableStateOf(prefs.group) }
-            Block("Группа") {
-                Line {
-                    Field("Номер группы", group, { group = it.filter(Char::isDigit).take(6) }, Modifier.weight(1f))
-                    Secondary("Сохранить", { STUDY_PREFS.set(s, prefs.copy(group = group)) }, enabled = group.length == 6 && group != prefs.group)
-                }
-                Text("Подгруппа", style = MaterialTheme.typography.labelLarge, color = C.muted)
-                Buttons {
-                    listOf(0 to "Обе", 1 to "1-я", 2 to "2-я").forEach { (n, label) ->
-                        FilterChip(selected = prefs.subgroup == n, onClick = { STUDY_PREFS.set(s, prefs.copy(subgroup = n)) }, label = { Text(label) })
-                    }
-                }
-                Line {
-                    Muted(if (tt.fetchedAt > 0) "Обновлено ${STAMP.format(Instant.ofEpochMilli(tt.fetchedAt).atZone(java.time.ZoneId.systemDefault()))}" else "Не загружено",
-                        Modifier.weight(1f))
-                    if (loading) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
-                    else Flat("Обновить", { refresh() })
-                }
-                if (tt.lessons.isNotEmpty()) Err(err)
-                Muted("Источник — открытое расписание ИИС БГУИР (iis.bsuir.by).")
             }
         }
     }
 }
 
-/** Заголовок: дата со стрелками, номер учебной недели и полоска дней недели с числом пар. */
+/** Закреплённая неделя: месяц, номер учебной недели, стрелки ‹ › — соседние недели, дни с числом пар. */
 @Composable
-private fun DayHeader(tt: Timetable, date: LocalDate, today: LocalDate, subgroup: Int, onDate: (LocalDate) -> Unit) = Block {
-    Line {
-        Flat("‹", { onDate(date.minusDays(1)) })
-        Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(
-                when (date) { today -> "Сегодня"; today.plusDays(1) -> "Завтра"; today.minusDays(1) -> "Вчера"; else -> DAYF.format(date).replaceFirstChar { it.uppercase() } },
-                style = MaterialTheme.typography.titleMedium, textAlign = TextAlign.Center,
-            )
-            Muted("${Bsuir.week(tt, date)}-я учебная неделя" + if (date == today || date == today.plusDays(1) || date == today.minusDays(1)) " · ${DM.format(date)}" else "")
+private fun WeekHeader(tt: Timetable, visible: LocalDate, today: LocalDate, subgroup: Int, onDay: (LocalDate) -> Unit, onWeek: (Long) -> Unit) = Card(
+    Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = C.card),
+) {
+    Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        val mon = monday(visible)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            ArrowButton("‹") { onWeek(-1) }
+            Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(MONTH.format(mon.plusDays(3)).replaceFirstChar { it.uppercase() }, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                Muted("${Bsuir.week(tt, mon)}-я учебная неделя" + if (mon == monday(today)) " · текущая" else "")
+            }
+            ArrowButton("›") { onWeek(1) }
         }
-        Flat("›", { onDate(date.plusDays(1)) })
-    }
-    val mon = date.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-        (0L..6L).map(mon::plusDays).forEach { d ->
-            val n = if (tt.lessons.isEmpty()) 0 else Bsuir.on(tt, d, subgroup).size
-            val sel = d == date
-            Column(
-                Modifier.weight(1f).clip(RoundedCornerShape(10.dp))
-                    .background(if (sel) C.accent.copy(alpha = 0.18f) else C.cardHi).clickable { onDate(d) }.padding(vertical = 6.dp),
-                horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(2.dp),
-            ) {
-                Text(DOW.format(d), style = MaterialTheme.typography.labelSmall, color = if (d == today) C.accent else C.muted)
-                Text("${d.dayOfMonth}", style = MaterialTheme.typography.labelLarge, fontWeight = if (sel) FontWeight.SemiBold else FontWeight.Normal,
-                    color = if (sel) C.accent else C.text)
-                Text(if (n == 0) "–" else "$n", style = MaterialTheme.typography.labelSmall, color = C.muted)
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            (0L..6L).map(mon::plusDays).forEach { d ->
+                val n = if (tt.lessons.isEmpty()) 0 else Bsuir.on(tt, d, subgroup).size
+                val sel = d == visible
+                Column(
+                    Modifier.weight(1f).clip(RoundedCornerShape(10.dp))
+                        .background(if (sel) C.accent.copy(alpha = 0.18f) else C.cardHi).clickable { onDay(d) }.padding(vertical = 6.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(2.dp),
+                ) {
+                    Text(DOW.format(d), style = MaterialTheme.typography.labelSmall, color = if (d == today) C.accent else C.muted)
+                    Text("${d.dayOfMonth}", style = MaterialTheme.typography.labelLarge, fontWeight = if (sel || d == today) FontWeight.Bold else FontWeight.Normal,
+                        color = if (sel || d == today) C.accent else C.text)
+                    Text(if (n == 0) "–" else "$n", style = MaterialTheme.typography.labelSmall, color = C.muted)
+                }
             }
         }
+        if (monday(visible) != monday(today) || visible != today) Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+            Flat("К сегодняшнему дню", { onDay(today) })
+        }
     }
-    if (date != today) Flat("К сегодняшнему дню", { onDate(today) })
 }
 
-/** Пара: время, тип, аудитория, преподаватель; ДЗ к ней и запись ДЗ на следующее занятие. */
 @Composable
-private fun LessonCard(s: Store, tt: Timetable, l: Lesson, date: LocalDate, subgroup: Int) = Block {
-    Row(Modifier.fillMaxWidth().height(androidx.compose.foundation.layout.IntrinsicSize.Min)) {
-        Column(Modifier.width(52.dp)) {
-            Text(l.start, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
-            Muted(l.end)
-        }
-        Box(Modifier.width(3.dp).fillMaxHeight().clip(RoundedCornerShape(2.dp)).background(typeColor(l.type)))
-        Column(Modifier.weight(1f).padding(start = 12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text(l.title, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
-            Buttons {
-                if (l.type.isNotBlank()) Pill(l.type, typeColor(l.type))
-                if (l.subgroup > 0) Pill("${l.subgroup}-я подгр.", C.muted)
-                l.rooms.forEach { Pill(it, C.muted) }
+private fun ArrowButton(t: String, onClick: () -> Unit) = Box(
+    Modifier.size(44.dp).clip(RoundedCornerShape(12.dp)).background(C.cardHi).clickable(onClick = onClick),
+    contentAlignment = Alignment.Center,
+) { Text(t, style = MaterialTheme.typography.titleLarge, color = C.accent) }
+
+@Composable
+private fun DayTitle(d: LocalDate, today: LocalDate, empty: Boolean, week: Int) = Row(
+    Modifier.fillMaxWidth().padding(top = 10.dp, bottom = 2.dp, start = 4.dp), verticalAlignment = Alignment.CenterVertically,
+) {
+    val label = when (d) { today -> "Сегодня"; today.plusDays(1) -> "Завтра"; else -> null }
+    Text((label?.let { "$it · " } ?: "") + DAYF.format(d).replaceFirstChar { it.uppercase() },
+        Modifier.weight(1f), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold,
+        color = if (d == today) C.accent else C.text)
+    Muted(if (empty) "пар нет" else if (d.dayOfWeek == DayOfWeek.MONDAY) "$week-я неделя" else "")
+}
+
+/** Пара: свёрнуто — время, предмет, тип и аудитория; нажатие — подробности, преподаватель с фото и ДЗ. */
+@Composable
+private fun LessonCard(s: Store, tt: Timetable, l: Lesson, date: LocalDate, subgroup: Int) {
+    var open by remember(l.subject, l.start, date) { mutableStateOf(false) }
+    Card(
+        Modifier.fillMaxWidth().clickable { open = !open }, shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = if (open) C.cardHi else C.card),
+    ) {
+        Column(Modifier.animateContentSize().padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min)) {
+                Column(Modifier.width(50.dp)) {
+                    Text(l.start, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
+                    Muted(l.end)
+                }
+                Box(Modifier.width(4.dp).fillMaxHeight().clip(RoundedCornerShape(2.dp)).background(typeColor(l.type)))
+                Column(Modifier.weight(1f).padding(start = 12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(l.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, color = C.text)
+                    Text(
+                        listOfNotNull(l.type.takeIf { it.isNotBlank() }, l.rooms.joinToString(", ").takeIf { it.isNotBlank() },
+                            if (l.subgroup > 0) "${l.subgroup}-я подгр." else null).joinToString("  ·  "),
+                        style = MaterialTheme.typography.bodySmall, color = typeColor(l.type),
+                    )
+                    if (!open && l.teachers.isNotEmpty()) Muted(l.teachers.joinToString(", "))
+                }
             }
-            if (l.teachers.isNotEmpty()) Muted(l.teachers.joinToString(", "))
-            if (l.note.isNotBlank()) Muted(l.note)
+            if (open) LessonDetails(s, tt, l, date, subgroup)
         }
     }
-    // ДЗ, которое надо было сделать к этой паре
+}
+
+@Composable
+private fun LessonDetails(s: Store, tt: Timetable, l: Lesson, date: LocalDate, subgroup: Int) {
+    HorizontalDivider(color = C.line)
+    Stat("Занятие", l.typeFull.ifBlank { "—" })
+    Stat("Недели", if (l.weeks.isEmpty() || l.weeks.size == 4) "каждую" else l.weeks.joinToString(", "))
+    if (l.rooms.isNotEmpty()) Stat("Аудитория", l.rooms.joinToString(", "))
+    if (l.subgroup > 0) Stat("Подгруппа", "${l.subgroup}-я")
+    if (l.note.isNotBlank()) Muted(l.note)
+    l.teachers.forEachIndexed { i, short ->
+        val full = l.teachersFull.getOrNull(i)?.takeIf { it.isNotBlank() } ?: short
+        Line {
+            RemoteImage(l.photos.getOrNull(i).orEmpty(), 52.dp, full.split(" ").take(2).mapNotNull { it.firstOrNull() }.joinToString(""))
+            Column(Modifier.weight(1f)) {
+                Text(full, style = MaterialTheme.typography.bodyLarge)
+                l.teacherInfo.getOrNull(i)?.takeIf { it.isNotBlank() }?.let { Muted(it) }
+            }
+        }
+    }
+    // ДЗ к этой паре и записанное на ней
     Study.dueOn(s, l.subject, date).forEach { (e, hw) ->
         Line {
-            CheckCircle(hw.done, { Study.setHomeworkDone(s, e.id, !hw.done) }, 22.dp)
+            CheckCircle(hw.done, { Study.setHomeworkDone(s, e.id, !hw.done) }, 28.dp)
             Column(Modifier.weight(1f)) {
                 Text("ДЗ: ${hw.text}", style = MaterialTheme.typography.bodyMedium,
                     textDecoration = if (hw.done) TextDecoration.LineThrough else null, color = if (hw.done) C.muted else C.text)
@@ -213,23 +260,15 @@ private fun LessonCard(s: Store, tt: Timetable, l: Lesson, date: LocalDate, subg
             }
         }
     }
-    // записанное на этой паре — к следующему занятию
     Study.writtenOn(s, l.subject, date).forEach { (e, hw) ->
         Line {
-            Muted("→ ${DM.format(LocalDate.parse(hw.due))}: ${hw.text}", Modifier.weight(1f))
+            Muted("→ к ${DM.format(LocalDate.parse(hw.due))}: ${hw.text}", Modifier.weight(1f))
             DeleteButton("запись ДЗ") { s.delete(e.id) }
         }
     }
-    var adding by remember(l.subject, l.start, date) { mutableStateOf(false) }
     var text by remember(l.subject, l.start, date) { mutableStateOf("") }
-    if (!adding) Flat("+ ДЗ к следующему занятию", { adding = true })
-    else {
-        Field("Что задали", text, { text = it }, number = false, lines = 2)
-        Line {
-            Primary("Записать", { if (text.isNotBlank()) { Study.addHomework(s, tt, l, date, text, subgroup); text = ""; adding = false } },
-                Modifier.weight(1f), enabled = text.isNotBlank())
-            Flat("Отмена", { adding = false; text = "" }, C.muted)
-        }
-        Bsuir.next(tt, l.subject, l.type, date, subgroup)?.let { Muted("Появится ${DM.format(it)} — на следующем занятии «${l.subject}».") }
-    }
+    Field("ДЗ к следующему занятию", text, { text = it }, number = false, lines = 2)
+    val next = Bsuir.next(tt, l.subject, l.type, date, subgroup)
+    Primary(if (next != null) "Записать — появится ${DM.format(next)}" else "Записать ДЗ",
+        { Study.addHomework(s, tt, l, date, text, subgroup); text = "" }, Modifier.fillMaxWidth(), enabled = text.isNotBlank())
 }
