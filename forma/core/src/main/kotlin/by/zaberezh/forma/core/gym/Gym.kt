@@ -105,14 +105,33 @@ object GymModule : Module {
         return m
     }
 
+    fun split(ctx: Ctx): List<DayType> = splitDays(ctx.settings.split)
+
+    /**
+     * Тип дня по очереди сплита: после последней тренировки — следующий. Считаются прошедшие тренировки
+     * (их тип берётся из сохранённого плана) и запланированные дни недели до этой даты.
+     */
+    fun dayType(ctx: Ctx, date: LocalDate): DayType {
+        val days = split(ctx)
+        if (days.size == 1) return days[0]
+        fun typeOf(d: LocalDate) = storedPlan(ctx.store, d)?.day?.let { id -> days.indexOfFirst { it.id == id } }?.takeIf { it >= 0 }
+        typeOf(date)?.let { return days[it] }
+        val trained = trainedDays(ctx, ctx.today.minusDays(28), ctx.today)
+        val upcoming = week(ctx).plan.filter { it >= ctx.today && it !in trained }
+        var idx = -1
+        (trained + upcoming).filter { it < date }.sorted().forEach { d -> idx = typeOf(d) ?: ((idx + 1) % days.size) }
+        return days[(idx + 1) % days.size]
+    }
+
     /**
      * План на дату: сохранённый (правили руками / тренировка начата) или составленный заново.
+     * day — тип дня сплита вручную (иначе по очереди; при акценте — день, куда акцент входит).
      * Для будущих дней учитываются запланированные до них тренировки недели (симуляция), чтобы дни не повторялись.
      */
-    fun planFor(ctx: Ctx, date: LocalDate, focus: String? = null): DayPlan {
+    fun planFor(ctx: Ctx, date: LocalDate, focus: String? = null, day: String? = null): DayPlan {
         val s = ctx.store
         val p0 = program(s)
-        if (focus == null) storedPlan(s, date)?.let { return it.copy(items = Planner.arrange(p0, it.items, ctx.settings.supersets, it.focus)) }
+        if (focus == null && day == null) storedPlan(s, date)?.let { return it.copy(items = Planner.arrange(p0, it.items, ctx.settings.supersets, it.focus)) }
         val p = program(s)
         val log = Planner.muscleLog(p, sessions(s)).toMutableList()
         val used = lastUsed(s).toMutableMap()
@@ -122,7 +141,15 @@ object GymModule : Module {
             log += d to Planner.planMuscles(p, pl)
             pl.items.forEach { used[it.ex] = d }
         }
-        val plan = Planner.build(p, date, log, used, ctx.settings.sessionsPerWeek, focus)
+        val days = split(ctx)
+        val focusSet = focus?.let { FOCUS[it]?.second } ?: emptySet()
+        // акцент переносит день в тот тип сплита, где акцентных мышц больше всего («Ноги» в день «Верх» → «Низ»)
+        fun overlap(d: DayType) = d.muscles.count { it in focusSet }
+        val best = days.maxOf(::overlap)
+        val type = days.firstOrNull { it.id == day }
+            ?: (storedPlan(s, date)?.day?.let { id -> days.firstOrNull { it.id == id } } ?: dayType(ctx, date)).takeIf { overlap(it) == best }
+            ?: days.first { overlap(it) == best }
+        val plan = Planner.build(p, date, log, used, ctx.settings.sessionsPerWeek, focus, type, days)
         return plan.copy(items = Planner.arrange(p, plan.items, ctx.settings.supersets, focus))
     }
 
