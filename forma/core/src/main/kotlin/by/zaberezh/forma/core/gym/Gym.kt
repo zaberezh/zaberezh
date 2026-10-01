@@ -149,7 +149,7 @@ object GymModule : Module {
         val type = days.firstOrNull { it.id == day }
             ?: (storedPlan(s, date)?.day?.let { id -> days.firstOrNull { it.id == id } } ?: dayType(ctx, date)).takeIf { overlap(it) == best }
             ?: days.first { overlap(it) == best }
-        val plan = Planner.build(p, date, log, used, ctx.settings.sessionsPerWeek, focus, type, days)
+        val plan = Planner.build(p, date, log, used, ctx.settings.sessionsPerWeek, focus, type, days, Planner.budget(ctx.settings.sessionMin))
         return plan.copy(items = Planner.arrange(p, plan.items, ctx.settings.supersets, focus))
     }
 

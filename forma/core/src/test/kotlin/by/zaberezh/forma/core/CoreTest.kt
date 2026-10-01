@@ -229,8 +229,11 @@ class CoreTest {
         val plan = GymModule.planFor(ctx, mon)
         val p = PROGRAM.get(s)
         val sets = plan.items.sumOf { it.sets }
-        assertTrue(sets in 12..20, "sets=$sets plan=$plan")
-        assertTrue(plan.items.size in 4..7, "$plan")
+        assertTrue(sets in 18..27, "sets=$sets plan=$plan")                      // 90 мин ≈ 25 подходов
+        assertTrue(plan.items.size in 5..9, "$plan")
+        // на крупные мышцы верха — по 2 упражнения (если в базе есть)
+        fun count(m: String) = plan.items.count { p.ex(it.ex)!!.muscles.maxBy { x -> x.value }.key == m }
+        assertTrue(count("chest") >= 2 || count("back") >= 2, "2 упражнения на крупную мышцу: $plan")
         assertTrue(p.ex(plan.items.first().ex)!!.muscles.size > 1, "сначала базовое")
         // все крупные мышцы верха покрыты в фулбоди-дне
         val m = Planner.planMuscles(p, plan)

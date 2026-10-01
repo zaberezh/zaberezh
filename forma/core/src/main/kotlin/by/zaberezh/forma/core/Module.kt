@@ -39,7 +39,8 @@ data class Settings(
     val sessionsPerWeek: Int = 3,
     val gymWeekends: Boolean = true,    // выходные тоже могут быть днями зала
     val supersets: Boolean = false,     // суперсеты не используются (решение пользователя)
-    val split: String = "ul",           // сплит: ul — верх/низ, ppl — жим/тяга/ноги, full — всё тело
+    val split: String = "ul",
+    val sessionMin: Int = 90,           // длительность тренировки → сколько подходов влезает           // сплит: ul — верх/низ, ppl — жим/тяга/ноги, full — всё тело
     val minVisitMin: Int = 75,
     val morningHour: Int = 8,
     val morningMinute: Int = 0,

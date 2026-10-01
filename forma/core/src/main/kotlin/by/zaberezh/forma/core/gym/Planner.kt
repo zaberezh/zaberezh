@@ -72,6 +72,9 @@ private val SMALL = setOf("biceps", "triceps", "forearms", "calves", "abs", "sid
 fun isCompound(e: Exercise): Boolean =
     e.muscles.size > 1 && (e.muscles.maxByOrNull { it.value }?.key ?: "") !in SMALL
 
+/** Крупные мышцы: на них в тренировке 2 упражнения (разные углы/растяжение → равномернее рост по длине мышцы). */
+private val BIG = setOf("chest", "back", "side_delts", "quads", "hams")
+
 /** Визуальный приоритет (V-силуэт): средняя дельта, спина, грудь, руки. */
 private val PRIORITY = mapOf("side_delts" to 1.3, "back" to 1.2, "chest" to 1.15, "forearms" to 1.15, "biceps" to 1.1, "triceps" to 1.1)
 
@@ -79,13 +82,17 @@ private val PRIORITY = mapOf("side_delts" to 1.3, "back" to 1.2, "chest" to 1.15
  * Составитель тренировки дня по методике:
  * - недельный объём на мышцу делится на число тренировок; недобор за 7 дней повышает приоритет, перебор — снижает;
  * - мышца, нагруженная вчера, почти не берётся (×0.3), позавчера — ×0.8 (восстановление 48–72 ч);
- * - сначала базовые (многосуставные), потом изоляция; не больше 2 упражнений на одну главную мышцу;
- * - бюджет ~18 рабочих подходов (60–75 мин) — умеренно, с учётом недосыпа;
+ * - сначала базовые (многосуставные), потом изоляция; на крупную мышцу — 2 упражнения (разные углы), на мелкую — 1;
+ * - не больше ~11 подходов на мышцу за тренировку — дальше прибавки почти нет (Pelland/Remmert 2025);
+ * - бюджет подходов — от длительности тренировки (~3,6 мин на рабочий подход с отдыхом; 90 мин ≈ 25 подходов);
+ *   если упражнений в базе не хватает, недобор добирается подходами (до 5) в уже выбранных;
  * - упражнение, которое делал в последние 3 дня, берётся реже (разнообразие).
  */
 object Planner {
-    const val SESSION_SETS = 18
-    const val MAX_EXERCISES = 7
+    /** Рабочих подходов за тренировку данной длительности. */
+    fun budget(sessionMin: Int) = (sessionMin / 3.6).toInt().coerceIn(12, 30)
+    const val MAX_SETS = 5          // подходов в одном упражнении
+    const val PER_MUSCLE = 11.0     // подходов на мышцу за сессию
 
     /** Подходы на мышцу по дням (≥5 повторов, косвенные с коэффициентом). */
     fun muscleLog(p: Program, sessions: List<Pair<LocalDate, List<SetLog>>>): List<Pair<LocalDate, Map<String, Double>>> =
@@ -105,8 +112,9 @@ object Planner {
     fun build(
         p: Program, date: LocalDate, log: List<Pair<LocalDate, Map<String, Double>>>,
         lastUsed: Map<String, LocalDate>, sessionsPerWeek: Int, focus: String? = null,
-        day: DayType? = null, split: List<DayType> = listOfNotNull(day),
+        day: DayType? = null, split: List<DayType> = listOfNotNull(day), sessionSets: Int = budget(75),
     ): DayPlan {
+        val maxEx = sessionSets / 3 + 1
         if (p.exercises.isEmpty()) return DayPlan(date.toString(), emptyList(), focus, day = day?.id)
         val volume = DEFAULT_VOLUME + p.volume
         val focusSet = focus?.let { FOCUS[it]?.second } ?: emptySet()
@@ -128,7 +136,7 @@ object Planner {
             n *= when { gap <= 1 -> 0.3; gap == 2L -> 0.8; else -> 1.0 }
             n *= PRIORITY[m] ?: 1.0
             if (focusSet.isNotEmpty()) n *= if (m in focusSet) 2.5 else 0.45
-            need[m] = n
+            need[m] = n.coerceAtMost(PER_MUSCLE)
         }
         // мышцы с нулевым недельным минимумом (пресс, икры…) берутся при фокусе или если есть «запас» бюджета
         focusSet.forEach { m -> if ((need[m] ?: 0.0) < 2.0) need[m] = 3.0 }
@@ -139,23 +147,32 @@ object Planner {
         var total = 0
         val perMain = HashMap<String, Int>()
         fun main(e: Exercise) = e.muscles.maxByOrNull { it.value }?.key ?: ""
-        while (total < SESSION_SETS && chosen.size < MAX_EXERCISES) {
+        while (total < sessionSets && chosen.size < maxEx) {
             val best = p.exercises.filter { e -> chosen.none { it.first.id == e.id } && (perMain[main(e)] ?: 0) < (if (main(e) in focusSet) 3 else 2) &&
                     (allowed == null || main(e) in allowed) }
                 .map { e ->
                     var score = e.muscles.entries.sumOf { (m, k) -> k * (need[m] ?: 0.0) }
                     if (isCompound(e)) score *= 1.15                                      // базовые — вперёд
-                    if ((perMain[main(e)] ?: 0) >= 1) score *= 0.5                        // второе на ту же мышцу — реже
+                    if ((perMain[main(e)] ?: 0) >= 1) score *= if (main(e) in BIG) 0.85 else 0.4 // второе — на крупные
                     lastUsed[e.id]?.let { if (ChronoUnit.DAYS.between(it, date) in 1..3) score *= 0.7 }
                     e to score
                 }.maxByOrNull { it.second } ?: break
             if (best.second < 0.8) break
             val e = best.first
-            val sets = e.sets.coerceAtMost(SESSION_SETS + 2 - total).coerceAtLeast(1)
+            val sets = e.sets.coerceAtMost(sessionSets + 2 - total).coerceAtLeast(1)
             chosen += e to sets
             total += sets
             perMain[main(e)] = (perMain[main(e)] ?: 0) + 1
             e.muscles.forEach { (m, k) -> need[m] = ((need[m] ?: 0.0) - k * sets).coerceAtLeast(0.0) }
+        }
+        // упражнений в базе не хватило, а бюджет и недобор остались — +1 подход туда, где недобор больше
+        while (total < sessionSets) {
+            val i = chosen.indices.filter { chosen[it].second < MAX_SETS && (need[main(chosen[it].first)] ?: 0.0) >= 1.5 }
+                .maxByOrNull { need[main(chosen[it].first)] ?: 0.0 } ?: break
+            val (e, n) = chosen[i]
+            chosen[i] = e to n + 1
+            total++
+            e.muscles.forEach { (m, k) -> need[m] = ((need[m] ?: 0.0) - k).coerceAtLeast(0.0) }
         }
         return DayPlan(date.toString(), chosen.map { PlanItem(it.first.id, it.second) }, focus, day = day?.id)
     }

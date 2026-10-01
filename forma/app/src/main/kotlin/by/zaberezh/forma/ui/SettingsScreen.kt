@@ -58,7 +58,7 @@ private val GOALS = listOf(
     F("kcal", "Калории вручную", "ккал"),
 )
 private val ROUTINE = listOf(
-    F("sessions", "Тренировок", "в нед"), F("visit", "Мин. визит", "мин"),
+    F("sessions", "Тренировок", "в нед"), F("session", "Тренировка", "мин"), F("visit", "Мин. визит", "мин"),
     F("hour", "Уведомление", "ч"), F("minute", "Минуты", "мин"),
     F("checkup", "Чекап каждые", "дн"),
 )
@@ -82,7 +82,7 @@ fun SettingsScreen() {
         mutableStateMapOf(
             "age" to p.age.toString(), "height" to p.heightCm.r1(), "activity" to p.activity.toString(),
             "gain" to p.gainKgPerWeek.toString(), "protein" to p.proteinPerKg.toString(), "fat" to p.fatShare.toString(),
-            "kcal" to (st.kcalOverride?.toString() ?: ""), "sessions" to st.sessionsPerWeek.toString(), "visit" to st.minVisitMin.toString(),
+            "kcal" to (st.kcalOverride?.toString() ?: ""), "sessions" to st.sessionsPerWeek.toString(), "session" to st.sessionMin.toString(), "visit" to st.minVisitMin.toString(),
             "hour" to st.morningHour.toString(), "minute" to "%02d".format(st.morningMinute), "checkup" to st.checkupDays.toString(),
             "wH" to st.weighHour.toString(), "wM" to "%02d".format(st.weighMinute),
             "weH" to st.weighWeekendHour.toString(), "weM" to "%02d".format(st.weighWeekendMinute),
@@ -121,7 +121,7 @@ fun SettingsScreen() {
                 gainKgPerWeek = d("gain", 0.1), proteinPerKg = d("protein", 2.0), fatShare = d("fat", 0.25),
             ),
             kcalOverride = f["kcal"]?.num()?.toInt(),
-            sessionsPerWeek = d("sessions", 3.0).toInt().coerceIn(1, 5), minVisitMin = d("visit", 75.0).toInt(),
+            sessionsPerWeek = d("sessions", 3.0).toInt().coerceIn(1, 5), sessionMin = d("session", 90.0).toInt().coerceIn(40, 150), minVisitMin = d("visit", 75.0).toInt(),
             morningHour = d("hour", 8.0).toInt().coerceIn(0, 23), morningMinute = d("minute", 0.0).toInt().coerceIn(0, 59),
             checkupDays = d("checkup", 14.0).toInt().coerceIn(7, 60),
             gymWeekends = weekends, split = split, weighReminder = weighOn,

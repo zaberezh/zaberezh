@@ -32,7 +32,9 @@ fun aiPlanPrompt(ctx: Ctx, date: LocalDate, focus: String?): String = buildStrin
     val wk = GymModule.week(ctx)
     appendLine("\nДни зала на этой неделе: ${wk.plan.joinToString()}")
     appendLine("Черновик алгоритма: " + draft.items.joinToString("; ") { "${it.ex}×${it.sets}" })
-    appendLine("\nПравила: только id из базы; 15–20 рабочих подходов; сначала базовые, потом изоляция; " +
+    appendLine("\nПравила: только id из базы; ~${Planner.budget(ctx.settings.sessionMin)} рабочих подходов " +
+        "(${ctx.settings.sessionMin} мин); на крупную мышцу 2 упражнения под разными углами, на мелкую 1; не больше 11 подходов на мышцу; " +
+        "сначала базовые, потом изоляция; " +
         "не бери мышцу, нагруженную вчера; приоритет — видимый рост (средняя дельта, спина, грудь, руки); " +
         "порядок и пары суперсетов приложение расставит само по методике. " +
         "Верни план вызовом report_plan, в note — 1–2 предложения, почему так (без мотивации).")
