@@ -20,7 +20,6 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import by.zaberezh.forma.core.ai.Claude
 import by.zaberezh.forma.core.food.FoodItem
@@ -40,7 +39,6 @@ import java.time.LocalTime
 import java.time.format.DateTimeFormatter
 
 private val HHMM = DateTimeFormatter.ofPattern("HH:mm")
-private val DAY = DateTimeFormatter.ofPattern("EEEE, d MMMM", RU)
 
 private fun Macro.line() = "${kcal.i()} ккал · Б ${p.i()} · Ж ${f.i()} · У ${c.i()}"
 
@@ -62,12 +60,7 @@ fun FoodScreen() {
             val t = FoodModule.dayTotal(s, date)
             val g = FoodModule.targets(ctx)
             Block {
-                Line {
-                    Flat("‹", { date = date.minusDays(1) })
-                    Text(if (date == ctx.today) "Сегодня" else DAY.format(date), Modifier.weight(1f),
-                        style = MaterialTheme.typography.titleMedium, textAlign = TextAlign.Center)
-                    Flat("›", { if (date < ctx.today) date = date.plusDays(1) }, if (date < ctx.today) C.accent else C.line)
-                }
+                DateNav(date, ctx.today) { date = it }
                 Progress("Калории", t.kcal, g.kcal, "ккал")
                 Progress("Белок", t.p, g.p, "г")
                 Progress("Жиры", t.f, g.f, "г")
