@@ -17,3 +17,33 @@ fun nextWaterTime(st: Settings, now: LocalDateTime): LocalDateTime {
     }
     return t
 }
+
+/** Выпитый стакан воды (по нажатию на уведомление или кнопкой в приложении). */
+@kotlinx.serialization.Serializable
+data class Glass(val ml: Int = WaterLog.GLASS_ML)
+
+val GLASS = by.zaberezh.forma.core.store.Kind("water.glass", Glass.serializer())
+
+/** Счётчик воды за день и норма: ~30 мл на кг веса, округлённо до стаканов по 250 мл. */
+object WaterLog {
+    const val GLASS_ML = 250
+
+    fun add(s: by.zaberezh.forma.core.store.Store, now: Long = System.currentTimeMillis()) = GLASS.save(s, Glass(), ts = now)
+
+    /** Убрать последний стакан за день (если нажал по ошибке). */
+    fun undo(s: by.zaberezh.forma.core.store.Store, day: java.time.LocalDate) {
+        GLASS.all(s, day.atStartOfDay(by.zaberezh.forma.core.store.ZONE).toInstant().toEpochMilli(),
+            day.plusDays(1).atStartOfDay(by.zaberezh.forma.core.store.ZONE).toInstant().toEpochMilli() - 1).lastOrNull()?.let { s.delete(it.first.id) }
+    }
+
+    fun ml(s: by.zaberezh.forma.core.store.Store, day: java.time.LocalDate): Int =
+        GLASS.all(s, day.atStartOfDay(by.zaberezh.forma.core.store.ZONE).toInstant().toEpochMilli(),
+            day.plusDays(1).atStartOfDay(by.zaberezh.forma.core.store.ZONE).toInstant().toEpochMilli() - 1).sumOf { it.second.ml }
+
+    fun goalMl(s: by.zaberezh.forma.core.store.Store): Int {
+        val kg = by.zaberezh.forma.core.body.latestWeight(s) ?: 70.0
+        return (Math.round(kg * 30 / GLASS_ML) * GLASS_ML).toInt().coerceIn(1500, 4000)
+    }
+
+    fun percent(s: by.zaberezh.forma.core.store.Store, day: java.time.LocalDate) = ml(s, day) * 100 / goalMl(s)
+}

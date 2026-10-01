@@ -25,6 +25,7 @@ import androidx.compose.ui.unit.dp
 import by.zaberezh.forma.core.Ctx
 import by.zaberezh.forma.core.body.weightOn
 import by.zaberezh.forma.core.daily.TestModule
+import by.zaberezh.forma.core.daily.WaterLog
 import by.zaberezh.forma.core.food.FoodModule
 import by.zaberezh.forma.core.gym.GymModule
 import by.zaberezh.forma.core.gym.Planner
@@ -76,6 +77,7 @@ fun TodayScreen(onTab: (Int) -> Unit, onStudy: (Int) -> Unit) {
                 SleepLine(ctx) { onTab(3) }
             }
         }
+        item { WaterBlock(ctx) }
         item { StudyToday(ctx, onStudy) }
     }
 }
@@ -185,5 +187,29 @@ private fun StudyToday(ctx: Ctx, onStudy: (Int) -> Unit) {
             if (labs > 0) Pill("в работе: $labs", C.study)
             Flat("Лабы ›", { onStudy(1) }, C.study)
         }
+    }
+}
+
+/** Вода: стаканы за день и процент от нормы; «+ стакан» — то же, что нажать на уведомление. */
+@Composable
+private fun WaterBlock(ctx: Ctx) {
+    val s = ctx.store
+    val ml = WaterLog.ml(s, ctx.today)
+    val goal = WaterLog.goalMl(s)
+    val pct = ml * 100 / goal
+    Block("Вода", trailing = { Pill("$pct%", if (pct >= 100) C.good else C.health) }) {
+        Row(verticalAlignment = Alignment.Bottom) {
+            Text("${ml / WaterLog.GLASS_ML}", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.SemiBold)
+            Text(" из ${goal / WaterLog.GLASS_ML} стаканов · $ml / $goal мл", Modifier.padding(bottom = 4.dp), color = C.muted)
+        }
+        Box(Modifier.fillMaxWidth().heightIn(min = 8.dp).clip(RoundedCornerShape(4.dp)).background(C.line)) {
+            Box(Modifier.fillMaxWidth((pct / 100f).coerceIn(0f, 1f)).heightIn(min = 8.dp).clip(RoundedCornerShape(4.dp))
+                .background(if (pct >= 100) C.good else C.health))
+        }
+        Line {
+            Primary("+ стакан ${WaterLog.GLASS_ML} мл", { WaterLog.add(s) }, Modifier.weight(1f))
+            if (ml > 0) Secondary("−", { WaterLog.undo(s, ctx.today) })
+        }
+        Muted("Норма ≈ 30 мл на кг веса. Нажатие на уведомление «Попей воды» тоже засчитывает стакан.")
     }
 }
