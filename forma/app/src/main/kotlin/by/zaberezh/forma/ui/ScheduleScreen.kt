@@ -49,6 +49,7 @@ import androidx.compose.ui.unit.dp
 import by.zaberezh.forma.core.food.Edostavka
 import by.zaberezh.forma.core.store.Store
 import by.zaberezh.forma.core.study.Bsuir
+import by.zaberezh.forma.core.study.Iis
 import by.zaberezh.forma.core.study.Lesson
 import by.zaberezh.forma.core.study.STUDY_PREFS
 import by.zaberezh.forma.core.study.Study
@@ -109,7 +110,9 @@ fun ScheduleScreen() {
         scope.launch { downloadTimetable(s).onFailure { err = it.message ?: "Ошибка загрузки" }; loading = false }
     }
     LaunchedEffect(prefs.group) {
-        if (tt.group != prefs.group || System.currentTimeMillis() - tt.fetchedAt > 3 * 24 * 3600_000L) refresh()
+        // расписание, скачанное прошлой версией, без ссылок на фото — перекачать сразу
+        val noPhotos = tt.lessons.any { it.teachers.isNotEmpty() } && tt.lessons.none { l -> l.photos.any(String::isNotBlank) }
+        if (tt.group != prefs.group || noPhotos || System.currentTimeMillis() - tt.fetchedAt > 3 * 24 * 3600_000L) refresh()
     }
 
     // лента: неделя назад и 10 недель вперёд
@@ -261,7 +264,7 @@ private fun LessonDetails(s: Store, tt: Timetable, l: Lesson, date: LocalDate, s
     l.teachers.forEachIndexed { i, short ->
         val full = l.teachersFull.getOrNull(i)?.takeIf { it.isNotBlank() } ?: short
         Line {
-            RemoteImage(l.photos.getOrNull(i).orEmpty(), 52.dp, full.split(" ").take(2).mapNotNull { it.firstOrNull() }.joinToString(""))
+            RemoteImage(Iis.photoUrl(l.photos.getOrNull(i)), 52.dp, full.split(" ").take(2).mapNotNull { it.firstOrNull() }.joinToString(""))
             Column(Modifier.weight(1f)) {
                 Text(full, style = MaterialTheme.typography.bodyLarge)
                 l.teacherInfo.getOrNull(i)?.takeIf { it.isNotBlank() }?.let { Muted(it) }

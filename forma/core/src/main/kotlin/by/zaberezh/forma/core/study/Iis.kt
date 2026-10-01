@@ -46,8 +46,14 @@ object Iis {
 
     private fun cookieOf(setCookies: List<String>) = setCookies.map { it.substringBefore(';').trim() }.filter { '=' in it && !it.endsWith("=") }
 
+    /** Как браузер на телефоне: без этого ИИС (его защита) отвечает 503 вместо страницы. */
+    const val UA = "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0 Mobile Safari/537.36"
+
     private fun headers(session: IisSession?): Map<String, String> {
-        val h = linkedMapOf("Accept" to "application/json", "Content-Type" to "application/json")
+        val h = linkedMapOf(
+            "Accept" to "application/json, text/plain, */*", "Content-Type" to "application/json",
+            "User-Agent" to UA, "Accept-Language" to "ru-RU,ru;q=0.9", "Origin" to HOST, "Referer" to "$HOST/",
+        )
         if (session != null) {
             h["Cookie"] = session.cookie
             // Spring Security: XSRF-токен из куки дублируется в заголовке
@@ -57,11 +63,14 @@ object Iis {
     }
 
     /** Вход по номеру студенческого и паролю ИИС. */
-    fun login(http: Http, username: String, password: String): IisSession {
+    fun login(http: Http, username: String, password: String, pause: (Long) -> Unit = Thread::sleep): IisSession {
         val body = buildJsonObject { put("username", username.trim()); put("password", password); put("rememberMe", true) }.toString()
-        val r = http.send("POST", "$BASE/auth/login", body, headers(null))
+        var r = http.send("POST", "$BASE/auth/login", body, headers(null))
+        // 502–504 — ИИС перегружен или перезапускается: одна повторная попытка через пару секунд
+        if (r.code in 502..504) { pause(2000); r = http.send("POST", "$BASE/auth/login", body, headers(null)) }
         when {
             r.code == 401 || r.code == 403 || r.code == 400 -> throw IisError("Неверный логин или пароль")
+            r.code in 500..599 -> throw IisError("ИИС сейчас недоступен (ошибка ${r.code}) — попробуй через несколько минут")
             r.code !in 200..299 -> throw IisError("ИИС ответил ошибкой ${r.code}")
         }
         val cookie = cookieOf(r.cookies)
@@ -75,6 +84,7 @@ object Iis {
         return when {
             r.code == 401 || r.code == 403 -> throw IisUnauthorized()
             r.code == 404 -> throw IisError("Раздел недоступен в ИИС")
+            r.code in 500..599 -> throw IisError("ИИС сейчас недоступен (ошибка ${r.code}) — попробуй позже")
             r.code !in 200..299 -> throw IisError("ИИС ответил ошибкой ${r.code}")
             else -> r.body
         }
@@ -97,6 +107,19 @@ object Iis {
         } finally { c.disconnect() }
     }
 
+    /** Ссылка на фото из ИИС → https на iis.bsuir.by (бывает http:// или путь без хоста); иное — пусто. */
+    fun photoUrl(link: String?): String {
+        val l = link?.trim().orEmpty()
+        val u = when {
+            l.isEmpty() || l.startsWith("data:") -> return ""
+            l.startsWith("//") -> "https:$l"
+            l.startsWith("/") -> HOST + l
+            l.startsWith("http://") -> "https://" + l.removePrefix("http://")
+            else -> l
+        }
+        return u.takeIf { it.startsWith("https://") && " " !in it }.orEmpty()
+    }
+
     // ---------- профиль из ответа на вход ----------
     data class Profile(val fio: String, val group: String, val photo: String, val extra: List<Pair<String, String>>)
 
@@ -106,7 +129,7 @@ object Iis {
         Profile(
             fio = s("fio", "fullName", "name") ?: listOfNotNull(s("lastName"), s("firstName"), s("middleName")).joinToString(" "),
             group = s("group", "groupName", "studentGroup").orEmpty(),
-            photo = s("photoUrl", "photoLink", "photo").orEmpty().takeIf { it.startsWith("http") }.orEmpty(),
+            photo = photoUrl(s("photoUrl", "photoLink", "photo")),
             extra = JsonView.cards(json).firstOrNull()?.rows.orEmpty().take(6),
         )
     }.getOrNull()
