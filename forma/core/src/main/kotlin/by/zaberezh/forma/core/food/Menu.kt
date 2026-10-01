@@ -114,6 +114,7 @@ class Menu(
         fun parse(text: String): Menu {
             var source = ""; var prefix = ""; val chain = mutableSetOf<String>(); val sig = mutableSetOf<String>()
             var always = false; var conf = "high"; val soft = mutableSetOf<String>(); val scale = mutableMapOf<String, Double>()
+            var perPortion = false  // @portion — в строках КБЖУ на порцию, а не на 100 г (как в приложении Mak.by)
             val syn = mutableMapOf<String, List<String>>(); val items = mutableListOf<MenuItem>()
             for (raw in text.lines()) {
                 val line = raw.trim()
@@ -127,6 +128,7 @@ class Menu(
                         "@sig" -> sig += tokens(v)
                         "@syn" -> tokens(v).let { syn[it.first()] = it.drop(1) }
                         "@always" -> always = true
+                        "@portion" -> perPortion = true
                         "@conf" -> conf = v
                         "@soft" -> soft += tokens(v)
                         "@scale" -> v.split(Regex("\\s+")).let { (w, x) -> scale[w.lowercase().replace('ё', 'е')] = x.toDouble() }
@@ -139,7 +141,8 @@ class Menu(
                 val words = tokens(name).filter { it !in STOP }
                 val keys = (words + c.getOrElse(6) { "" }.let(::tokens)).filter { it !in STOP }.toSet()
                 val all = Regex("(\\d+(?:[.,]\\d+)?)\\s*(%?)").findAll(name).map { it.groupValues[1].replace(',', '.').toDouble() to it.groupValues[2] }.toList()
-                items += MenuItem(name, d(1), Macro(d(5), d(2), d(3), d(4)), words, keys,
+                val k = if (perPortion) 100.0 / d(1) else 1.0
+                items += MenuItem(name, d(1), Macro(d(5) * k, d(2) * k, d(3) * k, d(4) * k), words, keys,
                     all.filter { it.second.isEmpty() }.map { it.first }, all.filter { it.second == "%" }.map { it.first })
             }
             return Menu(source, prefix, chain, sig, syn, items, always, soft, scale, conf)
@@ -151,7 +154,7 @@ class Menu(
 
 /** Все меню сетей. Новая сеть — новый файл в resources/menus и строка здесь. */
 object Menus {
-    val all: List<Menu> by lazy { listOf("kfc", "kinza").map(Menu::load) }
+    val all: List<Menu> by lazy { listOf("kfc", "kinza", "mak").map(Menu::load) }
 
     /** Общие продукты (банан, гречка, яйца…) — средние значения из таблиц калорийности и вес штуки. */
     val basic: Menu by lazy { Menu.load("basic") }
