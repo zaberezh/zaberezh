@@ -1,6 +1,12 @@
 package by.zaberezh.forma.ui
 
 import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -149,8 +155,20 @@ fun ScheduleScreen() {
 
 /** Закреплённая неделя: месяц, номер учебной недели, стрелки ‹ › — соседние недели, дни с числом пар. */
 @Composable
-private fun WeekHeader(tt: Timetable, visible: LocalDate, today: LocalDate, subgroup: Int, onDay: (LocalDate) -> Unit, onWeek: (Long) -> Unit) = Card(
-    Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = C.card),
+private fun WeekHeader(tt: Timetable, visible: LocalDate, today: LocalDate, subgroup: Int, onDay: (LocalDate) -> Unit, onWeek: (Long) -> Unit) {
+    // смахивание: влево — следующая неделя, вправо — предыдущая; блок слегка едет за пальцем
+    val week by rememberUpdatedState(onWeek)
+    var drag by remember { mutableFloatStateOf(0f) }
+    val shift by animateFloatAsState(drag, label = "swipe")
+    Card(
+    Modifier.fillMaxWidth().graphicsLayer { translationX = shift * 0.35f }
+        .pointerInput(Unit) {
+            detectHorizontalDragGestures(
+                onDragEnd = { if (drag < -120f) week(1) else if (drag > 120f) week(-1); drag = 0f },
+                onDragCancel = { drag = 0f },
+            ) { change, dx -> change.consume(); drag += dx }
+        },
+    shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = C.card),
 ) {
     Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         val mon = monday(visible)
@@ -184,6 +202,7 @@ private fun WeekHeader(tt: Timetable, visible: LocalDate, today: LocalDate, subg
     }
 }
 
+}
 @Composable
 private fun ArrowButton(t: String, onClick: () -> Unit) = Box(
     Modifier.size(44.dp).clip(RoundedCornerShape(12.dp)).background(C.cardHi).clickable(onClick = onClick),
