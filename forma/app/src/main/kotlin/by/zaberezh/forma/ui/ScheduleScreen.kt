@@ -101,8 +101,9 @@ private sealed class Row2(val day: LocalDate) {
 fun ScheduleScreen() {
     val ctx = rememberCtx()
     val s = ctx.store
-    val tt = TIMETABLE.get(s)
-    val prefs = STUDY_PREFS.get(s)
+    // расписание из базы декодируется один раз на изменение данных, а не на каждую прокрутку дня
+    val tt = remember(ctx) { TIMETABLE.get(s) }
+    val prefs = remember(ctx) { STUDY_PREFS.get(s) }
     val today = ctx.today
     var loading by remember { mutableStateOf(false) }
     var err by remember { mutableStateOf<String?>(null) }
@@ -127,8 +128,8 @@ fun ScheduleScreen() {
     val oldest = monday(today).minusWeeks(MAX_PAST_WEEKS.toLong())
     val start = if (pastWeeks == 0) today else monday(today).minusWeeks(pastWeeks.toLong())
     val end = monday(today).plusWeeks(10).plusDays(6)
-    val days = generateSequence(start) { it.plusDays(1) }.takeWhile { !it.isAfter(end) }.toList()
     val rows = remember(tt, prefs.subgroup, start) {
+        val days = generateSequence(start) { it.plusDays(1) }.takeWhile { !it.isAfter(end) }.toList()
         (if (start > oldest) listOf<Row2>(Row2.More(start)) else emptyList()) + days.flatMap { d ->
             val ls = if (tt.lessons.isEmpty()) emptyList() else Bsuir.on(tt, d, prefs.subgroup)
             val gaps = by.zaberezh.forma.core.study.Focus.gaps(ls)
@@ -173,10 +174,8 @@ fun ScheduleScreen() {
                 when (val r = rows[i]) {
                     is Row2.Head -> DayTitle(r.day, today, r.empty, Bsuir.week(tt, r.day))
                     is Row2.Item -> LessonCard(s, tt, r.lesson, r.day, prefs.subgroup)
-                    is Row2.Window -> Text(
-                        "окно ${r.gap.from}–${r.gap.to} · " + (if (r.gap.minutes >= 60) "${r.gap.minutes / 60} ч ${r.gap.minutes % 60} мин" else "${r.gap.minutes} мин"),
-                        Modifier.padding(start = 12.dp), style = MaterialTheme.typography.bodySmall, color = C.muted,
-                    )
+                    is Row2.Window -> Text(r.gap.label(), Modifier.padding(start = 12.dp), style = MaterialTheme.typography.bodySmall,
+                        color = if (r.day == today && java.time.LocalTime.now(by.zaberezh.forma.core.store.ZONE).isAfter(r.gap.to)) C.line else C.muted)
                     is Row2.More -> Secondary(
                         if (pastWeeks == 0) "Показать прошедшие дни" else "Показать ещё неделю раньше",
                         { pastWeeks = (pastWeeks + 1).coerceAtMost(MAX_PAST_WEEKS) }, Modifier.fillMaxWidth(),

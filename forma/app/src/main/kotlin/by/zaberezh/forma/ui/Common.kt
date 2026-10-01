@@ -118,7 +118,7 @@ fun plural(n: Int, one: String, few: String, many: String) = when {
 fun String.num(): Double? = trim().replace(',', '.').toDoubleOrNull()
 
 fun Context.copy(text: String) =
-    getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("forma", text))
+    getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("Grind", text))
 
 // ---------- раскладка ----------
 @Composable
@@ -303,7 +303,12 @@ fun Field(
     singleLine = lines == 1, minLines = lines,
     shape = RoundedCornerShape(12.dp),
     visualTransformation = if (secret) PasswordVisualTransformation() else VisualTransformation.None,
-    keyboardOptions = if (number) KeyboardOptions(keyboardType = KeyboardType.Decimal) else KeyboardOptions.Default,
+    // пароль/ключ: клавиатура в режиме пароля — не запоминает ввод в словаре и не подсказывает его потом
+    keyboardOptions = when {
+        secret -> KeyboardOptions(keyboardType = KeyboardType.Password)
+        number -> KeyboardOptions(keyboardType = KeyboardType.Decimal)
+        else -> KeyboardOptions.Default
+    },
     )
 }
 
