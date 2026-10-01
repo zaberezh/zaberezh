@@ -35,6 +35,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import java.time.temporal.ChronoUnit
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -76,6 +79,9 @@ fun typeColor(t: String): Color = when (t.uppercase()) {
     else -> C.bad
 }
 
+/** Насколько далеко назад можно раскрыть ленту (≈ семестр). */
+private const val MAX_PAST_WEEKS = 20
+
 private fun monday(d: LocalDate) = d.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
 
 /** Загрузка расписания (общая для экрана и настроек). */
@@ -88,6 +94,8 @@ suspend fun downloadTimetable(s: Store): Result<Unit> {
 private sealed class Row2(val day: LocalDate) {
     class Head(day: LocalDate, val empty: Boolean) : Row2(day)
     class Item(day: LocalDate, val lesson: Lesson, val i: Int) : Row2(day)
+    /** Кнопка «Показать прошедшие дни» над первым днём ленты. */
+    class More(day: LocalDate) : Row2(day)
 }
 
 /**
@@ -115,19 +123,31 @@ fun ScheduleScreen() {
         if (tt.group != prefs.group || old || System.currentTimeMillis() - tt.fetchedAt > 3 * 24 * 3600_000L) refresh()
     }
 
-    // лента: неделя назад и 10 недель вперёд
-    val start = monday(today).minusWeeks(1)
-    val days = (0L until 7 * 11).map(start::plusDays)
+    // лента: начинается с сегодня и идёт на 10 недель вперёд; прошедшие дни — только по кнопке (по неделе за нажатие)
+    var pastWeeks by rememberSaveable { mutableIntStateOf(0) }
+    val oldest = monday(today).minusWeeks(MAX_PAST_WEEKS.toLong())
+    val start = if (pastWeeks == 0) today else monday(today).minusWeeks(pastWeeks.toLong())
+    val end = monday(today).plusWeeks(10).plusDays(6)
+    val days = generateSequence(start) { it.plusDays(1) }.takeWhile { !it.isAfter(end) }.toList()
     val rows = remember(tt, prefs.subgroup, start) {
-        days.flatMap { d ->
+        (if (start > oldest) listOf<Row2>(Row2.More(start)) else emptyList()) + days.flatMap { d ->
             val ls = if (tt.lessons.isEmpty()) emptyList() else Bsuir.on(tt, d, prefs.subgroup)
             listOf<Row2>(Row2.Head(d, ls.isEmpty())) + ls.mapIndexed { i, l -> Row2.Item(d, l, i) }
         }
     }
     val dayIndex = remember(rows) { rows.withIndex().filter { it.value is Row2.Head }.associate { it.value.day to it.index } }
-    val list = rememberLazyListState(initialFirstVisibleItemIndex = dayIndex[today] ?: 0)
+    val list = rememberLazyListState()
     val visible by remember(rows) { derivedStateOf { rows.getOrNull(list.firstVisibleItemIndex)?.day ?: today } }
-    fun go(d: LocalDate) { dayIndex[d.coerceIn(days.first(), days.last())]?.let { scope.launch { list.animateScrollToItem(it) } } }
+    // переход к дню из прошлого сначала раскрывает нужные недели, потом прокручивает
+    var pending by remember { mutableStateOf<LocalDate?>(null) }
+    fun go(d: LocalDate) {
+        val target = d.coerceIn(oldest, end)
+        if (target < start) {
+            pastWeeks = ChronoUnit.WEEKS.between(monday(target), monday(today)).toInt().coerceIn(1, MAX_PAST_WEEKS)
+            pending = target
+        } else dayIndex[target]?.let { scope.launch { list.animateScrollToItem(it) } }
+    }
+    LaunchedEffect(rows) { pending?.let { d -> dayIndex[d]?.let { list.scrollToItem(it) }; pending = null } }
 
     Column(Modifier.fillMaxSize()) {
         Box(Modifier.padding(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 8.dp)) {
@@ -146,10 +166,14 @@ fun ScheduleScreen() {
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 24.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            items(rows.size, key = { i -> rows[i].let { r -> if (r is Row2.Item) "l${r.day}-${r.i}" else "h${r.day}" } }) { i ->
+            items(rows.size, key = { i -> rows[i].let { r -> when (r) { is Row2.Item -> "l${r.day}-${r.i}"; is Row2.More -> "more"; else -> "h${r.day}" } } }) { i ->
                 when (val r = rows[i]) {
                     is Row2.Head -> DayTitle(r.day, today, r.empty, Bsuir.week(tt, r.day))
                     is Row2.Item -> LessonCard(s, tt, r.lesson, r.day, prefs.subgroup)
+                    is Row2.More -> Secondary(
+                        if (pastWeeks == 0) "Показать прошедшие дни" else "Показать ещё неделю раньше",
+                        { pastWeeks = (pastWeeks + 1).coerceAtMost(MAX_PAST_WEEKS) }, Modifier.fillMaxWidth(),
+                    )
                 }
             }
         }
