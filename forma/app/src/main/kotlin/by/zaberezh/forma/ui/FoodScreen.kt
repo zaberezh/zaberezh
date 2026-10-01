@@ -10,6 +10,8 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
@@ -54,6 +56,10 @@ fun FoodScreen() {
     val info by FoodSearch.info
     val c = LocalContext.current
     DisposableEffect(Unit) { FoodSearch.visible = true; onDispose { FoodSearch.visible = false } }
+    var shotUri by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf<android.net.Uri?>(null) }   // переживает возврат из камеры
+    fun sendPhoto(uri: android.net.Uri) { photoJpeg(c, uri)?.let { FoodSearch.photo(ctx, c, it) } ?: run { FoodSearch.err.value = "Не удалось прочитать фото" } }
+    val camera = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { ok -> if (ok) shotUri?.let(::sendPhoto) }
+    val gallery = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri -> uri?.let(::sendPhoto) }
 
     Screen {
         item {
@@ -76,6 +82,17 @@ fun FoodScreen() {
                     Primary(if (busy) "Ищу…" else "Посчитать КБЖУ", { FoodSearch.resolve(ctx, c) }, Modifier.weight(1f), enabled = !busy)
                     if (busy) CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp)
                     else Secondary("Вручную", { draft = (draft ?: emptyList()) + FoodItem(text.ifBlank { "Продукт" }, 100.0, Macro()) })
+                }
+                // фото еды → Claude определит блюда и вес; текст в поле выше уйдёт как подпись
+                Line {
+                    Secondary("📷 Сфоткать еду", {
+                        val f = java.io.File(c.cacheDir, "photos").apply { mkdirs() }.let { java.io.File(it, "meal.jpg") }
+                        val uri = androidx.core.content.FileProvider.getUriForFile(c, c.packageName + ".files", f)
+                        shotUri = uri; camera.launch(uri)
+                    }, Modifier.weight(1f), enabled = !busy)
+                    Secondary("Из галереи", {
+                        gallery.launch(androidx.activity.result.PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                    }, Modifier.weight(1f), enabled = !busy)
                 }
                 Err(err); Note(info)
                 if (err != null || info != null) Buttons {
@@ -155,3 +172,17 @@ private fun DraftItem(item: FoodItem, onChange: (FoodItem) -> Unit, onRemove: ()
         }
     }
 }
+
+/** Фото → JPEG до 1280 px по большей стороне (качество 82): Claude хватает, трафика и токенов меньше. */
+private fun photoJpeg(c: android.content.Context, uri: android.net.Uri): ByteArray? = runCatching {
+    val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    c.contentResolver.openInputStream(uri)?.use { android.graphics.BitmapFactory.decodeStream(it, null, bounds) }
+    var sample = 1
+    while (maxOf(bounds.outWidth, bounds.outHeight) / (sample * 2) >= 1280) sample *= 2
+    val bmp = c.contentResolver.openInputStream(uri)?.use {
+        android.graphics.BitmapFactory.decodeStream(it, null, android.graphics.BitmapFactory.Options().apply { inSampleSize = sample })
+    } ?: return null
+    val k = 1280f / maxOf(bmp.width, bmp.height)
+    val scaled = if (k < 1f) android.graphics.Bitmap.createScaledBitmap(bmp, (bmp.width * k).toInt(), (bmp.height * k).toInt(), true) else bmp
+    java.io.ByteArrayOutputStream().use { out -> scaled.compress(android.graphics.Bitmap.CompressFormat.JPEG, 82, out); out.toByteArray() }
+}.getOrNull()
