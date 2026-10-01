@@ -33,6 +33,7 @@
         <receiver android:name=".sys.MorningReceiver" android:exported="false" />
         <receiver android:name=".sys.EveningReceiver" android:exported="false" />
         <receiver android:name=".sys.WeighReceiver" android:exported="false" />
+        <receiver android:name=".sys.WaterReceiver" android:exported="false" />
         <receiver android:name=".sys.GeoReceiver" android:exported="false" />
         <receiver android:name=".sys.BootReceiver" android:exported="true">
             <intent-filter>

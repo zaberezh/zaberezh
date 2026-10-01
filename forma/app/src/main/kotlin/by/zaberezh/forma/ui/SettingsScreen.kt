@@ -39,6 +39,7 @@ import by.zaberezh.forma.core.r1
 import by.zaberezh.forma.sys.Evening
 import by.zaberezh.forma.sys.Geo
 import by.zaberezh.forma.sys.Weigh
+import by.zaberezh.forma.sys.Water
 import by.zaberezh.forma.sys.SleepSync
 import by.zaberezh.forma.sys.Morning
 import by.zaberezh.forma.sys.granted
@@ -93,6 +94,8 @@ fun SettingsScreen() {
     var bedReminder by remember(st) { mutableStateOf(st.bedReminder) }
     var weekends by remember(st) { mutableStateOf(st.gymWeekends) }
     var split by remember(st) { mutableStateOf(st.split) }
+    var water by remember(st) { mutableStateOf(st.waterReminder) }
+    var geo by remember(st) { mutableStateOf(st.geo) }
     var weighOn by remember(st) { mutableStateOf(st.weighReminder) }
     var url by remember(st) { mutableStateOf(st.apiUrl) }
     var model by remember(st) { mutableStateOf(st.model) }
@@ -124,7 +127,7 @@ fun SettingsScreen() {
             sessionsPerWeek = d("sessions", 3.0).toInt().coerceIn(1, 5), sessionMin = d("session", 90.0).toInt().coerceIn(40, 150), minVisitMin = d("visit", 75.0).toInt(),
             morningHour = d("hour", 8.0).toInt().coerceIn(0, 23), morningMinute = d("minute", 0.0).toInt().coerceIn(0, 59),
             checkupDays = d("checkup", 14.0).toInt().coerceIn(7, 60),
-            gymWeekends = weekends, split = split, weighReminder = weighOn,
+            gymWeekends = weekends, split = split, weighReminder = weighOn, waterReminder = water, geo = geo,
             weighHour = d("wH", 7.0).toInt().coerceIn(0, 23), weighMinute = d("wM", 20.0).toInt().coerceIn(0, 59),
             weighWeekendHour = d("weH", 11.0).toInt().coerceIn(0, 23), weighWeekendMinute = d("weM", 0.0).toInt().coerceIn(0, 59),
             apiKey = key.trim(), apiUrl = url.trim(), model = model.trim().ifEmpty { "claude-opus-5-5" },
@@ -132,6 +135,8 @@ fun SettingsScreen() {
         Morning.schedule(c)
         Evening.schedule(c)
         Weigh.schedule(c)
+        Water.schedule(c)
+        Geo.register(c)
     }
 
     @Composable
@@ -156,6 +161,16 @@ fun SettingsScreen() {
                     Switch(checked = weighOn, onCheckedChange = { weighOn = it })
                 }
                 grid(WEIGH)
+                Line {
+                    Text("Попить воды — каждый час", Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+                    Switch(checked = water, onCheckedChange = { water = it })
+                }
+                Muted("Будни — с ${st.waterWeekdayFrom}:00 до ${st.waterTo}:00, выходные — с ${st.waterWeekendFrom}:00 до ${st.waterTo}:00.")
+                Line {
+                    Text("Учёт зала по геолокации", Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+                    Switch(checked = geo, onCheckedChange = { geo = it })
+                }
+                if (!geo) Muted("Выключено: тренировка засчитывается по записанным подходам.")
                 Line {
                     Text("Выходные — тоже дни зала", Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
                     Switch(checked = weekends, onCheckedChange = { weekends = it })
@@ -221,15 +236,17 @@ fun SettingsScreen() {
                 val fine = c.granted(Manifest.permission.ACCESS_FINE_LOCATION)
                 val always = c.granted(Manifest.permission.ACCESS_BACKGROUND_LOCATION)
                 val battery = c.getSystemService(PowerManager::class.java).isIgnoringBatteryOptimizations(c.packageName)
-                PermRow("Уведомления и геолокация", notif && fine) {
+                PermRow(if (st.geo) "Уведомления и геолокация" else "Уведомления", notif && (fine || !st.geo)) {
                     perms.launch(listOfNotNull(
-                        Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION,
+                        if (st.geo) Manifest.permission.ACCESS_FINE_LOCATION else null, if (st.geo) Manifest.permission.ACCESS_COARSE_LOCATION else null,
                         if (Build.VERSION.SDK_INT >= 33) Manifest.permission.POST_NOTIFICATIONS else null,
                     ).toTypedArray())
                 }
                 HorizontalDivider(color = C.line)
-                PermRow("Геолокация «Разрешить всегда»", always, enabled = fine) { bg.launch(Manifest.permission.ACCESS_BACKGROUND_LOCATION) }
-                HorizontalDivider(color = C.line)
+                if (st.geo) {
+                    PermRow("Геолокация «Разрешить всегда»", always, enabled = fine) { bg.launch(Manifest.permission.ACCESS_BACKGROUND_LOCATION) }
+                    HorizontalDivider(color = C.line)
+                }
                 PermRow("История использования (сон)", SleepSync.hasAccess(c)) {
                     c.startActivity(Intent(AndroidSettings.ACTION_USAGE_ACCESS_SETTINGS))
                 }
@@ -240,7 +257,7 @@ fun SettingsScreen() {
                 Muted("Samsung: Настройки → Батарея → Ограничения фоновой работы — убери Forma из «спящих», иначе уведомления и геозоны могут не срабатывать.")
             }
         }
-        item {
+        if (st.geo) item {
             Block("Залы") {
                 st.gyms.forEachIndexed { i, g ->
                     if (i > 0) HorizontalDivider(color = C.line)

@@ -81,6 +81,7 @@ class BootReceiver : BroadcastReceiver() {
         Morning.schedule(c)
         Evening.schedule(c)
         Weigh.schedule(c)
+        Water.schedule(c)
         Geo.register(c) // геозоны сбрасываются после перезагрузки
     }
 }
@@ -94,6 +95,8 @@ object Geo {
 
     @SuppressLint("MissingPermission")
     fun register(c: Context) {
+        // учёт зала по геолокации выключен в настройках — снимаем геозоны, если были
+        if (!SETTINGS.get(Forma.store).geo) { runCatching { LocationServices.getGeofencingClient(c).removeGeofences(intent(c)) }; return }
         if (!c.granted(Manifest.permission.ACCESS_FINE_LOCATION)) return
         val gyms = SETTINGS.get(Forma.store).gyms
         val client = LocationServices.getGeofencingClient(c)

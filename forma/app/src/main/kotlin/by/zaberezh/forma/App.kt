@@ -8,6 +8,7 @@ import by.zaberezh.forma.sys.Evening
 import by.zaberezh.forma.sys.Geo
 import by.zaberezh.forma.sys.Morning
 import by.zaberezh.forma.sys.Weigh
+import by.zaberezh.forma.sys.Water
 import by.zaberezh.forma.sys.Notify
 
 object Forma {
@@ -24,6 +25,7 @@ class App : Application() {
         Morning.schedule(this)
         Evening.schedule(this)
         Weigh.schedule(this)
+        Water.schedule(this)
         Geo.register(this)
     }
 }
