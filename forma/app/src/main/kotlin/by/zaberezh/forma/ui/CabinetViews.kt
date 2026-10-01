@@ -104,24 +104,40 @@ private fun short(d: String) = d.take(5)   // dd.MM.yyyy → dd.MM
 
 private fun hours(n: Int) = "$n ч"
 
-private fun people(n: Int) = when {
-    n % 100 in 11..14 -> "$n человек"
-    n % 10 in 2..4 -> "$n человека"
-    else -> "$n человек"
+/** Русское число: 1 справка, 2 справки, 5 справок. */
+private fun plural(n: Int, one: String, few: String, many: String) = when {
+    n % 100 in 11..14 -> many
+    n % 10 == 1 -> one
+    n % 10 in 2..4 -> few
+    else -> many
 }
 
-/** Краткая строка для плитки раздела, когда данные уже загружены. */
-fun summaryOf(d: CabinetData?): String? = when (d) {
-    is Rating -> listOfNotNull(
-        d.average?.let { "средний ${it.avg()}" } ?: "отметок пока нет",
-        d.labsTotal.takeIf { it > 0 }?.let { "лабы ${d.labsDone}/$it" },
-    ).joinToString(" · ")
-    is Markbook -> d.average?.let { "средний балл ${it.avg(2)}" } ?: "оценок пока нет"
-    is Omissions -> if (d.total == 0 && d.unexcused.isEmpty()) "пропусков нет" else "${hours(d.total)} без уважительной"
-    is GroupInfo -> people(d.students.size) + (d.curator?.let { " · куратор ${initials(it.fio)}" } ?: "")
-    is Certificates -> if (d.items.isEmpty()) "справок нет" else "${d.items.size} шт" +
-        d.items.count { it.status == 2 }.takeIf { it > 0 }?.let { " · $it в работе" }.orEmpty()
-    is Person -> listOf(d.faculty, d.speciality).filter(String::isNotBlank).joinToString(" · ").ifBlank { null }
+private fun people(n: Int) = "$n " + plural(n, "человек", "человека", "человек")
+
+/** Плитка раздела: крупное значение и подпись под ним — у всех плиток одинаковая структура. */
+data class TileInfo(val value: String, val caption: String, val color: Color = C.text)
+
+/** Сводка для плитки, когда данные раздела уже загружены. */
+fun tileOf(d: CabinetData?): TileInfo? = when (d) {
+    is Rating -> TileInfo(
+        d.average?.avg() ?: "—",
+        listOfNotNull(
+            if (d.average == null) "отметок пока нет" else "средний балл",
+            d.labsTotal.takeIf { it > 0 }?.let { "лабы ${d.labsDone} из $it" },
+        ).joinToString(" · "),
+        gradeColor(d.average),
+    )
+    is Markbook -> TileInfo(d.average?.avg(2) ?: "—", if (d.average == null) "оценок пока нет" else "средний балл", gradeColor(d.average))
+    is Omissions -> TileInfo(hours(d.total), if (d.total == 0) "пропусков нет" else "без уважительной причины", if (d.total == 0) C.good else C.warn)
+    is GroupInfo -> TileInfo("${d.students.size}", plural(d.students.size, "человек", "человека", "человек") + " в группе")
+    is Certificates -> TileInfo(
+        "${d.items.size}",
+        if (d.items.isEmpty()) "справок нет" else plural(d.items.size, "справка", "справки", "справок") +
+            d.items.count { it.status == 2 }.takeIf { it > 0 }?.let { " · $it в работе" }.orEmpty(),
+    )
+    is Person -> TileInfo(d.speciality.ifBlank { d.faculty }.ifBlank { "—" }, listOfNotNull(
+        d.faculty.takeIf { it.isNotBlank() && it != d.speciality }, d.course?.let { "$it курс" },
+    ).joinToString(" · ").ifBlank { "мои данные" })
     null -> null
 }
 
