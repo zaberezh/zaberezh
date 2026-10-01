@@ -102,5 +102,8 @@ object Reminders {
 
 /** После перезагрузки и обновления приложения будильники AlarmManager сброшены — ставим заново. */
 class BootReceiver : BroadcastReceiver() {
-    override fun onReceive(c: Context, i: Intent) = Reminders.scheduleAll(c)
+    override fun onReceive(c: Context, i: Intent) {
+        // приёмник открыт системе — чужие приложения могут слать сюда что угодно, реагируем только на свои события
+        if (i.action == Intent.ACTION_BOOT_COMPLETED || i.action == Intent.ACTION_MY_PACKAGE_REPLACED) Reminders.scheduleAll(c)
+    }
 }
