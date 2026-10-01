@@ -12,6 +12,18 @@ data class FoodResult(val items: List<FoodItem>, val how: String, val missing: L
  * 6) Claude — только то, что не нашлось нигде.
  * Сетевые шаги делят общий бюджет времени, поэтому поиск не «висит».
  */
+/** «с» / «со» между блюдами: «гречка с курицей». */
+private val WITH = Regex("\\s+(?:с|со)\\s+", RegexOption.IGNORE_CASE)
+
+/**
+ * Если в запросе вес указан явно («шоколадка 30г»), он главнее оценки со стороны: значения на 100 г те же,
+ * масса — как написал человек. Сопоставление по порядку, когда позиций столько же, сколько частей запроса.
+ */
+fun keepGrams(parts: List<String>, items: List<FoodItem>): List<FoodItem> {
+    if (parts.size != items.size) return items
+    return items.mapIndexed { i, it -> WebFood.gramsOf(parts[i])?.takeIf { g -> g > 0 }?.let { g -> it.copy(grams = g) } ?: it }
+}
+
 class FoodPipeline(
     private val store: Store,
     fetch: (String) -> String? = Edostavka::httpGet,
@@ -42,6 +54,13 @@ class FoodPipeline(
             val basic = Menus.basic.resolve(rest.joinToString(", "))
             add("таблица", basic.items)
             rest = basic.rest
+            // «макароны с 2 котлетами», «пюре с котлетой»: не нашлось целиком — пробуем по частям
+            rest = rest.filter { part ->
+                val pieces = part.split(WITH).map { it.trim() }.filter { it.isNotEmpty() }
+                if (pieces.size < 2) return@filter true
+                val r = Menus.basic.resolve(pieces.joinToString(", "))
+                if (r.rest.isEmpty() && r.items.isNotEmpty()) { add("таблица", r.items); false } else true
+            }
         }
 
         var hints = emptyList<ShopPage>()
@@ -62,8 +81,9 @@ class FoodPipeline(
         if (rest.isNotEmpty() && ask != null) {
             stage("спрашиваю Claude…")
             // ошибка Claude не теряет то, что уже найдено
-            runCatching { ask(rest.joinToString(", "), hints) }
-                .onSuccess { add("Claude", it); rest = emptyList() }
+            val asked = rest
+            runCatching { ask(asked.joinToString(", "), hints) }
+                .onSuccess { add("Claude", keepGrams(asked, it)); rest = emptyList() }
                 .onFailure { error = it; log("Claude: ${it.message}") }
         }
         return FoodResult(items, how.entries.joinToString(" · ") { "${it.value} ${it.key}" }, rest, error)
