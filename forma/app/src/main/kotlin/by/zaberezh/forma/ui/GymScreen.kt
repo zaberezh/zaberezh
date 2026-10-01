@@ -208,11 +208,21 @@ private fun DayPlanBlock(ctx: Ctx, date: LocalDate) {
         val plan = GymModule.planFor(ctx, date)
         fun save(pl: DayPlan) = GymModule.savePlan(s, pl.copy(source = if (pl.source == "claude") "claude" else "edited"))
 
+        val days = GymModule.split(ctx)
+        if (days.size > 1) {
+            Text("День", style = MaterialTheme.typography.labelLarge, color = C.muted)
+            Buttons {
+                days.forEach { d ->
+                    FilterChip(selected = plan.day == d.id, onClick = { if (plan.day != d.id) save(GymModule.planFor(ctx, date, plan.focus, d.id)) },
+                        label = { Text(d.title) })
+                }
+            }
+        }
         Text("Акцент (по желанию)", style = MaterialTheme.typography.labelLarge, color = C.muted)
         Buttons {
             FilterChip(selected = plan.focus == null, onClick = { GymModule.resetPlan(s, date) }, label = { Text("Авто") })
             FOCUS.forEach { (key, v) ->
-                FilterChip(selected = plan.focus == key, onClick = { save(GymModule.planFor(ctx, date, key)) }, label = { Text(v.first) })
+                FilterChip(selected = plan.focus == key, onClick = { save(GymModule.planFor(ctx, date, key, plan.day)) }, label = { Text(v.first) })
             }
         }
         val summary = Planner.summary(p, plan)
@@ -264,7 +274,7 @@ private fun DayPlanBlock(ctx: Ctx, date: LocalDate) {
                     r.onSuccess { (items, note) ->
                         val valid = items.filter { p.ex(it.first) != null }.distinctBy { it.first }.map { PlanItem(it.first, it.second) }
                         if (valid.isEmpty()) err = "Claude вернул пустой план"
-                        else GymModule.savePlan(s, DayPlan(date.toString(), valid, plan.focus, "claude", note))
+                        else GymModule.savePlan(s, DayPlan(date.toString(), valid, plan.focus, "claude", note, plan.day))
                         info = "Claude: ~${ai.used} токенов"
                     }.onFailure { err = Claude.explain(it) + " (~${ai.used} токенов)" }
                 }

@@ -69,7 +69,8 @@ fun TodayScreen(onTab: (Int) -> Unit) {
                 )
                 val active = s.kvGet(ACTIVE)?.let { s.get(it) } != null
                 val plan = GymModule.planFor(ctx, ctx.today)
-                val summary = Planner.summary(GymModule.program(s), plan)
+                val dayTitle = GymModule.split(ctx).takeIf { it.size > 1 }?.firstOrNull { it.id == plan.day }?.title
+                val summary = Planner.summary(GymModule.program(s), plan).let { if (dayTitle != null && it.isNotEmpty()) "$dayTitle: $it" else it }
                 when {
                     ctx.today in trained -> Stat("Сегодня", "тренировка засчитана", C.good)
                     wk.todayGym -> {

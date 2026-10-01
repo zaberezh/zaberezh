@@ -153,6 +153,33 @@ class CoreTest {
         assertEquals(c.first { it.ex == "curl" }.pair, c.first { it.ex == "pushdown" }.pair)
     }
 
+    @Test fun splitDaysRotateAndStayInTheirZone() {
+        val s = store()
+        val p = PROGRAM.get(s)
+        val ctx = Ctx(s, mon)
+        val days = GymModule.week(ctx).plan
+        val plans = days.map { GymModule.planFor(ctx, it) }
+        assertEquals(listOf("upper", "lower", "upper"), plans.map { it.day })            // по умолчанию Верх / Низ по очереди
+        val legs = setOf("quads", "hams", "glutes", "calves")
+        fun mains(pl: by.zaberezh.forma.core.gym.DayPlan) = pl.items.map { p.ex(it.ex)!!.muscles.maxBy { m -> m.value }.key }.toSet()
+        assertTrue(mains(plans[0]).none { it in legs }, "верх без ног: ${plans[0]}")
+        assertTrue(mains(plans[1]).any { it in legs } && mains(plans[1]).none { it in setOf("chest", "back", "side_delts") }, "низ: ${plans[1]}")
+        // сделанная тренировка «Верх» → следующая по очереди «Низ», даже через пропуск
+        GymModule.savePlan(s, plans[0])
+        WORKOUT.save(s, Workout(mon.toString(), mon.startMs(), sets = listOf(SetLog("bench", 60.0, 8))), ts = mon.startMs() + 3600_000)
+        val thu = Ctx(s, mon.plusDays(3))
+        assertEquals("lower", GymModule.dayType(thu, GymModule.week(thu).plan.first { it >= mon.plusDays(3) }).id)
+        // ручной выбор дня и PPL
+        assertEquals("lower", GymModule.planFor(ctx, mon.plusDays(2), day = "lower").day)
+        SETTINGS.set(s, SETTINGS.get(s).copy(split = "ppl"))
+        val ppl = Ctx(MemoryStore().also { PROGRAM.set(it, prog); SETTINGS.set(it, Settings(split = "ppl")) }, mon)
+        val pp = GymModule.week(ppl).plan.map { GymModule.planFor(ppl, it) }
+        assertEquals(listOf("push", "pull", "legs"), pp.map { it.day })
+        assertTrue(mains(pp[0]).all { it in setOf("chest", "front_delts", "side_delts", "triceps") }, "жим: ${pp[0]}")
+        // акцент «Ноги» в день «Верх» переводит день в «Низ»
+        assertEquals("lower", GymModule.planFor(ctx, mon, "legs").day)
+    }
+
     @Test fun gripWorkLastEvenWithBackFocus() {
         val p = prog.copy(exercises = prog.exercises + FOREARM_SEED)
         val items = listOf("fa_reverse_curl", "bench", "lat_pulldown", "squat", "hanging_raise").map { PlanItem(it, 3) }
@@ -203,7 +230,7 @@ class CoreTest {
         val p = PROGRAM.get(s)
         val sets = plan.items.sumOf { it.sets }
         assertTrue(sets in 12..20, "sets=$sets plan=$plan")
-        assertTrue(plan.items.size in 4..7)
+        assertTrue(plan.items.size in 4..7, "$plan")
         assertTrue(p.ex(plan.items.first().ex)!!.muscles.size > 1, "сначала базовое")
         // все крупные мышцы верха покрыты в фулбоди-дне
         val m = Planner.planMuscles(p, plan)
@@ -217,11 +244,11 @@ class CoreTest {
 
         // фокус «руки» — больше бицепса/трицепса
         val arms = Planner.planMuscles(p, GymModule.planFor(ctx, mon, focus = "arms"))
-        assertTrue((arms["biceps"] ?: 0.0) + (arms["triceps"] ?: 0.0) > (m["biceps"] ?: 0.0) + (m["triceps"] ?: 0.0))
+        assertTrue((arms["biceps"] ?: 0.0) + (arms["triceps"] ?: 0.0) > (m["biceps"] ?: 0.0) + (m["triceps"] ?: 0.0), "$arms vs $m")
 
         // будущие дни недели не копируют сегодняшний: симуляция учитывает запланированное
         val wed = GymModule.planFor(Ctx(s, mon), mon.plusDays(2))
-        assertTrue(wed.items.isNotEmpty())
+        assertTrue(wed.items.isNotEmpty(), "$wed")
 
         // правка сохраняется и возвращается как есть
         GymModule.savePlan(s, plan.copy(items = plan.items.drop(1), source = "edited"))
