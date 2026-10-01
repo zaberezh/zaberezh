@@ -124,4 +124,14 @@ class CabinetTest {
         assertTrue("/personal-rating" !in calls)
         assertTrue(Cabinet.group("""{"numberOfGroup":"1"}""").students.isEmpty())
     }
+
+    @Test fun groupFromIisReplacesScheduleGroup() {
+        val s = by.zaberezh.forma.core.store.MemoryStore()
+        by.zaberezh.forma.core.study.STUDY_PREFS.set(s, by.zaberezh.forma.core.study.StudyPrefs("653502", subgroup = 2))
+        assertTrue(!by.zaberezh.forma.core.study.adoptGroup(s, "653502"))          // та же — ничего не трогаем
+        assertTrue(!by.zaberezh.forma.core.study.adoptGroup(s, ""))
+        assertTrue(!by.zaberezh.forma.core.study.adoptGroup(s, "гр. 12"))
+        assertTrue(by.zaberezh.forma.core.study.adoptGroup(s, " 421701 "))
+        assertEquals(by.zaberezh.forma.core.study.StudyPrefs("421701", 0), by.zaberezh.forma.core.study.STUDY_PREFS.get(s))
+    }
 }
