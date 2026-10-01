@@ -63,5 +63,25 @@ object FoodSearch {
         }
     }
 
+    /** КБЖУ по фото: Claude распознаёт блюда и вес; подпись из поля «Что съел» уходит как уточнение. */
+    fun photo(ctx: Ctx, c: Context, jpeg: ByteArray) {
+        if (busy.value) return
+        val st = ctx.settings
+        if (st.apiKey.isBlank()) { err.value = "Для фото нужен API-ключ Claude (Настройки)."; return }
+        busy.value = true; err.value = null; info.value = "смотрю фото…"
+        val note = text.value.trim()
+        val app = c.applicationContext
+        scope.launch {
+            var ai: Claude? = null
+            val r = withContext(Dispatchers.IO) { runCatching { Claude(st.apiKey, st.model, st.apiUrl).also { ai = it }.foodsFromPhoto(jpeg, note) } }
+            busy.value = false
+            val spent = ai?.let { a -> a.used.takeIf { it > 0 }?.let { " · ~${"%,d".format(it).replace(',', ' ')} токенов" } } ?: ""
+            r.onSuccess { draft.value = (draft.value ?: emptyList()) + it; info.value = "по фото — проверь вес$spent" }
+                .onFailure { err.value = Claude.explain(it) + spent; info.value = null }
+            if (!visible) Notify.post(app, 5, if (r.isSuccess) "КБЖУ по фото готово" else "Фото: ошибка",
+                listOf(if (r.isSuccess) "Проверь и сохрани во вкладке «Еда»" else (err.value ?: "")))
+        }
+    }
+
     fun clear() { draft.value = null; text.value = ""; err.value = null }
 }
