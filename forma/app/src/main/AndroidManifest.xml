@@ -46,7 +46,10 @@
         <receiver android:name=".sys.WaterDrankReceiver" android:exported="false" />
         <receiver android:name=".sys.WakeReceiver" android:exported="false" />
         <receiver android:name=".sys.WakeStopReceiver" android:exported="false" />
-        <receiver android:name=".sys.IisCheckReceiver" android:exported="false" />
+        <service
+            android:name=".sys.IisCheckJob"
+            android:exported="false"
+            android:permission="android.permission.BIND_JOB_SERVICE" />
         <receiver android:name=".sys.RestReceiver" android:exported="false" />
         <receiver android:name=".sys.FocusReceiver" android:exported="false" />
         <receiver android:name=".sys.BootReceiver" android:exported="true">
