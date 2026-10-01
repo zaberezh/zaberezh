@@ -31,19 +31,27 @@ object Notify {
             .createNotificationChannel(NotificationChannel(CH, "Напоминания", NotificationManager.IMPORTANCE_DEFAULT))
     }
 
-    fun post(c: Context, id: Int, title: String, lines: List<String>) {
+    /**
+     * [tap] — что делает нажатие (по умолчанию открыть приложение), [actions] — кнопки под текстом,
+     * [timeoutMs] — уведомление само исчезнет через это время.
+     */
+    fun post(
+        c: Context, id: Int, title: String, lines: List<String>,
+        tap: PendingIntent? = null, actions: List<Notification.Action> = emptyList(), timeoutMs: Long = 0,
+    ) {
         if (lines.isEmpty()) return
         if (Build.VERSION.SDK_INT >= 33 && !c.granted(Manifest.permission.POST_NOTIFICATIONS)) return
-        val pi = PendingIntent.getActivity(c, 0, Intent(c, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE)
-        val n = Notification.Builder(c, CH)
+        val pi = tap ?: PendingIntent.getActivity(c, 0, Intent(c, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE)
+        val b = Notification.Builder(c, CH)
             .setSmallIcon(R.drawable.ic_stat)
             .setContentTitle(title)
             .setContentText(lines.first())
             .setStyle(Notification.BigTextStyle().bigText(lines.joinToString("\n")))
             .setContentIntent(pi)
             .setAutoCancel(true)
-            .build()
-        c.getSystemService(NotificationManager::class.java).notify(id, n)
+        actions.forEach { b.addAction(it) }
+        if (timeoutMs > 0) b.setTimeoutAfter(timeoutMs)
+        c.getSystemService(NotificationManager::class.java).notify(id, b.build())
     }
 }
 
