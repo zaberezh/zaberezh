@@ -54,6 +54,8 @@ class MenuTest {
         val r = Menus.resolve("донер из кинзы, лагман кинза")
         assertEquals(listOf("Кинза · Донер классический", "Кинза · Лагман курица овощи"), r.items.map { it.name })
         assertEquals(189.0, r.items[0].per100.kcal); assertEquals(162.3, r.items[1].per100.kcal)
+        assertEquals(335.0, r.items[0].grams)
+        assertEquals(410.0, one("большой донер кинза").grams)
         assertEquals(250.0, one("кинза донер 250г").grams)
         assertTrue(Menus.resolve("донер").items.isEmpty())   // без «кинза» — не их донер
     }
