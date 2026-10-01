@@ -106,9 +106,23 @@ class CoreTest {
         assertEquals(mon.minusDays(1) to 15, CounterModule.bestSet(s, "pullups"))
     }
 
+    @Test fun dailyMaxTest() {
+        val s = MemoryStore()
+        val daily = Settings().tests.first()
+        assertEquals(1, daily.everyDays)                                     // максимум — каждый день
+        TestModule.record(s, daily.id, mon, 10.0)
+        assertFalse(TestModule.due(Ctx(s, mon), daily))
+        assertTrue(TestModule.due(Ctx(s, mon.plusDays(1)), daily))
+        // старые настройки (раз в неделю) переводятся на каждый день
+        val old = MemoryStore()
+        SETTINGS.set(old, Settings(schema = 5, tests = listOf(daily.copy(everyDays = 7))))
+        migrateSettings(old)
+        assertEquals(1, SETTINGS.get(old).tests.single().everyDays)
+    }
+
     @Test fun weeklyTest() {
         val s = MemoryStore()
-        val def = Settings().tests.first()
+        val def = Settings().tests.first().copy(everyDays = 7)
         assertTrue(TestModule.due(Ctx(s, mon), def))
         TestModule.record(s, def.id, mon, 8.0)
         TestModule.record(s, def.id, mon, 9.0) // исправление в тот же день

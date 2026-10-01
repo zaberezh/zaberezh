@@ -37,7 +37,7 @@ object TestModule : Module {
     fun due(ctx: Ctx, def: TestDef): Boolean = (sinceLast(ctx, def.id) ?: Long.MAX_VALUE) >= def.everyDays
 
     override fun morning(ctx: Ctx): List<String> =
-        ctx.settings.tests.filter { due(ctx, it) }.map { d ->
+        ctx.settings.tests.filter { it.everyDays > 1 && due(ctx, it) }.map { d ->   // ежедневные — без утреннего напоминания
             val last = results(ctx.store, d.id).lastOrNull()
             "Тест: ${d.title}" + (last?.let { " (прошлый ${fmt(it.second)} ${d.unit}, ${it.first})" } ?: "")
         }
