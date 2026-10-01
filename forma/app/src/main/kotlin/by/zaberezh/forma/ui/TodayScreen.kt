@@ -171,7 +171,9 @@ private fun StudyToday(ctx: Ctx, onStudy: (Int) -> Unit) {
                     Column(Modifier.weight(1f)) {
                         Text(l.title, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium,
                             color = if (past) C.muted else C.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        Muted(listOf(l.type, l.rooms.joinToString(", ")).filter(String::isNotBlank).joinToString(" · "))
+                        // тип и аудитория — тем же цветом, что в расписании (ЛК — зелёный, ПЗ — фиолетовый, ЛР — жёлтый)
+                        Text(listOf(l.type, l.rooms.joinToString(", ")).filter(String::isNotBlank).joinToString(" · "),
+                            style = MaterialTheme.typography.bodySmall, color = typeColor(l.type).copy(alpha = if (past) 0.5f else 1f))
                     }
                     if (current) Pill("сейчас", C.study)
                 }
