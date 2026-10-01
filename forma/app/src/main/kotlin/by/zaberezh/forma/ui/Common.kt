@@ -108,7 +108,8 @@ fun Context.copy(text: String) =
 fun Screen(content: LazyListScope.() -> Unit) = LazyColumn(
     Modifier.fillMaxSize(),
     contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 24.dp),
-    verticalArrangement = Arrangement.spacedBy(12.dp),
+    // близость: карточки разнесены сильнее, чем элементы внутри карточки — группы читаются сразу
+    verticalArrangement = Arrangement.spacedBy(16.dp),
     content = content,
 )
 
@@ -120,13 +121,43 @@ fun Block(title: String? = null, trailing: (@Composable () -> Unit)? = null, con
     // явный цвет текста: без него заголовки и текст карточек выходили серыми
     colors = CardDefaults.cardColors(containerColor = C.card, contentColor = C.text),
 ) {
-    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        if (title != null || trailing != null) Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        if (title != null || trailing != null) Row(Modifier.fillMaxWidth().padding(bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
             Text(title ?: "", Modifier.weight(1f), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, color = C.text)
             trailing?.invoke()
         }
         content()
     }
+}
+
+/**
+ * Общая область внутри карточки: связанные элементы (поле + кнопка, быстрые действия) на чуть более светлом фоне —
+ * видно, что это одно действие, отдельное от данных над ним.
+ */
+@Composable
+fun Inset(content: @Composable ColumnScope.() -> Unit) = Column(
+    Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(C.cardHi).padding(12.dp),
+    verticalArrangement = Arrangement.spacedBy(8.dp), content = content,
+)
+
+/** Кнопка-стрелка: одинаковая во всём приложении (недели, дни). */
+@Composable
+fun NavArrow(t: String, onClick: () -> Unit, enabled: Boolean = true) = Box(
+    Modifier.size(44.dp).clip(RoundedCornerShape(12.dp)).background(C.cardHi).clickable(enabled = enabled, onClick = onClick),
+    contentAlignment = Alignment.Center,
+) { Text(t, style = MaterialTheme.typography.titleLarge, color = if (enabled) C.accent else C.line) }
+
+/** Переключатель дня «‹ Сегодня ›» — один и тот же на всех экранах; в будущее не листается. */
+@Composable
+fun DateNav(date: java.time.LocalDate, today: java.time.LocalDate, onChange: (java.time.LocalDate) -> Unit) = Line {
+    NavArrow("‹", { onChange(date.minusDays(1)) })
+    Text(
+        if (date == today) "Сегодня" else if (date == today.minusDays(1)) "Вчера"
+        else java.time.format.DateTimeFormatter.ofPattern("EEEE, d MMMM", RU).format(date).replaceFirstChar { it.uppercase() },
+        Modifier.weight(1f), style = MaterialTheme.typography.titleMedium, textAlign = TextAlign.Center,
+        color = if (date == today) C.accent else C.text,
+    )
+    NavArrow("›", { onChange(date.plusDays(1)) }, enabled = date < today)
 }
 
 @Composable

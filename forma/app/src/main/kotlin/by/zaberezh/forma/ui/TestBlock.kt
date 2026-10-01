@@ -35,14 +35,17 @@ fun TestBlock(ctx: Ctx, def: TestDef) {
                 val d = last.second - p.second
                 " · ${if (d >= 0) "+" else ""}${TestModule.fmt(d)} к прошлому"
             } ?: ""))
-        if (def.hint.isNotEmpty()) Muted(def.hint)
-        Line {
-            Field("Результат сегодня", v, { v = it }, Modifier.weight(1f), suffix = def.unit)
-            Primary(if (today == null) "Записать" else "Изменить", { v.num()?.let { TestModule.record(s, def.id, ctx.today, it) } })
-        }
-        results.maxByOrNull { it.second }?.let { (d, best) -> Stat("Рекорд", "${TestModule.fmt(best)} ${def.unit} · ${DM.format(d)}") }
+        // результаты — рядом с главным числом, ввод — отдельной областью
+        results.maxByOrNull { it.second }?.let { (d, best) -> Stat("Рекорд", "${TestModule.fmt(best)} ${def.unit} · ${DM.format(d)}", C.good) }
         if (results.size > 1) Muted(results.takeLast(8).reversed().joinToString("   ") { "${DM.format(it.first)}: ${TestModule.fmt(it.second)}" })
-        if (last != null && last.first == ctx.today) Flat("Удалить сегодняшний результат", { TestModule.delete(s, def.id, ctx.today) }, C.muted)
+        Inset {
+            Line {
+                Field("Результат сегодня", v, { v = it }, Modifier.weight(1f), suffix = def.unit)
+                Primary(if (today == null) "Записать" else "Изменить", { v.num()?.let { TestModule.record(s, def.id, ctx.today, it) } })
+            }
+            if (def.hint.isNotEmpty()) Muted(def.hint)
+            if (last != null && last.first == ctx.today) Flat("Удалить сегодняшний результат", { TestModule.delete(s, def.id, ctx.today) }, C.muted)
+        }
     }
 }
 
