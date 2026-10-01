@@ -51,8 +51,10 @@ private fun SetsBlock(ctx: Ctx, def: CounterDef) {
     val d = CounterModule.day(s, def.id, day)
     var reps by remember(day) { mutableStateOf("") }
     var exact by remember(day) { mutableStateOf<String?>(null) }
-    Block(def.title) {
+    val streak = if (def.id == "pullups") by.zaberezh.forma.core.daily.Streaks.pullups(s, ctx.today) else null
+    Block(def.title, trailing = { streak?.let { StreakPill(it) } }) {
         DateNav(day, ctx.today) { day = it }
+        streak?.let { StreakNote(it, "подтягивался") }
         // фокус: главное число дня, под ним — из чего оно сложилось
         BigValue("${d.n}", "за день", when {
             d.sets.size > 1 -> "подходов ${d.sets.size} · лучший ${d.sets.max()}"
