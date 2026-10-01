@@ -32,13 +32,9 @@ object GymModule : Module {
     fun workouts(s: Store, from: LocalDate? = null, to: LocalDate? = null): List<Pair<Entry, Workout>> =
         WORKOUT.all(s, from?.startMs() ?: Long.MIN_VALUE, to?.endMs() ?: Long.MAX_VALUE)
 
-    /** Дни, засчитанные как тренировка: есть записанные подходы или визит в зал ≥ minVisitMin. */
-    fun trainedDays(ctx: Ctx, from: LocalDate, to: LocalDate): Set<LocalDate> {
-        val w = workouts(ctx.store, from, to).filter { it.second.sets.isNotEmpty() }.map { it.first.day }
-        val v = VISIT.all(ctx.store, from.startMs(), to.endMs())
-            .filter { it.second.minutes >= ctx.settings.minVisitMin }.map { it.first.day }
-        return (w + v).toSet()
-    }
+    /** Дни, засчитанные как тренировка: есть записанные подходы. */
+    fun trainedDays(ctx: Ctx, from: LocalDate, to: LocalDate): Set<LocalDate> =
+        workouts(ctx.store, from, to).filter { it.second.sets.isNotEmpty() }.map { it.first.day }.toSet()
 
     private fun planKey(mon: LocalDate) = "gym.plan.$mon"
 
