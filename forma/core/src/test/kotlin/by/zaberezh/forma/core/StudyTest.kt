@@ -66,7 +66,7 @@ class StudyTest {
         val tt = Bsuir.parse(json, "653502")
         val s = MemoryStore()
         val thu = mon.plusDays(3)
-        val phys = Bsuir.on(tt, thu).single()
+        val phys = Bsuir.on(tt, thu).single { it.subject == "Физ" }            // в четверг ещё консультации группы
         val due = Study.addHomework(s, tt, phys, thu, "задачи 1–5")
         assertEquals(thu.plusDays(7), due)                                       // следующий четверг
         assertEquals(1, Study.dueOn(s, "Физ", due).size)
@@ -117,5 +117,15 @@ class StudyTest {
         val other = Study.addLab(s, "МА", 2, 0)
         Study.advance(s, other); Study.advance(s, other)
         assertEquals(listOf(0, 2), Study.labs(s).map { it.second.stage })                   // в работе выше сданных
+    }
+
+    @Test fun groupConsultationsAddedToSchedule() {
+        // неделя 1 — с 1 сентября 2026 (вторник), четверг 3.09 — неделя 1, 10.09 — неделя 2, 17.09 — неделя 3
+        val tt = by.zaberezh.forma.core.study.Timetable("653502", start = "2026-09-01", end = "2026-12-31")
+        fun thu(d: Int) = by.zaberezh.forma.core.study.Bsuir.on(tt, java.time.LocalDate.of(2026, 9, d)).map { it.start to it.title }
+        assertEquals(listOf("13:35" to "Консультация по математическому анализу", "15:00" to "Консультация по физике"), thu(3))
+        assertEquals(listOf("13:35" to "Консультация по математическому анализу"), thu(10))
+        assertEquals(2, thu(17).size)
+        assertTrue(by.zaberezh.forma.core.study.Bsuir.on(tt.copy(group = "421701"), java.time.LocalDate.of(2026, 9, 3)).isEmpty())
     }
 }

@@ -71,11 +71,12 @@ private val DM = DateTimeFormatter.ofPattern("d MMM", RU)
 private val DOW = DateTimeFormatter.ofPattern("EE", RU)
 private val MONTH = DateTimeFormatter.ofPattern("LLLL", RU)
 
-/** Цвет типа занятия: лекция — акцент раздела, практика — зелёный, лаба — жёлтый, экзамен/зачёт — красный. */
+/** Цвет типа занятия: лекция — акцент раздела, практика — зелёный, лаба — жёлтый, консультация — серый, экзамен/зачёт — красный. */
 fun typeColor(t: String): Color = when (t.uppercase()) {
     "ЛК" -> C.accent
     "ПЗ" -> C.good
     "ЛР" -> C.warn
+    "КОНС", "КОНСУЛЬТАЦИЯ" -> C.muted
     else -> C.bad
 }
 
