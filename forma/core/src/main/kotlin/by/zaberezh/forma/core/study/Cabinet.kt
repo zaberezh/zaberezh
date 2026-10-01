@@ -179,7 +179,8 @@ object Cabinet {
                 .mapNotNull { p -> p.d("number")?.let { date(p.s("date")) to it } }
             RatingSubject(abbrev, name, types, pct)
         }
-        return Rating(subjects)
+        // сначала предметы, где больше всего отметок (при равенстве — как в ИИС)
+        return Rating(subjects.sortedByDescending { it.marks.size })
     }
 
     fun omissions(monthlyJson: String?, unexcusedJson: String?, certsJson: String?): Omissions {

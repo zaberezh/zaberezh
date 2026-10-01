@@ -153,11 +153,23 @@ object Bsuir {
         return Math.floorMod(w - 1 + diff, 4) + 1
     }
 
+    /**
+     * Свои занятия группы, которых нет в ИИС (консультации и т. п.): добавляются к расписанию при показе,
+     * поэтому не теряются при обновлении расписания с сервера. Действуют в пределах семестра.
+     */
+    val EXTRA: Map<String, List<Lesson>> = mapOf(
+        "653502" to listOf(
+            Lesson("Физика", "Консультация по физике", "Конс", "15:00", "16:20", weekday = 4, weeks = listOf(1, 3), rooms = listOf("501-4 к.")),
+            Lesson("МА", "Консультация по математическому анализу", "Конс", "13:35", "14:55", weekday = 4, weeks = listOf(1, 2, 3, 4),
+                note = "аудитория уточняется"),
+        ),
+    )
+
     /** Пары на дату для подгруппы (0 — все), по времени. */
     fun on(tt: Timetable, day: LocalDate, subgroup: Int = 0): List<Lesson> {
         val iso = day.toString()
         val w = week(tt, day)
-        return tt.lessons.filter { l ->
+        return (tt.lessons + EXTRA[tt.group].orEmpty()).filter { l ->
             (subgroup == 0 || l.subgroup == 0 || l.subgroup == subgroup) &&
                 if (l.date != null) l.date == iso
                 else l.weekday == day.dayOfWeek.value && (l.weeks.isEmpty() || w in l.weeks) &&
