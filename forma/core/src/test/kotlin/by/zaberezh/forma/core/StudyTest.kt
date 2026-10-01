@@ -171,4 +171,15 @@ class StudyTest {
         assertTrue(during.running); assertEquals(1, during.exams.size)
         assertFalse(by.zaberezh.forma.core.study.Session.of(tt.copy(lessons = emptyList(), examsStart = null), LocalDate.of(2026, 12, 30)).known)
     }
+
+    @Test fun bedtimeFollowsTomorrowsFirstClass() {
+        val s = by.zaberezh.forma.core.store.MemoryStore()
+        val mon = LocalDate.of(2026, 10, 5)
+        by.zaberezh.forma.core.SETTINGS.set(s, by.zaberezh.forma.core.Settings(sleepTargetH = 8.0, wakeHour = 9, wakeMinute = 0))
+        by.zaberezh.forma.core.study.TIMETABLE.set(s, by.zaberezh.forma.core.study.Timetable("1", listOf(
+            by.zaberezh.forma.core.study.Lesson("X", type = "ЛК", start = "08:30", weekday = 2))))
+        val ctx = by.zaberezh.forma.core.Ctx(s, mon)
+        assertEquals(java.time.LocalTime.of(23, 10), by.zaberezh.forma.core.sleep.SleepModule.bedtime(ctx))   // вторник к 8:30 → подъём 7:10
+        assertEquals(java.time.LocalTime.of(1, 0), by.zaberezh.forma.core.sleep.SleepModule.bedtime(by.zaberezh.forma.core.Ctx(s, mon.plusDays(1))))  // в среду пар нет → 9:00
+    }
 }
