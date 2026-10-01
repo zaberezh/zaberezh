@@ -29,6 +29,13 @@ object Notify {
     fun channels(c: Context) {
         c.getSystemService(NotificationManager::class.java)
             .createNotificationChannel(NotificationChannel(CH, "Напоминания", NotificationManager.IMPORTANCE_DEFAULT))
+        WakeAlarm.channel(c)
+    }
+
+    /** Готовое уведомление — с той же проверкой разрешения. */
+    fun postRaw(c: Context, id: Int, n: Notification) {
+        if (Build.VERSION.SDK_INT >= 33 && !c.granted(Manifest.permission.POST_NOTIFICATIONS)) return
+        c.getSystemService(NotificationManager::class.java).notify(id, n)
     }
 
     /**
@@ -83,5 +90,6 @@ class BootReceiver : BroadcastReceiver() {
         Evening.schedule(c)
         Weigh.schedule(c)
         Water.schedule(c)
+        WakeAlarm.schedule(c)
     }
 }
