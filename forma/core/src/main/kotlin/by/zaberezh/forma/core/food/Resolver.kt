@@ -6,6 +6,8 @@ import by.zaberezh.forma.core.store.Store
 fun interface FoodResolver { fun resolve(text: String): List<FoodItem>? }
 
 internal val GRAMS = Regex("(\\d+(?:[.,]\\d+)?)\\s*(?:г|гр|g|грамм\\p{L}*)(?=\\s|$)")
+/** Разделители позиций: , ; + перенос строки; запятая внутри числа («кола 0,5») — не разделитель. */
+internal val PARTS = Regex("[;+\\n]|,(?!\\d)|(?<!\\d),")
 internal val COUNT = Regex("^(\\d+(?:[.,]\\d+)?)\\s*(?:шт\\.?|x|х)?\\s+")
 
 /**
@@ -16,7 +18,7 @@ class LibraryResolver(private val store: Store) : FoodResolver {
     override fun resolve(text: String): List<FoodItem>? {
         val lib = FoodModule.library(store).associateBy { norm(it.name) } +
             FoodModule.library(store).flatMap { f -> f.aliases.map { norm(it) to f } }
-        val parts = text.split(Regex("[,;+\\n]| и ")).map { it.trim() }.filter { it.isNotEmpty() }
+        val parts = splitParts(text)
         if (parts.isEmpty()) return null
         return parts.map { part ->
             var rest = part.lowercase()
@@ -28,7 +30,7 @@ class LibraryResolver(private val store: Store) : FoodResolver {
     }
 }
 
-fun splitParts(text: String) = text.split(Regex("[,;+\\n]| и ")).map { it.trim() }.filter { it.isNotEmpty() }
+fun splitParts(text: String) = text.split(PARTS).flatMap { it.split(Regex("\\s+и\\s+")) }.map { it.trim() }.filter { it.isNotEmpty() }
 
 /** Общие слова еды: если позиция только из них — это не товар магазина (гречка, курица, яйца…). */
 private val GENERIC = setOf(
