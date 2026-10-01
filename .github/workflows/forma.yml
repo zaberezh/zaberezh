@@ -35,4 +35,5 @@ jobs:
           GH_REPO: ${{ github.repository }}
           N: ${{ github.run_number }}
           SHA: ${{ github.sha }}
-        run: gh release create "grind-$N" grind.apk --title "Grind 0.1.$N" --target "$SHA" --latest --notes "APK для телефона: grind.apk"
+        run: |
+          gh release create "grind-$N" grind.apk --title "Grind 0.1.$N" --target "$SHA" --latest --notes "APK для телефона — grind.apk"
