@@ -8,7 +8,7 @@ data class ExerciseInput(
     val weight: Double?,        // рабочий вес сейчас (для упражнений с весом тела — доп. вес)
     val reps: String,           // «10» или «8-12»
     val sets: Int,
-    val muscle: String?,        // главная мышца (null — угадать по названию)
+    val muscles: Set<String>?,  // основные мышцы, можно несколько (null — угадать по названию)
     val bodyweight: Boolean,
     val step: Double?,          // шаг прибавки (null — угадать)
 )
@@ -25,15 +25,20 @@ fun parseReps(text: String): Pair<Int, Int>? {
 
 private fun has(n: String, vararg w: String) = w.any { it in n }
 
-/** Мышцы по названию: главная = 1, вспомогательные = 0.5. Пусто — не угадали. */
+/**
+ * Мышцы по названию: основные = 1 (у базовых упражнений их бывает две — становая: бицепс бедра и ягодицы),
+ * вспомогательные = 0.5 и меньше. Пусто — не угадали.
+ */
 fun guessMuscles(name: String): Map<String, Double> {
     val n = name.lowercase().replace('ё', 'е')
     return when {
         has(n, "жим ног", "присед", "гакк", "хакк") -> mapOf("quads" to 1.0, "glutes" to 0.5)
         has(n, "выпад", "болгар", "зашагив") -> mapOf("quads" to 1.0, "glutes" to 1.0)
+        has(n, "фронтальн") && has(n, "присед") -> mapOf("quads" to 1.0, "glutes" to 0.5, "abs" to 0.25)
         has(n, "разгибание ног", "разгибания ног") -> mapOf("quads" to 1.0)
         has(n, "сгибание ног", "сгибания ног", "бицепс бедр") -> mapOf("hams" to 1.0)
-        has(n, "румын", "мертв", "становая") -> mapOf("hams" to 1.0, "glutes" to 0.5, "back" to 0.25)
+        has(n, "румын", "мертв", "становая") -> mapOf("hams" to 1.0, "glutes" to 1.0, "back" to 0.5)
+        has(n, "гуд морнинг", "гиперэкстенз") -> mapOf("hams" to 1.0, "glutes" to 1.0)
         has(n, "ягодичн", "мостик", "отведение ног") -> mapOf("glutes" to 1.0)
         has(n, "икр", "носк") -> mapOf("calves" to 1.0)
         has(n, "мах", "развед") && has(n, "наклон", "задн") -> mapOf("rear_delts" to 1.0)
@@ -42,13 +47,16 @@ fun guessMuscles(name: String): Map<String, Double> {
         has(n, "жим") && has(n, "стоя", "сидя", "над голов", "армейск", "плеч", "шраг") && !has(n, "лежа") ->
             mapOf("front_delts" to 1.0, "side_delts" to 0.5, "triceps" to 0.5)
         has(n, "брусь") -> mapOf("chest" to 1.0, "triceps" to 1.0, "front_delts" to 0.5)
-        has(n, "узк") && has(n, "жим") -> mapOf("triceps" to 1.0, "chest" to 0.5)
+        has(n, "узк") && has(n, "жим") -> mapOf("triceps" to 1.0, "chest" to 1.0, "front_delts" to 0.5)
         has(n, "жим", "отжим") -> mapOf("chest" to 1.0, "triceps" to 0.5, "front_delts" to 0.5)
         has(n, "сведен", "бабочк", "кроссовер", "пуловер", "разводк") -> mapOf("chest" to 1.0)
+        has(n, "подтяг") && has(n, "обратн", "узк", "к груди") -> mapOf("back" to 1.0, "biceps" to 1.0)
         has(n, "подтяг", "верхн", "вертикальн", "пулдаун") -> mapOf("back" to 1.0, "biceps" to 0.5)
         has(n, "тяга") -> mapOf("back" to 1.0, "rear_delts" to 0.5, "biceps" to 0.5)
         has(n, "трицепс", "разгибан", "француз") -> mapOf("triceps" to 1.0)
-        has(n, "предплеч", "запяст", "вис на", "фермер", "кистев") -> mapOf("forearms" to 1.0)
+        has(n, "фермер") -> mapOf("forearms" to 1.0, "back" to 0.5, "abs" to 0.5)
+        has(n, "шраг") -> mapOf("back" to 1.0, "forearms" to 0.5)
+        has(n, "предплеч", "запяст", "вис на", "кистев") -> mapOf("forearms" to 1.0)
         has(n, "обратн") && has(n, "хват") -> mapOf("forearms" to 1.0, "biceps" to 0.5)
         has(n, "молот") -> mapOf("biceps" to 1.0, "forearms" to 0.5)
         has(n, "бицепс", "сгибан", "подъем штанги", "подъем гантел", "скотт") -> mapOf("biceps" to 1.0)
@@ -79,9 +87,10 @@ fun Program.upsert(id: String?, i: ExerciseInput): Program {
     require(i.sets in 1..10) { "Подходов: от 1 до 10" }
     val guessed = guessMuscles(i.name)
     val muscles = when {
-        i.muscle == null -> guessed.ifEmpty { throw IllegalArgumentException("Выбери основную мышцу") }
-        guessed[i.muscle] == 1.0 -> guessed
-        else -> mapOf(i.muscle to 1.0)
+        i.muscles == null -> guessed.ifEmpty { throw IllegalArgumentException("Выбери основную мышцу") }
+        i.muscles.isEmpty() -> throw IllegalArgumentException("Выбери хотя бы одну мышцу")
+        // выбранные — основные (1), угаданные вспомогательные (½) не теряются, если их не выбрали явно
+        else -> i.muscles.associateWith { 1.0 } + guessed.filter { (m, k) -> k < 1.0 && m !in i.muscles }
     }
     val old = id?.let(::ex)
     val exId = old?.id ?: ("u" + newId().take(8))

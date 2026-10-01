@@ -1,10 +1,26 @@
+@file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+
 package by.zaberezh.forma.ui
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.DatePickerDialog
+import androidx.compose.material3.DateRangePicker
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.SelectableDates
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberDateRangePickerState
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.draw.clip
+import java.time.temporal.ChronoUnit
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -37,26 +53,43 @@ fun ReportScreen() {
     val s = ctx.store
     val c = LocalContext.current
     val scope = rememberCoroutineScope()
-    var days by remember { mutableStateOf(ctx.settings.checkupDays.toString()) }
+    // период — любые даты (по умолчанию последние N дней из настроек); храним как epochDay, чтобы пережить поворот экрана
+    var fromDay by rememberSaveable { mutableLongStateOf(ctx.today.minusDays(ctx.settings.checkupDays - 1L).toEpochDay()) }
+    var toDay by rememberSaveable { mutableLongStateOf(ctx.today.toEpochDay()) }
+    var picking by remember { mutableStateOf(false) }
     var note by remember { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
     var err by remember { mutableStateOf<String?>(null) }
     var info by remember { mutableStateOf<String?>(null) }
     var open by remember { mutableStateOf<String?>(null) }
-    val n = (days.num()?.toLong() ?: 14L).coerceIn(7L, 120L)
-    val to = ctx.today
-    val from = to.minusDays(n - 1)
-    val secs = remember(ctx, n) { Checkup.sections(ctx, from, to) }
+    val to = LocalDate.ofEpochDay(toDay).coerceAtMost(ctx.today)
+    val from = LocalDate.ofEpochDay(fromDay).coerceAtMost(to)
+    val n = ChronoUnit.DAYS.between(from, to) + 1
+    val secs = remember(ctx, from, to) { Checkup.sections(ctx, from, to) }
     val text = remember(secs) { Checkup.render(from, to, secs) }
     val facts = remember(secs) { Checkup.facts(ctx, from, to, secs) }
 
+    if (picking) RangeDialog(from, to, ctx.today, { picking = false }) { a, b -> fromDay = a.toEpochDay(); toDay = b.toEpochDay() }
     Screen {
         item {
-            Block("Период") {
+            Block("Период", trailing = { Pill("$n " + plural(n.toInt(), "день", "дня", "дней")) }) {
+                // нажми на дату — календарь, выбор «с … по …» без ограничений
                 Line {
-                    Field("Дней", days, { days = it }, Modifier.width(100.dp))
-                    Muted("${DM.format(from)} — ${DM.format(to)}" + (Checkup.daysSinceLast(ctx)?.let { "\nпрошлый чекап $it дн. назад" } ?: ""), Modifier.weight(1f))
+                    DateChip("с", from, Modifier.weight(1f)) { picking = true }
+                    Text("—", color = C.muted)
+                    DateChip("по", to, Modifier.weight(1f)) { picking = true }
                 }
+                val last = CHECKUP.all(s).lastOrNull()?.second?.to?.let(LocalDate::parse)
+                Buttons {
+                    listOf(7L, 14L, 30L, 90L).forEach { d ->
+                        val on = to == ctx.today && n == d
+                        FilterChip(selected = on, onClick = { toDay = ctx.today.toEpochDay(); fromDay = ctx.today.minusDays(d - 1).toEpochDay() },
+                            label = { Text("$d дн.") })
+                    }
+                    if (last != null && last < ctx.today) FilterChip(selected = from == last.plusDays(1) && to == ctx.today,
+                        onClick = { fromDay = last.plusDays(1).toEpochDay(); toDay = ctx.today.toEpochDay() }, label = { Text("с прошлого чекапа") })
+                }
+                Checkup.daysSinceLast(ctx)?.let { Muted("Прошлый чекап $it дн. назад") }
             }
         }
         items(secs, key = { it.title }) { SectionCard(it) }
@@ -107,6 +140,44 @@ fun ReportScreen() {
                 }
             }
         }
+    }
+}
+
+/** Плашка даты периода: подпись «с»/«по» и дата; нажатие открывает календарь. */
+@Composable
+private fun DateChip(label: String, d: LocalDate, modifier: Modifier, onClick: () -> Unit) = Column(
+    modifier.clip(RoundedCornerShape(12.dp)).background(C.cardHi).clickable(onClick = onClick).padding(horizontal = 14.dp, vertical = 10.dp),
+) {
+    Muted(label)
+    Text(DMY.format(d), style = MaterialTheme.typography.titleMedium, color = C.accent)
+}
+
+private val DMY = DateTimeFormatter.ofPattern("d MMM yyyy", RU)
+
+/** Календарь выбора периода: первое нажатие — начало, второе — конец; будущие дни недоступны. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun RangeDialog(from: LocalDate, to: LocalDate, today: LocalDate, onDismiss: () -> Unit, onPick: (LocalDate, LocalDate) -> Unit) {
+    fun ms(d: LocalDate) = d.toEpochDay() * 86_400_000L
+    val limit = ms(today)
+    val st = rememberDateRangePickerState(
+        initialSelectedStartDateMillis = ms(from), initialSelectedEndDateMillis = ms(to),
+        selectableDates = object : SelectableDates { override fun isSelectableDate(utcTimeMillis: Long) = utcTimeMillis <= limit },
+    )
+    DatePickerDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = {
+            TextButton({
+                val a = st.selectedStartDateMillis?.let { LocalDate.ofEpochDay(it / 86_400_000L) }
+                val b = st.selectedEndDateMillis?.let { LocalDate.ofEpochDay(it / 86_400_000L) } ?: a
+                if (a != null && b != null) onPick(minOf(a, b), maxOf(a, b))
+                onDismiss()
+            }, enabled = st.selectedStartDateMillis != null) { Text("Готово") }
+        },
+        dismissButton = { TextButton(onDismiss) { Text("Отмена") } },
+    ) {
+        DateRangePicker(state = st, modifier = Modifier.weight(1f), showModeToggle = false,
+            title = { Text("Период отчёта", Modifier.padding(start = 24.dp, top = 16.dp), style = MaterialTheme.typography.labelLarge) })
     }
 }
 
