@@ -99,7 +99,7 @@ object Bsuir {
             teachers = teachers,
             teachersFull = emps.map { p -> listOfNotNull(p["lastName"].str(), p["firstName"].str(), p["middleName"].str()).joinToString(" ") },
             teacherInfo = emps.map { p -> listOfNotNull(p["rank"].str(), p["degree"].str()).filter { it.isNotBlank() }.joinToString(", ") },
-            photos = emps.map { p -> p["photoLink"].str().orEmpty() },
+            photos = emps.map { p -> Iis.photoUrl(p["photoLink"].str() ?: p["photoUrl"].str()) },
             from = date(o["startLessonDate"].str()),
             to = date(o["endLessonDate"].str()),
             date = date(o["dateLesson"].str()),

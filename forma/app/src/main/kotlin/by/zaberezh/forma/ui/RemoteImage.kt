@@ -19,6 +19,7 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.Dp
+import by.zaberezh.forma.core.study.Iis
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.net.HttpURLConnection
@@ -27,16 +28,32 @@ import java.util.concurrent.ConcurrentHashMap
 
 private val photos = ConcurrentHashMap<String, ImageBitmap>()
 
+/** Загрузка как в браузере (без User-Agent ИИС отвечает 503); переадресации — только на https, не больше трёх. */
+private fun load(start: String): ImageBitmap? {
+    var url = start
+    repeat(4) {
+        val c = URL(url).openConnection() as HttpURLConnection
+        try {
+            c.connectTimeout = 8000; c.readTimeout = 10000; c.instanceFollowRedirects = false
+            c.setRequestProperty("User-Agent", Iis.UA)
+            c.setRequestProperty("Accept", "image/avif,image/webp,image/*,*/*;q=0.8")
+            c.setRequestProperty("Referer", "${Iis.HOST}/")
+            when (c.responseCode) {
+                in 200..299 -> return c.inputStream.use { BitmapFactory.decodeStream(it) }?.asImageBitmap()
+                in 300..399 -> url = URL(URL(url), c.getHeaderField("Location") ?: return null).toString().takeIf { it.startsWith("https://") } ?: return null
+                else -> return null
+            }
+        } finally { c.disconnect() }
+    }
+    return null
+}
+
 /** Круглое фото по ссылке (кэш в памяти); пока грузится или нет фото — инициалы. */
 @Composable
 fun RemoteImage(url: String, size: Dp, initials: String) {
     val img by produceState(photos[url], url) {
         if (value == null && url.startsWith("https://")) value = withContext(Dispatchers.IO) {
-            runCatching {
-                val c = URL(url).openConnection() as HttpURLConnection
-                c.connectTimeout = 8000; c.readTimeout = 10000
-                try { c.inputStream.use { BitmapFactory.decodeStream(it) }?.asImageBitmap() } finally { c.disconnect() }
-            }.getOrNull()
+            runCatching { load(url) }.getOrNull()
         }?.also { photos[url] = it }
     }
     Box(Modifier.size(size).clip(CircleShape).background(C.cardHi), contentAlignment = Alignment.Center) {
