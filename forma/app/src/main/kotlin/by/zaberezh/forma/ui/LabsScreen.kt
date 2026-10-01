@@ -56,7 +56,7 @@ private val DM = DateTimeFormatter.ofPattern("d MMM", RU)
 fun LabsScreen() {
     val ctx = rememberCtx()
     val s = ctx.store
-    val labs = Study.labs(s)
+    val labs = remember(ctx) { Study.labs(s) }
     val active = labs.filter { it.second.stage == 0 }
     val toSubmit = labs.filter { it.second.stage == 1 }
     val done = labs.filter { it.second.stage == 2 }
@@ -64,7 +64,7 @@ fun LabsScreen() {
     // раскрытые лабы — на уровне экрана: отметка задания перестраивает список, но лаба остаётся открытой
     val open = remember { androidx.compose.runtime.mutableStateMapOf<String, Boolean>() }
 
-    val homework = Study.open(s, ctx.today)
+    val homework = remember(ctx) { Study.open(s, ctx.today) }
     Screen {
         item { SessionBlock(s, ctx.today, labs.count { it.second.stage < 2 }) }
         if (homework.isNotEmpty()) item {
