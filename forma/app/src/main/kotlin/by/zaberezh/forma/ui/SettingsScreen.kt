@@ -266,7 +266,7 @@ fun SettingsScreen() {
                 PermRow("Без ограничений батареи", battery) {
                     c.startActivity(Intent(AndroidSettings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:" + c.packageName)))
                 }
-                Muted("Samsung: Настройки → Батарея → Ограничения фоновой работы — убери Forma из «спящих», иначе уведомления могут не приходить.")
+                Muted("Samsung: Настройки → Батарея → Ограничения фоновой работы — убери Grind из «спящих», иначе уведомления могут не приходить.")
             }
         }
         item {
