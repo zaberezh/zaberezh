@@ -9,9 +9,6 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.os.Build
-import android.os.VibrationEffect
-import android.os.Vibrator
-import android.os.VibratorManager
 import by.zaberezh.forma.Forma
 import by.zaberezh.forma.R
 import by.zaberezh.forma.core.study.Focus
@@ -62,12 +59,6 @@ object Timers {
         Focus.stop(Forma.store)
     }
 
-    @Suppress("DEPRECATION")
-    fun buzz(c: Context, pattern: LongArray) = runCatching {
-        val v = if (Build.VERSION.SDK_INT >= 31) c.getSystemService(VibratorManager::class.java).defaultVibrator
-            else c.getSystemService(Vibrator::class.java)
-        v.vibrate(VibrationEffect.createWaveform(pattern, -1))
-    }
 
     fun note(c: Context, id: Int, title: String, text: String, timeoutMs: Long) {
         val tap = PendingIntent.getActivity(c, id, Intent(c, by.zaberezh.forma.ui.MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE)
@@ -78,7 +69,7 @@ object Timers {
 
 class RestReceiver : BroadcastReceiver() {
     override fun onReceive(c: Context, i: Intent) {
-        Timers.buzz(c, longArrayOf(0, 300, 150, 300, 150, 500))
+        Buzz.alarm(c, longArrayOf(0, 300, 150, 300, 150, 500))
         Timers.note(c, Timers.REST, "Отдых окончен", i.getStringExtra("label").orEmpty().ifBlank { "Следующий подход" }, 90_000)
     }
 }
@@ -89,7 +80,7 @@ class FocusReceiver : BroadcastReceiver() {
         val run = Focus.active(s) ?: return
         val done = Focus.stop(s) ?: return
         val lab = s.get(run.lab)?.let { runCatching { LAB.decode(it) }.getOrNull() }
-        Timers.buzz(c, longArrayOf(0, 500, 200, 500))
+        Buzz.alarm(c, longArrayOf(0, 500, 200, 500))
         Timers.note(c, Timers.FOCUS, "Фокус окончен — ${done.minutes} мин",
             (lab?.let { "${it.subject} · ${it.name} · " } ?: "") + "перерыв 5 минут, потом можно ещё круг", 10 * 60_000)
     }

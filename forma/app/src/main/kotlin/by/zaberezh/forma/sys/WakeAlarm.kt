@@ -8,9 +8,6 @@ import android.app.PendingIntent
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
-import android.os.VibrationEffect
-import android.os.Vibrator
-import android.os.VibratorManager
 import by.zaberezh.forma.Forma
 import by.zaberezh.forma.R
 import by.zaberezh.forma.core.SETTINGS
@@ -21,7 +18,6 @@ import by.zaberezh.forma.core.study.Study
 import by.zaberezh.forma.core.study.TIMETABLE
 import by.zaberezh.forma.ui.MainActivity
 import java.time.LocalDateTime
-import java.time.format.DateTimeFormatter
 
 /**
  * Будильник по первой паре — без звука, только вибрация. 8:30 → 7:10, 10:05 → 8:30 (см. Study.wakeAt).
@@ -29,21 +25,30 @@ import java.time.format.DateTimeFormatter
  * при запуске, перезагрузке и обновлении расписания.
  */
 object WakeAlarm {
-    private const val CH = "wake"
+    /** Новый id канала: у прежнего («wake») вибрация была выключена, а настройки канала после создания не меняются. */
+    private const val CH = "wake_alarm"
     private const val ID = 11
-    private val HM = DateTimeFormatter.ofPattern("HH:mm")
-    // ~40 секунд: вибрация 1,2 с, пауза 0,8 с
-    private val PATTERN = LongArray(41) { if (it == 0) 0L else if (it % 2 == 1) 1200L else 800L }
+    /** Сколько будит, если не нажать «Встал»: 5 минут импульсов 1,2 с через 0,8 с. */
+    private const val RING_MS = 5 * 60_000L
+    private val PATTERN = longArrayOf(0, 1200, 800)
 
     private fun pi(c: Context) = PendingIntent.getBroadcast(c, ID, Intent(c, WakeReceiver::class.java),
         PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
 
+    private fun stopPi(c: Context) = PendingIntent.getBroadcast(c, ID + 1, Intent(c, WakeStopReceiver::class.java),
+        PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+
     fun channel(c: Context) {
+        val nm = c.getSystemService(NotificationManager::class.java)
+        nm.deleteNotificationChannel("wake")
         val ch = NotificationChannel(CH, "Будильник по парам", NotificationManager.IMPORTANCE_HIGH).apply {
-            setSound(null, null); enableVibration(false)   // вибрацию ведём сами — длинную
-            description = "Подъём к первой паре, без звука"
+            // без звука, но с атрибутами будильника: вибрирует система (не зависит от жизни процесса),
+            // «Не беспокоить» будильники пропускает
+            setSound(null, Buzz.ALARM_AUDIO)
+            enableVibration(true); vibrationPattern = PATTERN
+            description = "Подъём к первой паре: без звука, только вибрация"
         }
-        c.getSystemService(NotificationManager::class.java).createNotificationChannel(ch)
+        nm.createNotificationChannel(ch)
     }
 
     /** Время следующего будильника или null (выключен / пар нет). */
@@ -63,18 +68,18 @@ object WakeAlarm {
             .onFailure { am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, ms, pi(c)) }
     }
 
-    @Suppress("DEPRECATION")
-    private fun vibrator(c: Context): Vibrator =
-        if (android.os.Build.VERSION.SDK_INT >= 31) c.getSystemService(VibratorManager::class.java).defaultVibrator
-        else c.getSystemService(Vibrator::class.java)
-
+    /**
+     * Две вибрации-страховки: своя (будильная — работает и в беззвучном режиме) и «настойчивая» вибрация уведомления
+     * от системы (повторяется, пока не нажать «Встал», даже если Android выгрузит приложение). Через 5 минут — тишина.
+     */
     fun ring(c: Context) {
         val s = Forma.store
         val tt = TIMETABLE.get(s)
         val today = java.time.LocalDate.now(ZONE)
         val first = Bsuir.on(tt, today, STUDY_PREFS.get(s).subgroup).filter { !it.type.startsWith("Конс", true) }.minByOrNull { it.start }
-        runCatching { vibrator(c).vibrate(VibrationEffect.createWaveform(PATTERN, -1)) }
-        val stop = PendingIntent.getBroadcast(c, ID + 1, Intent(c, WakeStopReceiver::class.java), PendingIntent.FLAG_IMMUTABLE)
+        Buzz.alarm(c, PATTERN, repeat = 0)
+        val stop = stopPi(c)
+        c.getSystemService(AlarmManager::class.java).setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, System.currentTimeMillis() + RING_MS, stop)
         val n = Notification.Builder(c, CH)
             .setSmallIcon(R.drawable.ic_stat)
             .setContentTitle("Подъём — пара в ${first?.start ?: ""}")
@@ -83,13 +88,16 @@ object WakeAlarm {
             .setContentIntent(stop).setDeleteIntent(stop)
             .addAction(Notification.Action.Builder(null, "Встал", stop).build())
             .setAutoCancel(true)
+            .setTimeoutAfter(RING_MS)
             .build()
+            .apply { flags = flags or Notification.FLAG_INSISTENT }
         Notify.postRaw(c, ID, n)
     }
 
     fun stop(c: Context) {
-        runCatching { vibrator(c).cancel() }
+        Buzz.stop(c)
         c.getSystemService(NotificationManager::class.java).cancel(ID)
+        c.getSystemService(AlarmManager::class.java).cancel(stopPi(c))
     }
 }
 
