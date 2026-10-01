@@ -142,4 +142,18 @@ class StudyTest {
         by.zaberezh.forma.core.daily.WaterLog.undo(s, day)
         assertEquals(500, by.zaberezh.forma.core.daily.WaterLog.ml(s, day))
     }
+
+    @Test fun alarmFromFirstLesson() {
+        fun tt(vararg starts: Pair<Int, String>) = by.zaberezh.forma.core.study.Timetable("1", starts.map { (wd, t) ->
+            by.zaberezh.forma.core.study.Lesson("X", type = "ЛК", start = t, weekday = wd) })
+        val mon = LocalDate.of(2026, 10, 5)
+        assertEquals(mon.atTime(7, 10), Study.wakeAt(tt(1 to "08:30", 1 to "10:05"), mon))     // к первой — 7:10
+        assertEquals(mon.atTime(8, 30), Study.wakeAt(tt(1 to "10:05"), mon))                   // ко второй — 8:30
+        assertEquals(null, Study.wakeAt(tt(2 to "08:30"), mon))                                // в понедельник пар нет
+        // консультации не будят
+        val consult = by.zaberezh.forma.core.study.Timetable("1", listOf(by.zaberezh.forma.core.study.Lesson("МА", type = "Конс", start = "13:35", weekday = 1)))
+        assertEquals(null, Study.wakeAt(consult, mon))
+        // вечером понедельника — будильник на вторник
+        assertEquals(mon.plusDays(1).atTime(7, 10), Study.nextWake(tt(1 to "08:30", 2 to "08:30"), mon.atTime(21, 0)))
+    }
 }
