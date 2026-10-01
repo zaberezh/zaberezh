@@ -11,8 +11,12 @@ fun aiPlanPrompt(ctx: Ctx, date: LocalDate, focus: String?): String = buildStrin
     val s = ctx.store
     val p = GymModule.program(s)
     val ru = Locale.forLanguageTag("ru")
+    val stored = GymModule.storedPlan(s, date)
+    val draft = GymModule.planFor(ctx, date, focus ?: stored?.focus, stored?.day)
+    val type = GymModule.split(ctx).firstOrNull { it.id == draft.day }
     appendLine("Составь тренировку на $date (${date.dayOfWeek.getDisplayName(TextStyle.FULL, ru)}). " +
-        "Акцент дня: ${focus?.let { FOCUS[it]?.first } ?: "нет — сбалансированный день"}.")
+        "Тип дня: ${type?.let { "${it.title} — только мышцы ${it.muscles.joinToString(",")}" } ?: "всё тело"}. " +
+        "Акцент дня: ${focus?.let { FOCUS[it]?.first } ?: "нет"}.")
     appendLine("\nБаза упражнений (id | название | мышцы | схема | сейчас):")
     p.exercises.forEach { e ->
         appendLine("${e.id} | ${e.name} | ${e.muscles.entries.joinToString(",") { "${it.key}${if (it.value < 1) "½" else ""}" }} | " +
@@ -27,7 +31,6 @@ fun aiPlanPrompt(ctx: Ctx, date: LocalDate, focus: String?): String = buildStrin
     }
     val wk = GymModule.week(ctx)
     appendLine("\nДни зала на этой неделе: ${wk.plan.joinToString()}")
-    val draft = GymModule.planFor(ctx, date, focus ?: GymModule.storedPlan(s, date)?.focus)
     appendLine("Черновик алгоритма: " + draft.items.joinToString("; ") { "${it.ex}×${it.sets}" })
     appendLine("\nПравила: только id из базы; 15–20 рабочих подходов; сначала базовые, потом изоляция; " +
         "не бери мышцу, нагруженную вчера; приоритет — видимый рост (средняя дельта, спина, грудь, руки); " +

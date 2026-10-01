@@ -33,6 +33,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import by.zaberezh.forma.Forma
 import by.zaberezh.forma.core.SETTINGS
+import by.zaberezh.forma.core.gym.SPLITS
 import by.zaberezh.forma.core.ai.Claude
 import by.zaberezh.forma.core.r1
 import by.zaberezh.forma.sys.Evening
@@ -91,6 +92,7 @@ fun SettingsScreen() {
     var key by remember(st) { mutableStateOf(st.apiKey) }
     var bedReminder by remember(st) { mutableStateOf(st.bedReminder) }
     var weekends by remember(st) { mutableStateOf(st.gymWeekends) }
+    var split by remember(st) { mutableStateOf(st.split) }
     var weighOn by remember(st) { mutableStateOf(st.weighReminder) }
     var url by remember(st) { mutableStateOf(st.apiUrl) }
     var model by remember(st) { mutableStateOf(st.model) }
@@ -122,7 +124,7 @@ fun SettingsScreen() {
             sessionsPerWeek = d("sessions", 3.0).toInt().coerceIn(1, 5), minVisitMin = d("visit", 75.0).toInt(),
             morningHour = d("hour", 8.0).toInt().coerceIn(0, 23), morningMinute = d("minute", 0.0).toInt().coerceIn(0, 59),
             checkupDays = d("checkup", 14.0).toInt().coerceIn(7, 60),
-            gymWeekends = weekends, weighReminder = weighOn,
+            gymWeekends = weekends, split = split, weighReminder = weighOn,
             weighHour = d("wH", 7.0).toInt().coerceIn(0, 23), weighMinute = d("wM", 20.0).toInt().coerceIn(0, 59),
             weighWeekendHour = d("weH", 11.0).toInt().coerceIn(0, 23), weighWeekendMinute = d("weM", 0.0).toInt().coerceIn(0, 59),
             apiKey = key.trim(), apiUrl = url.trim(), model = model.trim().ifEmpty { "claude-opus-5-5" },
@@ -158,6 +160,15 @@ fun SettingsScreen() {
                     Text("Выходные — тоже дни зала", Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
                     Switch(checked = weekends, onCheckedChange = { weekends = it })
                 }
+                Text("Сплит", style = MaterialTheme.typography.bodyMedium)
+                Buttons {
+                    SPLITS.forEach { (id, v) -> FilterChip(selected = split == id, onClick = { split = id }, label = { Text(v.first) }) }
+                }
+                Muted(when (split) {
+                    "ul" -> "Верх и Низ по очереди: каждая мышца ~1,5 раза в неделю. Предплечья — в обоих днях."
+                    "ppl" -> "Жим, Тяга, Ноги по очереди: каждая мышца 1 раз в неделю, день длиннее по одной зоне."
+                    else -> "Каждая тренировка — всё тело понемногу: мышца 3 раза в неделю."
+                })
                 Primary("Сохранить", { saveAll(); msg = "Сохранено" }, Modifier.fillMaxWidth())
                 Note(msg)
             }

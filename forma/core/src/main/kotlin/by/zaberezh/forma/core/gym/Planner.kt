@@ -19,6 +19,7 @@ data class DayPlan(
     val focus: String? = null,      // ключ из FOCUS или null (авто)
     val source: String = "auto",    // auto / edited / claude
     val note: String = "",
+    val day: String? = null,        // тип дня сплита (upper, lower, push…); null — старые планы
 )
 
 val DAYPLAN = Kind("gym.dayplan", DayPlan.serializer())
@@ -33,6 +34,28 @@ val FOCUS: Map<String, Pair<String, Set<String>>> = linkedMapOf(
     "abs" to ("Пресс" to setOf("abs")),
     "forearms" to ("Предплечья" to setOf("forearms")),
 )
+
+/** Тип дня сплита: какие мышцы в нём тренируются. */
+data class DayType(val id: String, val title: String, val muscles: Set<String>)
+
+private val UPPER = setOf("chest", "back", "front_delts", "side_delts", "rear_delts", "biceps", "triceps", "forearms")
+private val LEGS = setOf("quads", "hams", "glutes", "calves")
+
+/**
+ * Сплиты: дни идут по кругу в порядке тренировок (пропуск не сбивает очередь).
+ * Предплечья — в обоих днях «Верх/Низ» (акцент пользователя; мелкая мышца, восстанавливается быстро).
+ */
+val SPLITS: Map<String, Pair<String, List<DayType>>> = linkedMapOf(
+    "ul" to ("Верх / Низ" to listOf(DayType("upper", "Верх", UPPER), DayType("lower", "Низ", LEGS + "abs" + "forearms"))),
+    "ppl" to ("Жим / Тяга / Ноги" to listOf(
+        DayType("push", "Жим", setOf("chest", "front_delts", "side_delts", "triceps")),
+        DayType("pull", "Тяга", setOf("back", "rear_delts", "biceps", "forearms")),
+        DayType("legs", "Ноги", LEGS + "abs"),
+    )),
+    "full" to ("Всё тело" to listOf(DayType("full", "Всё тело", UPPER + LEGS + "abs"))),
+)
+
+fun splitDays(id: String): List<DayType> = (SPLITS[id] ?: SPLITS.getValue("ul")).second
 
 /** Недельный объём по умолчанию (тяжёлые подходы): мин–макс. */
 val DEFAULT_VOLUME: Map<String, List<Int>> = mapOf(
@@ -82,18 +105,24 @@ object Planner {
     fun build(
         p: Program, date: LocalDate, log: List<Pair<LocalDate, Map<String, Double>>>,
         lastUsed: Map<String, LocalDate>, sessionsPerWeek: Int, focus: String? = null,
+        day: DayType? = null, split: List<DayType> = listOfNotNull(day),
     ): DayPlan {
-        if (p.exercises.isEmpty()) return DayPlan(date.toString(), emptyList(), focus)
+        if (p.exercises.isEmpty()) return DayPlan(date.toString(), emptyList(), focus, day = day?.id)
         val volume = DEFAULT_VOLUME + p.volume
         val focusSet = focus?.let { FOCUS[it]?.second } ?: emptySet()
+        // мышцы дня: тип дня сплита (+ акцент, если выбран); без типа — всё тело
+        val allowed = day?.let { it.muscles + focusSet }
+        // сколько раз в неделю мышца попадает в тренировки при этом сплите
+        fun perWeek(m: String) = if (split.isEmpty()) sessionsPerWeek.toDouble()
+            else (sessionsPerWeek.toDouble() * split.count { m in it.muscles } / split.size).coerceAtLeast(1.0)
         val recent = log.filter { it.first < date && ChronoUnit.DAYS.between(it.first, date) <= 7 }
         val need = HashMap<String, Double>()
         volume.forEach { (m, range) ->
             val target = (range[0] + range[1]) / 2.0
-            if (target <= 0) return@forEach
+            if (target <= 0 || (allowed != null && m !in allowed)) return@forEach
             val done = recent.sumOf { it.second[m] ?: 0.0 }
             val deficit = ((target - done) / target).coerceIn(0.0, 1.0)
-            var n = target / sessionsPerWeek.coerceAtLeast(1) * (0.5 + deficit)
+            var n = target / perWeek(m) * (0.5 + deficit)
             val last = recent.filter { (it.second[m] ?: 0.0) >= 2 }.maxOfOrNull { it.first }
             val gap = last?.let { ChronoUnit.DAYS.between(it, date) } ?: 99
             n *= when { gap <= 1 -> 0.3; gap == 2L -> 0.8; else -> 1.0 }
@@ -103,13 +132,16 @@ object Planner {
         }
         // мышцы с нулевым недельным минимумом (пресс, икры…) берутся при фокусе или если есть «запас» бюджета
         focusSet.forEach { m -> if ((need[m] ?: 0.0) < 2.0) need[m] = 3.0 }
+        // в «Низ»/«Ноги» пресс с нулевым минимумом тоже берётся, если для него есть упражнение
+        if (allowed != null && "abs" in allowed && (need["abs"] ?: 0.0) < 2.0) need["abs"] = 2.0
 
         val chosen = mutableListOf<Pair<Exercise, Int>>()
         var total = 0
         val perMain = HashMap<String, Int>()
         fun main(e: Exercise) = e.muscles.maxByOrNull { it.value }?.key ?: ""
         while (total < SESSION_SETS && chosen.size < MAX_EXERCISES) {
-            val best = p.exercises.filter { e -> chosen.none { it.first.id == e.id } && (perMain[main(e)] ?: 0) < (if (main(e) in focusSet) 3 else 2) }
+            val best = p.exercises.filter { e -> chosen.none { it.first.id == e.id } && (perMain[main(e)] ?: 0) < (if (main(e) in focusSet) 3 else 2) &&
+                    (allowed == null || main(e) in allowed) }
                 .map { e ->
                     var score = e.muscles.entries.sumOf { (m, k) -> k * (need[m] ?: 0.0) }
                     if (isCompound(e)) score *= 1.15                                      // базовые — вперёд
@@ -125,7 +157,7 @@ object Planner {
             perMain[main(e)] = (perMain[main(e)] ?: 0) + 1
             e.muscles.forEach { (m, k) -> need[m] = ((need[m] ?: 0.0) - k * sets).coerceAtLeast(0.0) }
         }
-        return DayPlan(date.toString(), chosen.map { PlanItem(it.first.id, it.second) }, focus)
+        return DayPlan(date.toString(), chosen.map { PlanItem(it.first.id, it.second) }, focus, day = day?.id)
     }
 
     // ---------- порядок (и суперсеты — отключены по решению пользователя) ----------
