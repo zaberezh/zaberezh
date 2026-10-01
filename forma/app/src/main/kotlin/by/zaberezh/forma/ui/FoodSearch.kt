@@ -31,6 +31,7 @@ object FoodSearch {
         if (q.isEmpty() || busy.value) return
         busy.value = true; err.value = null; info.value = null
         val app = c.applicationContext
+        val apiKey = by.zaberezh.forma.sys.Secrets.claudeKey(c)
         scope.launch {
             val st = ctx.settings
             var ai: Claude? = null
@@ -39,8 +40,8 @@ object FoodSearch {
             val r = withContext(Dispatchers.IO) {
                 runCatching {
                     val pipeline = FoodPipeline(ctx.store,
-                        claude = if (st.apiKey.isBlank()) null else { rest, hints ->
-                            Claude(st.apiKey, st.model, st.apiUrl).also { x -> ai = x }.foods(rest, hints)
+                        claude = if (apiKey.isBlank()) null else { rest, hints ->
+                            Claude(apiKey, st.model, st.apiUrl).also { x -> ai = x }.foods(rest, hints)
                         },
                         stage = { msg -> scope.launch { info.value = msg } },
                         log = { Claude.debug("поиск: $it") })
@@ -48,7 +49,7 @@ object FoodSearch {
                     how = res.how
                     res.error?.let { if (res.items.isEmpty()) throw it }
                     if (res.missing.isNotEmpty()) missing = "Не найдено: «${res.missing.joinToString(", ")}» — " +
-                        (res.error?.let { "Claude: ${Claude.explain(it)}. " } ?: if (st.apiKey.isBlank()) "задай API-ключ Claude (Настройки) или " else "") +
+                        (res.error?.let { "Claude: ${Claude.explain(it)}. " } ?: if (apiKey.isBlank()) "задай API-ключ Claude (Настройки) или " else "") +
                         "добавь вручную (кнопка «Править КБЖУ»)."
                     if (res.items.isEmpty() && res.missing.isNotEmpty()) error(missing!!)
                     res.items
@@ -67,13 +68,14 @@ object FoodSearch {
     fun photo(ctx: Ctx, c: Context, jpeg: ByteArray) {
         if (busy.value) return
         val st = ctx.settings
-        if (st.apiKey.isBlank()) { err.value = "Для фото нужен API-ключ Claude (Настройки)."; return }
+        val apiKey = by.zaberezh.forma.sys.Secrets.claudeKey(c)
+        if (apiKey.isBlank()) { err.value = "Для фото нужен API-ключ Claude (Настройки)."; return }
         busy.value = true; err.value = null; info.value = "смотрю фото…"
         val note = text.value.trim()
         val app = c.applicationContext
         scope.launch {
             var ai: Claude? = null
-            val r = withContext(Dispatchers.IO) { runCatching { Claude(st.apiKey, st.model, st.apiUrl).also { ai = it }.foodsFromPhoto(jpeg, note) } }
+            val r = withContext(Dispatchers.IO) { runCatching { Claude(apiKey, st.model, st.apiUrl).also { ai = it }.foodsFromPhoto(jpeg, note) } }
             busy.value = false
             val spent = ai?.let { a -> a.used.takeIf { it > 0 }?.let { " · ~${"%,d".format(it).replace(',', ' ')} токенов" } } ?: ""
             r.onSuccess { draft.value = (draft.value ?: emptyList()) + it; info.value = "по фото — проверь вес$spent" }
