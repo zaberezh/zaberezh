@@ -185,8 +185,15 @@ private fun LabCard(s: Store, id: String, lab: Lab, expanded: Boolean, setExpand
                         textDecoration = if (lab.submitted) TextDecoration.LineThrough else null, color = if (lab.submitted) C.muted else C.text)
                     when (lab.stage) {
                         1 -> Text(lab.subject + " · сделана, нужно сдать", style = MaterialTheme.typography.bodySmall, color = C.warn)
-                        2 -> Muted(lab.subject + " · сдана" + (lab.submittedOn?.let { " " + DM.format(java.time.LocalDate.parse(it)) } ?: ""))
-                        else -> Muted(lab.subject + if (lab.total > 0) " · ${lab.doneCount}/${lab.total} заданий" else "")
+                        2 -> Muted(lab.subject + " · сдана" + (lab.submittedOn?.let { " " + DM.format(java.time.LocalDate.parse(it)) } ?: "") +
+                            (lab.mark?.let { " · отметка $it" } ?: ""))
+                        else -> {
+                            val due = lab.due?.let { java.time.LocalDate.parse(it) }
+                            val late = due != null && due.isBefore(java.time.LocalDate.now())
+                            Text(lab.subject + (if (lab.total > 0) " · ${lab.doneCount}/${lab.total} заданий" else "") +
+                                (due?.let { " · срок ${DM.format(it)}" + if (late) " — просрочена" else "" } ?: ""),
+                                style = MaterialTheme.typography.bodySmall, color = if (late) C.bad else C.muted)
+                        }
                     }
                 }
                 if (lab.stage == 1) Pill("сдать", C.warn)
@@ -215,7 +222,7 @@ private fun LabCard(s: Store, id: String, lab: Lab, expanded: Boolean, setExpand
                     }
                 }
                 if (lab.stage == 1) Flat("Вернуть в работу", { Study.setLabDone(s, id, false) }, C.muted)
-                Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { DeleteButton("лабу") { s.delete(id) } }
+                Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { DeleteButton("лабу") { Study.deleteLab(s, id) } }
             }
         }
     }

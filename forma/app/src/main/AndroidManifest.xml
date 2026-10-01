@@ -37,6 +37,7 @@
         <receiver android:name=".sys.WaterDrankReceiver" android:exported="false" />
         <receiver android:name=".sys.WakeReceiver" android:exported="false" />
         <receiver android:name=".sys.WakeStopReceiver" android:exported="false" />
+        <receiver android:name=".sys.IisCheckReceiver" android:exported="false" />
         <receiver android:name=".sys.BootReceiver" android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />

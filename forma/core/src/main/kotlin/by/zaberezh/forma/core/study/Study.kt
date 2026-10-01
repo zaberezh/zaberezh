@@ -35,6 +35,9 @@ data class Lab(
     val created: Long = 0,
     val submitted: Boolean = false,      // сдана (защищена) преподавателю
     val submittedOn: String? = null,     // дата сдачи
+    val due: String? = null,             // срок сдачи (ISO) — из ИИС
+    val fromIis: Boolean = false,        // создана по данным ИИС
+    val mark: Int? = null,               // отметка за лабу в ИИС
 ) {
     val total get() = tasks.size
     val doneCount get() = tasks.count { it.done }
@@ -130,6 +133,55 @@ object Study {
     /** Ближайший будильник после [now] (сегодня, если ещё не прошёл, иначе следующие дни с парами — до недели вперёд). */
     fun nextWake(tt: Timetable, now: java.time.LocalDateTime, subgroup: Int = 0): java.time.LocalDateTime? =
         (0L..7L).asSequence().mapNotNull { wakeAt(tt, now.toLocalDate().plusDays(it), subgroup) }.firstOrNull { it.isAfter(now) }
+
+    // ---------- лабы из ИИС ----------
+    private const val HIDDEN = "study.lab.hidden"
+
+    private fun hidden(s: Store) = s.kvGet(HIDDEN)?.split('\n')?.filter { it.isNotBlank() }?.toSet().orEmpty()
+
+    /** Удалить лабу; лабу из ИИС запоминаем, чтобы синхронизация не создала её снова. */
+    fun deleteLab(s: Store, id: String) {
+        val l = s.get(id)?.let(LAB::decode)
+        if (l != null && l.fromIis) s.kvPut(HIDDEN, (hidden(s) + "${l.subject}|${l.number}").joinToString("\n"))
+        s.delete(id)
+    }
+
+    /** Что изменила синхронизация: новые лабы и лабы, которые ИИС засчитал (есть отметка). */
+    data class SyncResult(val created: List<String>, val graded: List<String>)
+
+    /**
+     * Лабы из «Успеваемости» ИИС: по каждому предмету с лабами — карточки «ЛР 1…N» со сроками.
+     * Лаба с отметкой в ИИС — сдана (с датой и отметкой). Свои лабы с тем же предметом и номером не дублируются —
+     * им только подставляются срок и отметка. Удалённые вручную лабы из ИИС больше не создаются.
+     */
+    fun syncFromIis(s: Store, rating: Rating, now: Long = System.currentTimeMillis()): SyncResult {
+        val created = mutableListOf<String>(); val graded = mutableListOf<String>()
+        val skip = hidden(s)
+        val existing = LAB.all(s)
+        for (subj in rating.subjects) for (t in subj.types) {
+            val p = t.labs ?: continue
+            for (task in p.tasks) {
+                val key = "${subj.abbrev}|${task.number}"
+                val mine = existing.firstOrNull { (_, l) -> l.subject.equals(subj.abbrev, true) && l.number == task.number }
+                if (mine == null) {
+                    if (key in skip) continue
+                    val l = Lab(subj.abbrev, task.number, created = now, doneManual = task.done, submitted = task.done,
+                        submittedOn = task.doneOn, due = task.due, fromIis = true, mark = task.mark)
+                    LAB.save(s, l, ts = now, id = "lab:iis:${subj.abbrev}:${task.number}")
+                    created += "${subj.abbrev} ЛР ${task.number}"
+                } else {
+                    val (e, l) = mine
+                    var n = l.copy(due = task.due ?: l.due, mark = task.mark ?: l.mark)
+                    if (task.done && !l.submitted) {
+                        n = n.copy(tasks = n.tasks.map { it.copy(done = true) }, doneManual = true, submitted = true, submittedOn = task.doneOn)
+                        graded += "${subj.abbrev} ЛР ${task.number}" + (task.mark?.let { " — $it" } ?: "")
+                    }
+                    if (n != l) LAB.save(s, n, ts = e.ts, id = e.id)
+                }
+            }
+        }
+        return SyncResult(created, graded)
+    }
 
     /** Следующий номер лабы по предмету. */
     fun nextNumber(s: Store, subject: String) = (LAB.all(s).filter { it.second.subject == subject }.maxOfOrNull { it.second.number } ?: 0) + 1

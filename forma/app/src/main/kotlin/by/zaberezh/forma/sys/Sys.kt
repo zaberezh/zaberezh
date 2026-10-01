@@ -91,5 +91,6 @@ class BootReceiver : BroadcastReceiver() {
         Weigh.schedule(c)
         Water.schedule(c)
         WakeAlarm.schedule(c)
+        IisCheck.schedule(c)
     }
 }

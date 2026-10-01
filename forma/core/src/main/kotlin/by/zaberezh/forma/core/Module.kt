@@ -35,6 +35,7 @@ data class Settings(
     val split: String = "ul",
     val sessionMin: Int = 90,
     val wakeAlarm: Boolean = true,      // беззвучный будильник по первой паре
+    val iisWatch: Boolean = true,       // фоновая проверка ИИС: отметки, пропуски, лабы
     val waterReminder: Boolean = true,  // «попей воды» каждый час
     val waterWeekdayFrom: Int = 16, val waterWeekendFrom: Int = 11, val waterTo: Int = 23,
     val morningHour: Int = 8,

@@ -74,6 +74,7 @@ fun CabinetScreen() {
         SecureStore.put(c, "cookie", x.cookie)
         SecureStore.put(c, "profile", x.profile)
         session = x; notice = null; site = false
+        by.zaberezh.forma.sys.IisCheck.loggedIn(c)
     }
     when {
         site -> SiteLogin(onDone = ::enter, onCancel = { wipeWeb(); site = false })
@@ -198,7 +199,12 @@ private fun Cabinet(session: IisSession, onExpired: () -> Unit, onLogout: () -> 
 
     suspend fun fetch(id: String) {
         busy[id] = true
-        val r = withContext(Dispatchers.IO) { runCatching { Cabinet.load(Iis.jdk, session, id) } }
+        val r = withContext(Dispatchers.IO) {
+            runCatching { Cabinet.load(Iis.jdk, session, id) }.onSuccess { d ->
+                // успеваемость: лабы из ИИС — во вкладку «Лабы», отметки — в снимок для фоновых уведомлений
+                if (d is by.zaberezh.forma.core.study.Rating) { by.zaberezh.forma.sys.IisCheck.apply(d); by.zaberezh.forma.core.study.IisWatch.check(Forma.store, d) }
+            }
+        }
         busy[id] = false
         if (r.exceptionOrNull() is IisUnauthorized) onExpired() else data[id] = r
     }

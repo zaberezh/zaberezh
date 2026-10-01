@@ -26,5 +26,6 @@ class App : Application() {
         Weigh.schedule(this)
         Water.schedule(this)
         by.zaberezh.forma.sys.WakeAlarm.schedule(this)
+        by.zaberezh.forma.sys.IisCheck.schedule(this)
     }
 }
