@@ -21,6 +21,13 @@ class FocusTest {
         assertEquals(0, Focus.gaps(listOf(l("08:30", "11:30"), l("10:05", "11:30"), l("11:40", "13:05"))).size)
     }
 
+    @Test fun gapLabels() {
+        fun g(a: String, b: String) = by.zaberezh.forma.core.study.Gap(LocalTime.parse(a), LocalTime.parse(b))
+        assertEquals("окно 11:30–13:25 · 1 ч 55 мин", g("11:30", "13:25").label())
+        assertEquals("окно 10:00–12:00 · 2 ч", g("10:00", "12:00").label())
+        assertEquals("окно 13:00–13:40 · 40 мин", g("13:00", "13:40").label())
+    }
+
     @Test fun focusSessionsCountRealMinutes() {
         val s = MemoryStore()
         val t0 = 1_790_000_000_000L

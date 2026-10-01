@@ -150,6 +150,7 @@ private fun StudyToday(ctx: Ctx, onStudy: (Int) -> Unit) {
     val lessons = remember(tt, sub, ctx.today) { Bsuir.on(tt, ctx.today, sub) }
     val now = LocalTime.now(ZONE)
     fun time(x: String) = runCatching { LocalTime.parse(x) }.getOrNull()
+    val gaps = remember(lessons) { by.zaberezh.forma.core.study.Focus.gaps(lessons) }
     Block("Учёба сегодня", trailing = { if (lessons.isNotEmpty()) Pill("${lessons.size} " + plural(lessons.size, "пара", "пары", "пар"), C.study) }) {
         when {
             tt.lessons.isEmpty() -> Muted("Расписание ещё не загружено — открой «Учёба → Расписание».")
@@ -159,8 +160,10 @@ private fun StudyToday(ctx: Ctx, onStudy: (Int) -> Unit) {
                     Muted("Дальше: ${d.dayOfWeek.getDisplayName(TextStyle.SHORT, RU)}, ${l.start} — ${l.title}")
                 }
             }
-            else -> lessons.forEach { l ->
+            else -> { val shown = mutableSetOf<by.zaberezh.forma.core.study.Gap>(); lessons.forEach { l ->
                 val start = time(l.start); val end = time(l.end)
+                // β окно — на своём месте, прямо перед парой, которой оно заканчивается
+                gaps.filter { it !in shown && start != null && !it.to.isAfter(start) }.forEach { g -> shown += g; GapLine(g, now) }
                 val past = end != null && now.isAfter(end)
                 val current = start != null && end != null && !now.isBefore(start) && !now.isAfter(end)
                 Row(
@@ -179,14 +182,7 @@ private fun StudyToday(ctx: Ctx, onStudy: (Int) -> Unit) {
                     }
                     if (current) Pill("сейчас", C.study)
                 }
-            }
-        }
-        // β окна между парами: можно поесть, сходить в зал, сделать лабу
-        remember(lessons) { by.zaberezh.forma.core.study.Focus.gaps(lessons) }.forEach { g ->
-            val past = now.isAfter(g.to)
-            Text("окно ${g.from}–${g.to} · " + (if (g.minutes >= 60) "${g.minutes / 60} ч ${g.minutes % 60} мин" else "${g.minutes} мин"),
-                style = MaterialTheme.typography.bodySmall, color = if (past) C.line else C.muted,
-                modifier = Modifier.padding(start = 54.dp))
+            } }
         }
         val hw = remember(ctx) { Study.open(s, ctx.today).count { it.second.due == ctx.today.toString() } }
         val all = remember(ctx) { Study.labs(s).map { it.second } }
@@ -199,6 +195,13 @@ private fun StudyToday(ctx: Ctx, onStudy: (Int) -> Unit) {
             Flat("Лабы ›", { onStudy(1) }, C.study)
         }
     }
+}
+
+/** Окно между парами (можно поесть, сходить в зал, сделать лабу): под названиями пар, приглушённо. */
+@Composable
+private fun GapLine(g: by.zaberezh.forma.core.study.Gap, now: LocalTime) {
+    Text(g.label(), Modifier.padding(start = 72.dp, top = 2.dp, bottom = 2.dp),
+        style = MaterialTheme.typography.bodySmall, color = if (now.isAfter(g.to)) C.line else C.muted)
 }
 
 /** Вода: стаканы за день и процент от нормы; «+ стакан» — то же, что нажать на уведомление. */
@@ -221,6 +224,6 @@ private fun WaterBlock(ctx: Ctx) {
             Primary("+ стакан ${WaterLog.GLASS_ML} мл", { WaterLog.add(s) }, Modifier.weight(1f))
             if (ml > 0) Secondary("−", { WaterLog.undo(s, ctx.today) })
         }
-        Muted("Норма ≈ 30 мл на кг веса. Нажатие на уведомление «Попей воды» тоже засчитывает стакан.")
+        if (ml == 0) Muted("Норма ≈ 30 мл на кг веса. Нажатие на уведомление «Попей воды» тоже засчитывает стакан.")
     }
 }
