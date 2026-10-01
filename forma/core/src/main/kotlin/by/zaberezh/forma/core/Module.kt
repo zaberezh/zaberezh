@@ -27,15 +27,8 @@ data class Profile(
 )
 
 @Serializable
-data class GymPlace(val id: String, val name: String, val lat: Double, val lon: Double, val radiusM: Float = 150f)
-
-@Serializable
 data class Settings(
     val profile: Profile = Profile(),
-    val gyms: List<GymPlace> = listOf(
-        GymPlace("adrenalin", "Адреналин Восток (Мстиславца 9)", 53.932930, 27.649587),
-        GymPlace("dvs", "Дворец водного спорта (Сурганова 2а)", 53.918795, 27.607268),
-    ),
     val sessionsPerWeek: Int = 3,
     val gymWeekends: Boolean = true,    // выходные тоже могут быть днями зала
     val supersets: Boolean = false,     // суперсеты не используются (решение пользователя)
@@ -43,8 +36,6 @@ data class Settings(
     val sessionMin: Int = 90,
     val waterReminder: Boolean = true,  // «попей воды» каждый час
     val waterWeekdayFrom: Int = 16, val waterWeekendFrom: Int = 11, val waterTo: Int = 23,
-    val geo: Boolean = false,           // учёт визитов в зал по геолокации (пока выключен)           // длительность тренировки → сколько подходов влезает           // сплит: ul — верх/низ, ppl — жим/тяга/ноги, full — всё тело
-    val minVisitMin: Int = 75,
     val morningHour: Int = 8,
     val morningMinute: Int = 0,
     val weighReminder: Boolean = true,  // напоминание взвеситься

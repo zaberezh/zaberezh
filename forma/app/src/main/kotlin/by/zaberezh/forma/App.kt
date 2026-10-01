@@ -5,7 +5,6 @@ import by.zaberezh.forma.core.Ctx
 import by.zaberezh.forma.core.migrateSettings
 import by.zaberezh.forma.data.SqlStore
 import by.zaberezh.forma.sys.Evening
-import by.zaberezh.forma.sys.Geo
 import by.zaberezh.forma.sys.Morning
 import by.zaberezh.forma.sys.Weigh
 import by.zaberezh.forma.sys.Water
@@ -26,6 +25,5 @@ class App : Application() {
         Evening.schedule(this)
         Weigh.schedule(this)
         Water.schedule(this)
-        Geo.register(this)
     }
 }
