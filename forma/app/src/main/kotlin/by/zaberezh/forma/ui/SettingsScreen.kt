@@ -37,11 +37,8 @@ import by.zaberezh.forma.core.study.TIMETABLE
 import by.zaberezh.forma.core.gym.SPLITS
 import by.zaberezh.forma.core.ai.Claude
 import by.zaberezh.forma.core.r1
-import by.zaberezh.forma.sys.Evening
-import by.zaberezh.forma.sys.Weigh
-import by.zaberezh.forma.sys.Water
+import by.zaberezh.forma.sys.Reminders
 import by.zaberezh.forma.sys.SleepSync
-import by.zaberezh.forma.sys.Morning
 import by.zaberezh.forma.sys.granted
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -131,12 +128,7 @@ fun SettingsScreen() {
             weighWeekendHour = d("weH", 11.0).toInt().coerceIn(0, 23), weighWeekendMinute = d("weM", 0.0).toInt().coerceIn(0, 59),
             apiKey = "", apiUrl = url.trim(), model = model.trim().ifEmpty { "claude-opus-5-5" },
         ))
-        Morning.schedule(c)
-        Evening.schedule(c)
-        Weigh.schedule(c)
-        Water.schedule(c)
-        by.zaberezh.forma.sys.WakeAlarm.schedule(c)
-        by.zaberezh.forma.sys.IisCheck.schedule(c)
+        Reminders.scheduleAll(c)
     }
 
     @Composable

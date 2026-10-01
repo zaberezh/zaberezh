@@ -89,13 +89,18 @@ class MorningReceiver : BroadcastReceiver() {
     }
 }
 
-class BootReceiver : BroadcastReceiver() {
-    override fun onReceive(c: Context, i: Intent) {
-        Morning.schedule(c)
-        Evening.schedule(c)
-        Weigh.schedule(c)
-        Water.schedule(c)
-        WakeAlarm.schedule(c)
-        IisCheck.schedule(c)
+/**
+ * Все будильники приложения — в одном месте: запуск, перезагрузка телефона и сохранение настроек
+ * зовут только это (новое напоминание достаточно добавить сюда).
+ */
+object Reminders {
+    fun scheduleAll(c: Context) {
+        listOf(Morning::schedule, Evening::schedule, Weigh::schedule, Water::schedule, WakeAlarm::schedule, IisCheck::schedule)
+            .forEach { runCatching { it(c) } }   // сбой одного не мешает остальным
     }
+}
+
+/** После перезагрузки и обновления приложения будильники AlarmManager сброшены — ставим заново. */
+class BootReceiver : BroadcastReceiver() {
+    override fun onReceive(c: Context, i: Intent) = Reminders.scheduleAll(c)
 }
