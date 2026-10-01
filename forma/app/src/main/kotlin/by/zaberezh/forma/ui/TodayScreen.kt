@@ -146,7 +146,7 @@ private fun StudyToday(ctx: Ctx, onStudy: (Int) -> Unit) {
     val lessons = Bsuir.on(tt, ctx.today, sub)
     val now = LocalTime.now(ZONE)
     fun time(x: String) = runCatching { LocalTime.parse(x) }.getOrNull()
-    Block("Учёба сегодня", trailing = { if (lessons.isNotEmpty()) Pill("${lessons.size} пар", C.study) }) {
+    Block("Учёба сегодня", trailing = { if (lessons.isNotEmpty()) Pill("${lessons.size} " + plural(lessons.size, "пара", "пары", "пар"), C.study) }) {
         when {
             tt.lessons.isEmpty() -> Muted("Расписание ещё не загружено — открой «Учёба → Расписание».")
             lessons.isEmpty() -> {
