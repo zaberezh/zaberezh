@@ -176,12 +176,12 @@ private fun WeekHeader(tt: Timetable, visible: LocalDate, today: LocalDate, subg
     Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         val mon = monday(visible)
         Row(verticalAlignment = Alignment.CenterVertically) {
-            ArrowButton("‹") { onWeek(-1) }
+            NavArrow("‹", { onWeek(-1) })
             Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
                 Text(MONTH.format(mon.plusDays(3)).replaceFirstChar { it.uppercase() }, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                 Muted("${Bsuir.week(tt, mon)}-я учебная неделя" + if (mon == monday(today)) " · текущая" else "")
             }
-            ArrowButton("›") { onWeek(1) }
+            NavArrow("›", { onWeek(1) })
         }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
             (0L..6L).map(mon::plusDays).forEach { d ->
@@ -206,12 +206,6 @@ private fun WeekHeader(tt: Timetable, visible: LocalDate, today: LocalDate, subg
 }
 
 }
-@Composable
-private fun ArrowButton(t: String, onClick: () -> Unit) = Box(
-    Modifier.size(44.dp).clip(RoundedCornerShape(12.dp)).background(C.cardHi).clickable(onClick = onClick),
-    contentAlignment = Alignment.Center,
-) { Text(t, style = MaterialTheme.typography.titleLarge, color = C.accent) }
-
 @Composable
 private fun DayTitle(d: LocalDate, today: LocalDate, empty: Boolean, week: Int) = Row(
     Modifier.fillMaxWidth().padding(top = 10.dp, bottom = 2.dp, start = 4.dp), verticalAlignment = Alignment.CenterVertically,
