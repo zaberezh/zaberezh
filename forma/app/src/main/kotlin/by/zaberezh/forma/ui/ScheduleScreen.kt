@@ -171,7 +171,7 @@ private fun WeekHeader(tt: Timetable, visible: LocalDate, today: LocalDate, subg
                 onDragCancel = { drag = 0f },
             ) { change, dx -> change.consume(); drag += dx }
         },
-    shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = C.card),
+    shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = C.card, contentColor = C.text),
 ) {
     Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         val mon = monday(visible)
@@ -229,7 +229,7 @@ private fun LessonCard(s: Store, tt: Timetable, l: Lesson, date: LocalDate, subg
     var open by remember(l.subject, l.start, date) { mutableStateOf(false) }
     Card(
         Modifier.fillMaxWidth().clickable { open = !open }, shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = if (open) C.cardHi else C.card),
+        colors = CardDefaults.cardColors(containerColor = if (open) C.cardHi else C.card, contentColor = C.text),
     ) {
         Column(Modifier.animateContentSize().padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min)) {
