@@ -5,11 +5,7 @@ import androidx.compose.runtime.mutableStateOf
 import by.zaberezh.forma.core.Ctx
 import by.zaberezh.forma.core.ai.Claude
 import by.zaberezh.forma.core.food.FoodItem
-import by.zaberezh.forma.core.food.Edostavka
-import by.zaberezh.forma.core.food.LibraryResolver
-import by.zaberezh.forma.core.food.Menus
-import by.zaberezh.forma.core.food.WebHints
-import by.zaberezh.forma.core.food.shopResolve
+import by.zaberezh.forma.core.food.FoodPipeline
 import by.zaberezh.forma.sys.Notify
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -42,31 +38,20 @@ object FoodSearch {
             var missing: String? = null
             val r = withContext(Dispatchers.IO) {
                 runCatching {
-                    // 0) меню сетей (KFC) — точные цифры из официальной таблицы, без ИИ и интернета
-                    val menu = Menus.resolve(q)
-                    val rest = if (menu.items.isEmpty()) q else menu.rest.joinToString(", ")
-                    val fromMenu = if (menu.items.isEmpty()) "" else "${menu.items.size} из меню KFC"
-                    if (rest.isBlank()) return@runCatching menu.items.also { how = "$fromMenu, без ИИ" }
-                    menu.items + (LibraryResolver(ctx.store).resolve(rest)?.also { how = "из своей библиотеки, без ИИ" } ?: run {
-                        // 1) магазинные продукты — прямо с edostavka.by (точно и бесплатно)
-                        val shop = shopResolve(rest, Edostavka(log = { Claude.debug("Едоставка: $it") }))
-                        val left = shop.unresolved.joinToString(", ")
-                        val have = menu.items.size + shop.items.size
-                        when {
-                            left.isEmpty() -> shop.items.also { how = "с edostavka.by, без ИИ" }
-                            st.apiKey.isBlank() -> if (have > 0) shop.items.also {
-                                how = if (shop.items.isEmpty()) "" else "с edostavka.by"; missing = "Не найдено: «$left» — добавь вручную или задай API-ключ."
-                            } else error("Не нашёл на edostavka.by, а API-ключ не задан (Настройки → Claude). Можно ввести КБЖУ вручную.")
-                            // 2) остальное — Claude, с найденными страницами магазина как подсказкой
-                            else -> shop.items + Claude(st.apiKey, st.model, st.apiUrl).also { x -> ai = x }.foods(left, shop.hints,
-                                // поиск калорийности в интернете прямо с телефона (у посредника веб-поиска может не быть)
-                                shop.unresolved.take(3).flatMap { part -> runCatching { WebHints.find(part) }.getOrDefault(emptyList()).take(4) }
-                                    .also { Claude.debug("интернет: найдено строк ${it.size}") },
-                            ).also {
-                                how = if (shop.items.isEmpty()) "Claude" else "${shop.items.size} с edostavka.by + Claude"
-                            }
-                        }
-                    }).also { how = listOf(fromMenu, how).filter { it.isNotEmpty() }.joinToString(" + ") }
+                    val pipeline = FoodPipeline(ctx.store,
+                        claude = if (st.apiKey.isBlank()) null else { rest, hints ->
+                            Claude(st.apiKey, st.model, st.apiUrl).also { x -> ai = x }.foods(rest, hints)
+                        },
+                        stage = { msg -> scope.launch { info.value = msg } },
+                        log = { Claude.debug("поиск: $it") })
+                    val res = pipeline.run(q)
+                    how = res.how
+                    res.error?.let { if (res.items.isEmpty()) throw it }
+                    if (res.missing.isNotEmpty()) missing = "Не найдено: «${res.missing.joinToString(", ")}» — " +
+                        (res.error?.let { "Claude: ${Claude.explain(it)}. " } ?: if (st.apiKey.isBlank()) "задай API-ключ Claude (Настройки) или " else "") +
+                        "добавь вручную (кнопка «Править КБЖУ»)."
+                    if (res.items.isEmpty() && res.missing.isNotEmpty()) error(missing!!)
+                    res.items
                 }
             }
             busy.value = false

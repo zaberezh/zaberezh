@@ -13,9 +13,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import by.zaberezh.forma.core.Modules
-import by.zaberezh.forma.core.body.WEIGHT
-import by.zaberezh.forma.core.body.Weight
+import by.zaberezh.forma.core.body.saveWeight
 import by.zaberezh.forma.core.body.trendWeight
+import by.zaberezh.forma.core.body.weightOn
 import by.zaberezh.forma.core.food.FoodModule
 import by.zaberezh.forma.core.gym.GymModule
 import by.zaberezh.forma.core.gym.Planner
@@ -102,7 +102,7 @@ fun TodayScreen(onTab: (Int) -> Unit) {
             }
         }
         item {
-            val todayW = WEIGHT.all(s).lastOrNull()?.takeIf { it.first.day == ctx.today }?.second?.kg
+            val todayW = weightOn(s, ctx.today)
             val trend = trendWeight(s, ctx.today)
             Block("Вес") {
                 if (todayW != null) BigValue(todayW.r1(), "кг", trend?.let { "сглаженный ${it.r1()} кг" })
@@ -111,7 +111,7 @@ fun TodayScreen(onTab: (Int) -> Unit) {
                     trend?.let { Muted("Сглаженный ${it.r1()} кг · сегодня не взвешивался") }
                     Line {
                         Field("Вес натощак", w, { w = it }, Modifier.weight(1f), suffix = "кг")
-                        Primary("OK", { w.num()?.let { WEIGHT.save(s, Weight(it)); w = "" } })
+                        Primary("OK", { w.num()?.let { saveWeight(s, ctx.today, it); w = "" } })
                     }
                 }
             }
