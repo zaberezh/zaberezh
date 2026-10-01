@@ -138,7 +138,9 @@ class MainActivity : ComponentActivity() {
                                 else -> CabinetScreen()
                             }
                             else when (tab) {
-                                0 -> TodayScreen(onTab = go)
+                                0 -> TodayScreen(onTab = go, onStudy = { v ->
+                                    C.section = 1; Forma.store.kvPut("ui.section", "1"); settings = false; studyTab = v
+                                })
                                 1 -> GymScreen()
                                 2 -> TurnikScreen()
                                 3 -> SleepScreen()
