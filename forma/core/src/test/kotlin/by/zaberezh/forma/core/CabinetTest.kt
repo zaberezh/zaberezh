@@ -2,7 +2,6 @@ package by.zaberezh.forma.core
 
 import by.zaberezh.forma.core.study.Cabinet
 import by.zaberezh.forma.core.study.Certificates
-import by.zaberezh.forma.core.study.GroupInfo
 import by.zaberezh.forma.core.study.Http
 import by.zaberezh.forma.core.study.HttpResp
 import by.zaberezh.forma.core.study.IisSession
@@ -123,6 +122,6 @@ class CabinetTest {
         assertEquals("Забережный Илья Алексеевич", (Cabinet.load(http, s, "cv") as Person).fio)
         assertFailsWith<IisUnauthorized> { Cabinet.load(http, s, "markbook") }
         assertTrue("/personal-rating" !in calls)
-        assertTrue(Cabinet.group("""{"numberOfGroup":"1"}""").let { it is GroupInfo && it.students.isEmpty() })
+        assertTrue(Cabinet.group("""{"numberOfGroup":"1"}""").students.isEmpty())
     }
 }
