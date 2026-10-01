@@ -21,7 +21,10 @@ val HOMEWORK = Kind("study.hw", Homework.serializer())
 
 @Serializable data class LabTask(val name: String, val done: Boolean = false)
 
-/** Лабораторная: предмет, номер, задания (каждое — сделано/нет), по желанию своё название. */
+/**
+ * Лабораторная: предмет, номер, задания (каждое — сделано/нет), по желанию своё название.
+ * Путь лабы: в работе → сделана (все задания готовы), но ещё не сдана → сдана преподавателю.
+ */
 @Serializable
 data class Lab(
     val subject: String,
@@ -30,6 +33,8 @@ data class Lab(
     val tasks: List<LabTask> = emptyList(),
     val doneManual: Boolean = false,     // для лаб без заданий
     val created: Long = 0,
+    val submitted: Boolean = false,      // сдана (защищена) преподавателю
+    val submittedOn: String? = null,     // дата сдачи
 ) {
     val total get() = tasks.size
     val doneCount get() = tasks.count { it.done }
@@ -37,6 +42,10 @@ data class Lab(
     /** Прогресс лабы 0..100 — по сделанным заданиям. */
     val percent get() = if (tasks.isEmpty()) (if (doneManual) 100 else 0) else doneCount * 100 / total
     val name get() = "ЛР $number" + if (title.isNotBlank()) " · $title" else ""
+    /** Сделана, но ещё не сдана. */
+    val toSubmit get() = done && !submitted
+    /** 0 — в работе, 1 — нужно сдать, 2 — сдана. */
+    val stage get() = when { submitted -> 2; done -> 1; else -> 0 }
 }
 
 val LAB = Kind("study.lab", Lab.serializer())
@@ -67,7 +76,7 @@ object Study {
     }
 
     // ---------- лабы ----------
-    fun labs(s: Store) = LAB.all(s).sortedWith(compareBy({ it.second.done }, { it.second.subject }, { it.second.number }))
+    fun labs(s: Store) = LAB.all(s).sortedWith(compareBy({ it.second.stage }, { it.second.subject }, { it.second.number }))
 
     fun addLab(s: Store, subject: String, number: Int, tasks: Int, title: String = "", now: Long = System.currentTimeMillis()): String {
         val id = "lab:" + newId()
@@ -81,13 +90,31 @@ object Study {
     }
 
     fun toggleTask(s: Store, id: String, i: Int) = updateLab(s, id) { l ->
-        l.copy(tasks = l.tasks.mapIndexed { j, t -> if (j == i) t.copy(done = !t.done) else t })
+        l.copy(tasks = l.tasks.mapIndexed { j, t -> if (j == i) t.copy(done = !t.done) else t }).keepConsistent()
     }
 
-    /** Вся лаба — сделана / не сделана (все задания разом). */
+    /** Вся лаба — сделана / не сделана (все задания разом). Не сделанная — значит и не сдана. */
     fun setLabDone(s: Store, id: String, done: Boolean) = updateLab(s, id) { l ->
-        l.copy(tasks = l.tasks.map { it.copy(done = done) }, doneManual = done)
+        l.copy(tasks = l.tasks.map { it.copy(done = done) }, doneManual = done).keepConsistent()
     }
+
+    /** Сдана / не сдана. Сдать можно только сделанную: отметка «сдана» отмечает и все задания. */
+    fun setSubmitted(s: Store, id: String, submitted: Boolean, today: LocalDate = LocalDate.now()) = updateLab(s, id) { l ->
+        if (submitted) l.copy(tasks = l.tasks.map { it.copy(done = true) }, doneManual = true, submitted = true, submittedOn = today.toString())
+        else l.copy(submitted = false, submittedOn = null)
+    }
+
+    /** Следующий шаг по кружку: в работе → сделана → сдана → снова «нужно сдать». */
+    fun advance(s: Store, id: String, today: LocalDate = LocalDate.now()) {
+        val l = s.get(id)?.let(LAB::decode) ?: return
+        when (l.stage) {
+            0 -> setLabDone(s, id, true)
+            1 -> setSubmitted(s, id, true, today)
+            else -> setSubmitted(s, id, false)
+        }
+    }
+
+    private fun Lab.keepConsistent() = if (!done && submitted) copy(submitted = false, submittedOn = null) else this
 
     /** Следующий номер лабы по предмету. */
     fun nextNumber(s: Store, subject: String) = (LAB.all(s).filter { it.second.subject == subject }.maxOfOrNull { it.second.number } ?: 0) + 1

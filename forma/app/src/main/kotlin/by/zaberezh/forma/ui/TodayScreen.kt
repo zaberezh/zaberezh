@@ -176,11 +176,13 @@ private fun StudyToday(ctx: Ctx, onStudy: (Int) -> Unit) {
             }
         }
         val hw = Study.open(s, ctx.today).count { it.second.due == ctx.today.toString() }
-        val labs = Study.labs(s).count { !it.second.done }
-        if (hw > 0 || labs > 0) Line {
+        val all = Study.labs(s).map { it.second }
+        val labs = all.count { it.stage == 0 }
+        val submit = all.count { it.stage == 1 }
+        if (hw > 0 || labs > 0 || submit > 0) Buttons {
             if (hw > 0) Pill("ДЗ на сегодня: $hw", C.warn)
-            if (labs > 0) Pill("лаб в работе: $labs", C.study)
-            Box(Modifier.weight(1f))
+            if (submit > 0) Pill("сдать лаб: $submit", C.warn)
+            if (labs > 0) Pill("в работе: $labs", C.study)
             Flat("Лабы ›", { onStudy(1) }, C.study)
         }
     }
