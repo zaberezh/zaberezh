@@ -24,6 +24,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -311,6 +312,8 @@ private fun WorkoutScreen(ctx: Ctx, id: String) {
         }
     }
     var lastSet by remember { mutableLongStateOf(0L) }
+    var restFor by remember { mutableIntStateOf(0) }       // сколько отдыхать после последнего подхода, с
+    val c = androidx.compose.ui.platform.LocalContext.current
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
     var pick by remember { mutableStateOf(false) }
     var creating by remember { mutableStateOf(false) }
@@ -337,13 +340,15 @@ private fun WorkoutScreen(ctx: Ctx, id: String) {
                         Text("${(now - w.start) / 60_000} мин", style = MaterialTheme.typography.titleLarge)
                     }
                     Column(Modifier.weight(1f)) {
-                        Muted("Отдых")
+                        Muted("Отдых · β вибрация в конце")
                         val r = if (lastSet > 0) (now - lastSet) / 1000 else 0L
-                        Text(if (lastSet > 0) "${r / 60}:${"%02d".format(r % 60)}" else "—", style = MaterialTheme.typography.titleLarge)
+                        val over = restFor > 0 && r >= restFor
+                        Text(if (lastSet > 0) "${r / 60}:${"%02d".format(r % 60)}" + (if (restFor > 0) " из ${restFor / 60}:${"%02d".format(restFor % 60)}" else "") else "—",
+                            style = MaterialTheme.typography.titleLarge, color = if (over) C.good else C.text)
                     }
                 }
                 Line {
-                    Primary("Завершить", { save(w.copy(end = System.currentTimeMillis())); s.kvPut(ACTIVE, null) }, Modifier.weight(1f))
+                    Primary("Завершить", { save(w.copy(end = System.currentTimeMillis())); s.kvPut(ACTIVE, null); by.zaberezh.forma.sys.Timers.cancelRest(c) }, Modifier.weight(1f))
                     Flat("Отменить", { cancel = true }, C.muted)
                 }
             }
@@ -354,7 +359,15 @@ private fun WorkoutScreen(ctx: Ctx, id: String) {
             val mate = item?.pair?.let { l -> plan.items.firstOrNull { it.pair == l && it.ex != exId } }?.let { p.ex(it.ex)?.name }
             ExerciseCard(pair.first, pair.second, w.sets.filter { it.ex == exId },
                 superset = mate?.let { "${pairLabels(plan.items)[exId]} · суперсет с «$it»: подход → 60–90 с → подход второго" },
-                onAdd = { set -> save(w.copy(sets = w.sets + set)); lastSet = System.currentTimeMillis() },
+                onAdd = { set ->
+                    save(w.copy(sets = w.sets + set)); lastSet = System.currentTimeMillis()
+                    // таймер отдыха: суперсет — 75 с, иначе отдых упражнения; дальше — следующий подход или упражнение
+                    val ex = pair.first
+                    val doneHere = w.sets.count { it.ex == exId } + 1
+                    restFor = if (mate != null) 75 else ex.restSec
+                    by.zaberezh.forma.sys.Timers.startRest(c, restFor,
+                        if (doneHere < ex.sets) "${ex.name}: подход ${doneHere + 1} из ${ex.sets}" else "Переходи к следующему упражнению")
+                },
                 onUndo = {
                     val i = w.sets.indexOfLast { it.ex == exId }
                     if (i >= 0) save(w.copy(sets = w.sets.filterIndexed { j, _ -> j != i }))
@@ -381,7 +394,7 @@ private fun WorkoutScreen(ctx: Ctx, id: String) {
         onDismissRequest = { cancel = false },
         title = { Text("Отменить тренировку?") },
         text = { Text("Записанные подходы будут удалены.") },
-        confirmButton = { TextButton({ cancel = false; s.delete(id); s.kvPut(ACTIVE, null) }) { Text("Удалить", color = C.bad) } },
+        confirmButton = { TextButton({ cancel = false; s.delete(id); s.kvPut(ACTIVE, null); by.zaberezh.forma.sys.Timers.cancelRest(c) }) { Text("Удалить", color = C.bad) } },
         dismissButton = { TextButton({ cancel = false }) { Text("Назад") } },
         containerColor = C.cardHi,
     )

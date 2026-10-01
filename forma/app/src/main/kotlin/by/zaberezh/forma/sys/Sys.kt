@@ -30,6 +30,7 @@ object Notify {
         c.getSystemService(NotificationManager::class.java)
             .createNotificationChannel(NotificationChannel(CH, "Напоминания", NotificationManager.IMPORTANCE_DEFAULT))
         WakeAlarm.channel(c)
+        Timers.channel(c)
     }
 
     /** Готовое уведомление — с той же проверкой разрешения. */
