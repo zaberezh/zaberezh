@@ -87,7 +87,7 @@ fun SettingsScreen() {
             "sleepH" to st.sleepTargetH.r1(), "wakeH" to st.wakeHour.toString(), "wakeM" to "%02d".format(st.wakeMinute),
         )
     }
-    var key by remember(st) { mutableStateOf(st.apiKey) }
+    var key by remember(st) { mutableStateOf(by.zaberezh.forma.sys.Secrets.claudeKey(c)) }
     var bedReminder by remember(st) { mutableStateOf(st.bedReminder) }
     var weekends by remember(st) { mutableStateOf(st.gymWeekends) }
     var split by remember(st) { mutableStateOf(st.split) }
@@ -108,12 +108,14 @@ fun SettingsScreen() {
     }
     val importer = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         uri?.let { u ->
-            msg = runCatching { c.contentResolver.openInputStream(u)!!.use { Forma.store.importJson(it.readBytes().decodeToString()) }; "Импортировано" }
+            msg = runCatching { c.contentResolver.openInputStream(u)!!.use { Forma.store.importJson(it.readBytes().decodeToString()) }
+                by.zaberezh.forma.sys.Secrets.migrate(c, Forma.store); "Импортировано" }
                 .getOrElse { it.message }
         }
     }
 
     fun saveAll() {
+        by.zaberezh.forma.sys.Secrets.setClaudeKey(c, key)   // ключ — только в сейфе Keystore, не в базе
         fun d(k: String, def: Double) = f[k]?.num() ?: def
         SETTINGS.set(s, SETTINGS.get(s).copy(
             profile = p.copy(
@@ -127,7 +129,7 @@ fun SettingsScreen() {
             gymWeekends = weekends, split = split, weighReminder = weighOn, waterReminder = water, wakeAlarm = wake, iisWatch = iis,
             weighHour = d("wH", 7.0).toInt().coerceIn(0, 23), weighMinute = d("wM", 20.0).toInt().coerceIn(0, 59),
             weighWeekendHour = d("weH", 11.0).toInt().coerceIn(0, 23), weighWeekendMinute = d("weM", 0.0).toInt().coerceIn(0, 59),
-            apiKey = key.trim(), apiUrl = url.trim(), model = model.trim().ifEmpty { "claude-opus-5-5" },
+            apiKey = "", apiUrl = url.trim(), model = model.trim().ifEmpty { "claude-opus-5-5" },
         ))
         Morning.schedule(c)
         Evening.schedule(c)

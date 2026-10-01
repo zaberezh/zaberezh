@@ -48,7 +48,7 @@ object Checkup {
     fun daysSinceLast(ctx: Ctx): Long? = CHECKUP.all(ctx.store).lastOrNull()?.let { ChronoUnit.DAYS.between(it.first.day, ctx.today) }
 
     fun firstDataDay(ctx: Ctx): LocalDate? =
-        ctx.store.allTypes().mapNotNull { t -> ctx.store.list(t).firstOrNull()?.day }.minOrNull()
+        ctx.store.firstTs()?.let { java.time.Instant.ofEpochMilli(it).atZone(by.zaberezh.forma.core.store.ZONE).toLocalDate() }
 
     fun due(ctx: Ctx): Boolean {
         val n = daysSinceLast(ctx)

@@ -16,6 +16,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -58,7 +59,8 @@ private data class DayTask(val title: String, val sub: String, val done: Boolean
 @Composable
 fun TodayScreen(onTab: (Int) -> Unit, onStudy: (Int) -> Unit) {
     val ctx = rememberCtx()
-    val tasks = dayTasks(ctx)
+    // пересчёт только при изменении данных (ctx меняется с версией хранилища), а не на каждую перерисовку
+    val tasks = remember(ctx) { dayTasks(ctx) }
     Screen {
         item {
             Text(
@@ -143,9 +145,9 @@ private fun SleepLine(ctx: Ctx, onClick: () -> Unit) {
 @Composable
 private fun StudyToday(ctx: Ctx, onStudy: (Int) -> Unit) {
     val s = ctx.store
-    val tt = TIMETABLE.get(s)
+    val tt = remember(ctx) { TIMETABLE.get(s) }
     val sub = STUDY_PREFS.get(s).subgroup
-    val lessons = Bsuir.on(tt, ctx.today, sub)
+    val lessons = remember(tt, sub, ctx.today) { Bsuir.on(tt, ctx.today, sub) }
     val now = LocalTime.now(ZONE)
     fun time(x: String) = runCatching { LocalTime.parse(x) }.getOrNull()
     Block("Учёба сегодня", trailing = { if (lessons.isNotEmpty()) Pill("${lessons.size} " + plural(lessons.size, "пара", "пары", "пар"), C.study) }) {
@@ -179,8 +181,8 @@ private fun StudyToday(ctx: Ctx, onStudy: (Int) -> Unit) {
                 }
             }
         }
-        val hw = Study.open(s, ctx.today).count { it.second.due == ctx.today.toString() }
-        val all = Study.labs(s).map { it.second }
+        val hw = remember(ctx) { Study.open(s, ctx.today).count { it.second.due == ctx.today.toString() } }
+        val all = remember(ctx) { Study.labs(s).map { it.second } }
         val labs = all.count { it.stage == 0 }
         val submit = all.count { it.stage == 1 }
         if (hw > 0 || labs > 0 || submit > 0) Buttons {

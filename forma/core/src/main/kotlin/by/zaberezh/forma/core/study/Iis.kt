@@ -1,9 +1,6 @@
 package by.zaberezh.forma.core.study
 
 import by.zaberezh.forma.core.store.JSON
-import kotlinx.serialization.json.JsonArray
-import kotlinx.serialization.json.JsonElement
-import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
@@ -140,91 +137,5 @@ object Iis {
             else -> l
         }
         return u.takeIf { it.startsWith("https://") && " " !in it }.orEmpty()
-    }
-
-    // ---------- профиль из ответа на вход ----------
-    data class Profile(val fio: String, val group: String, val photo: String, val extra: List<Pair<String, String>>)
-
-    fun profile(json: String): Profile? = runCatching {
-        val o = JSON.parseToJsonElement(json) as? JsonObject ?: return null
-        fun s(vararg k: String) = k.firstNotNullOfOrNull { (o[it] as? JsonPrimitive)?.contentOrNull?.takeIf(String::isNotBlank) }
-        Profile(
-            fio = s("fio", "fullName", "name") ?: listOfNotNull(s("lastName"), s("firstName"), s("middleName")).joinToString(" "),
-            group = s("group", "groupName", "studentGroup")
-                ?: ((o["education"] as? JsonArray)?.firstOrNull() as? JsonObject)?.get("group")?.let { (it as? JsonPrimitive)?.contentOrNull }.orEmpty(),
-            photo = photoUrl(s("photoUrl", "photoLink", "photo")),
-            extra = JsonView.cards(json).firstOrNull()?.rows.orEmpty().take(6),
-        )
-    }.getOrNull()
-}
-
-/** Карточка для показа любого JSON ответа ИИС в дизайне приложения. */
-data class JCard(val title: String, val rows: List<Pair<String, String>>, val children: List<JCard> = emptyList())
-
-/**
- * Универсальный показ ответов ИИС: объект — карточка «поле … значение», массив объектов — карточки,
- * вложенные объекты — вложенные карточки. Служебные поля (id, base64, ссылки) скрываются.
- */
-object JsonView {
-    private val NAMES = mapOf(
-        "fio" to "ФИО", "fullname" to "ФИО", "lastname" to "Фамилия", "firstname" to "Имя", "middlename" to "Отчество",
-        "birthdate" to "Дата рождения", "birthday" to "Дата рождения", "group" to "Группа", "groupname" to "Группа", "studentgroup" to "Группа",
-        "faculty" to "Факультет", "facultyabbrev" to "Факультет", "speciality" to "Специальность", "specialityname" to "Специальность",
-        "course" to "Курс", "email" to "Почта", "phone" to "Телефон", "mobilephone" to "Телефон", "address" to "Адрес",
-        "subject" to "Предмет", "subjectname" to "Предмет", "lessonname" to "Предмет", "mark" to "Отметка", "marks" to "Отметки",
-        "average" to "Средний балл", "averagemark" to "Средний балл", "gpa" to "Средний балл", "semester" to "Семестр", "term" to "Семестр",
-        "date" to "Дата", "hours" to "Часы", "totalhours" to "Всего часов", "teacher" to "Преподаватель", "employee" to "Преподаватель",
-        "type" to "Тип", "lessontype" to "Тип занятия", "formofcontrol" to "Форма контроля", "commonmark" to "Итог",
-        "omissions" to "Пропуски", "respectful" to "По уважительной", "notrespectful" to "Без уважительной", "count" to "Количество",
-        "number" to "Номер", "name" to "Название", "title" to "Название", "status" to "Статус", "comment" to "Комментарий",
-        "curator" to "Куратор", "headman" to "Староста", "students" to "Студенты", "rating" to "Рейтинг", "position" to "Место",
-        "certificates" to "Справки", "reference" to "Справка", "provisionplace" to "Куда", "dateorder" to "Дата заказа",
-    )
-    private val TITLE_KEYS = listOf("subject", "subjectName", "lessonName", "name", "title", "fio", "semester", "term", "number", "date")
-    private val HIDE = setOf("id", "photo", "photourl", "photolink", "password", "token", "cookie", "hash")
-
-    fun label(key: String): String = NAMES[key.lowercase()]
-        ?: key.replace(Regex("([a-zа-я])([A-ZА-Я])"), "$1 $2").replace('_', ' ').lowercase().replaceFirstChar { it.uppercase() }
-
-    private fun prim(e: JsonElement): String? = when (e) {
-        is JsonNull -> null
-        is JsonPrimitive -> e.contentOrNull?.takeIf { it.isNotBlank() && it.length < 300 }?.let { if (it == "true") "да" else if (it == "false") "нет" else it }
-        is JsonArray -> e.mapNotNull { (it as? JsonPrimitive)?.let(::prim) }.takeIf { it.size == e.size && it.isNotEmpty() }?.joinToString(", ")
-        else -> null
-    }
-
-    private fun hidden(k: String, v: JsonElement) = k.lowercase() in HIDE || k.lowercase().endsWith("id") && v is JsonPrimitive ||
-        ((v as? JsonPrimitive)?.contentOrNull?.let { it.startsWith("http") || it.length > 300 } == true)
-
-    private fun card(title: String, o: JsonObject, depth: Int): JCard {
-        val rows = mutableListOf<Pair<String, String>>(); val kids = mutableListOf<JCard>()
-        for ((k, v) in o) {
-            if (hidden(k, v)) continue
-            val p = prim(v)
-            when {
-                p != null -> rows += label(k) to p
-                depth >= 4 -> {}
-                v is JsonObject -> card(label(k), v, depth + 1).takeIf { it.rows.isNotEmpty() || it.children.isNotEmpty() }?.let { kids += it }
-                v is JsonArray -> v.filterIsInstance<JsonObject>().forEachIndexed { i, x -> kids += card(titleOf(x) ?: "${label(k)} ${i + 1}", x, depth + 1) }
-            }
-        }
-        return JCard(title, rows, kids)
-    }
-
-    private fun titleOf(o: JsonObject) = TITLE_KEYS.firstNotNullOfOrNull { k -> (o[k] as? JsonPrimitive)?.contentOrNull?.takeIf { it.isNotBlank() } }
-
-    /** Ответ раздела → карточки. Непонятный формат — одна карточка с текстом. */
-    fun cards(json: String): List<JCard> {
-        val e = runCatching { JSON.parseToJsonElement(json) }.getOrNull() ?: return listOf(JCard("Ответ", listOf("" to json.take(500))))
-        return when (e) {
-            is JsonObject -> {
-                val c = card("", e, 0)
-                // объект-обёртка с одним списком — сразу показываем элементы списка
-                if (c.rows.isEmpty() && c.children.isNotEmpty()) c.children else listOf(c)
-            }
-            is JsonArray -> e.mapIndexedNotNull { i, x -> (x as? JsonObject)?.let { card(titleOf(it) ?: "${i + 1}", it, 1) } }
-                .ifEmpty { listOfNotNull(prim(e)?.let { JCard("", listOf("" to it)) }) }
-            else -> listOfNotNull(prim(e)?.let { JCard("", listOf("" to it)) })
-        }
     }
 }

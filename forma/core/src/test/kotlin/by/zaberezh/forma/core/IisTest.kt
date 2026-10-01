@@ -6,7 +6,6 @@ import by.zaberezh.forma.core.study.HttpResp
 import by.zaberezh.forma.core.study.Iis
 import by.zaberezh.forma.core.study.IisError
 import by.zaberezh.forma.core.study.IisUnauthorized
-import by.zaberezh.forma.core.study.JsonView
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -32,7 +31,7 @@ class IisTest {
         val s = Iis.login(http, "65350001", "right")
         assertEquals("JSESSIONID=abc; XSRF-TOKEN=t0k", s.cookie)
         assertFalse(s.cookie.contains("right"))
-        assertEquals("Иванов Иван Иванович", Iis.profile(s.profile)!!.fio)
+        assertEquals("Иванов Иван Иванович", by.zaberezh.forma.core.study.Cabinet.person(null, null, s.profile).fio)
         assertFailsWith<IisError> { Iis.login(http, "65350001", "wrong") }
         Iis.get(http, s, "/markbook")
         assertEquals("t0k", sent.last().third["X-XSRF-TOKEN"])
@@ -40,19 +39,6 @@ class IisTest {
         assertFailsWith<IisError> { Iis.get(http, s, "/nope") }
         assertTrue(sent.all { it.second.startsWith("https://iis.bsuir.by/api/v1/") })
         assertFailsWith<IllegalArgumentException> { Iis.jdk.send("GET", "https://evil.example/api", null, emptyMap()) }
-    }
-
-    @Test fun jsonViewShowsAnyAnswerReadably() {
-        val cards = JsonView.cards("""{"averageMark":8.4,"semesters":[{"semester":1,"marks":[{"subject":"МА","mark":"9","hours":120,"id":5}]}]}""")
-        val root = cards.single()
-        assertEquals(listOf("Средний балл" to "8.4"), root.rows)
-        val sem = root.children.single()
-        assertEquals("1", sem.title)
-        val ma = sem.children.single()
-        assertEquals("МА", ma.title)
-        assertEquals(listOf("Предмет" to "МА", "Отметка" to "9", "Часы" to "120"), ma.rows)   // id скрыт
-        assertEquals("Total omission hours".lowercase().replaceFirstChar { it.uppercase() }, JsonView.label("totalOmissionHours"))
-        assertEquals(2, JsonView.cards("""[{"name":"Справка 1","status":"готова"},{"name":"Справка 2"}]""").size)
     }
 
     @Test fun teacherDetailsFromSchedule() {
@@ -106,7 +92,7 @@ class IisTest {
         assertEquals(null, Iis.sessionFromCookies(h, ""))
         assertEquals(null, Iis.sessionFromCookies(h, "SESSION=bad"))
         val s = Iis.sessionFromCookies(h, "SESSION=ok")!!
-        val p = Iis.profile(s.profile)!!
+        val p = by.zaberezh.forma.core.study.Cabinet.person(null, null, s.profile)
         assertEquals("Иванов Иван Иванович", p.fio); assertEquals("653502", p.group); assertEquals("https://iis.bsuir.by/p.jpg", p.photo)
     }
 

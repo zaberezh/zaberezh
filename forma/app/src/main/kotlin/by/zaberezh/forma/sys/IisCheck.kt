@@ -55,10 +55,10 @@ object IisCheck {
         }
         val sync = Study.syncFromIis(s, r)
         val news = IisWatch.check(s, r)
-        if (news.marks.isNotEmpty()) Notify.post(c, 20, if (news.marks.size == 1) "Новая отметка" else "Новые отметки: ${news.marks.size}", news.marks)
-        if (news.omissions.isNotEmpty()) Notify.post(c, 21, "Записан пропуск", news.omissions)
+        if (news.marks.isNotEmpty()) Notify.post(c, 20, if (news.marks.size == 1) "Новая отметка" else "Новые отметки: ${news.marks.size}", news.marks, private = true)
+        if (news.omissions.isNotEmpty()) Notify.post(c, 21, "Записан пропуск", news.omissions, private = true)
         val labs = sync.graded.map { "Засчитана: $it" } + sync.created.takeIf { it.isNotEmpty() }?.let { listOf("Новые в ИИС: " + it.joinToString(", ")) }.orEmpty()
-        if (labs.isNotEmpty()) Notify.post(c, 22, "Лабы", labs)
+        if (labs.isNotEmpty()) Notify.post(c, 22, "Лабы", labs, private = true)
     }
 }
 
