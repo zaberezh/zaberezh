@@ -49,7 +49,9 @@ data class RatingType(val abbrev: String, val lessons: List<RatingLesson>, val l
 data class RatingLesson(val date: String, val marks: List<RatingMark>, val missed: Int, val subgroup: Int, val controlPoint: String)
 data class RatingMark(val mark: Int, val task: Int?)
 /** Лабы по типу занятия: сдано заданий из [total], ближайший срок по несданному и сколько сроков уже прошло. */
-data class LabProgress(val done: Int, val total: Int, val next: String?, val nextTask: Int?, val overdue: Int)
+data class LabProgress(val done: Int, val total: Int, val next: String?, val nextTask: Int?, val overdue: Int, val tasks: List<IisTask> = emptyList())
+/** Одна лаба/задание в ИИС: номер, срок (ISO), сдана ли (есть отметка с этим номером), отметка и когда. */
+data class IisTask(val number: Int, val due: String?, val done: Boolean, val mark: Int?, val doneOn: String?)
 
 /** Пропуски: по месяцам, без уважительной причины, справки об уважительных. */
 data class Omissions(val monthly: List<Pair<String, Int>>, val unexcused: List<Omission>, val certificates: List<OmissionCert>) : CabinetData {
@@ -171,7 +173,13 @@ object Cabinet {
                     val due = g["deadlines"].a().mapNotNull { dv -> dv.o()?.let { d -> dates[d.i("lessonId")]?.let { it to d.i("taskNumber") } } }
                         .filter { (_, task) -> task == null || task !in tasks }.sortedBy { it.first }
                     val next = due.firstOrNull { !it.first.isBefore(today) }
-                    LabProgress(done, total, next?.first?.format(DMY), next?.second, due.count { it.first.isBefore(today) && it.second != null })
+                    val allDue = g["deadlines"].a().mapNotNull { dv -> dv.o()?.let { d -> d.i("taskNumber")?.let { k -> dates[d.i("lessonId")]?.let { k to it } } } }
+                    val perTask = (1..total).map { k ->
+                        val graded = lessons.flatMap { l -> l.marks.filter { it.task == k }.map { l.date to it.mark } }.lastOrNull()
+                        IisTask(k, allDue.filter { it.first == k }.minOfOrNull { it.second }?.toString(), k in tasks, graded?.second,
+                            graded?.first?.let { day(it)?.toString() })
+                    }
+                    LabProgress(done, total, next?.first?.format(DMY), next?.second, due.count { it.first.isBefore(today) && it.second != null }, perTask)
                 }
                 RatingType(t.s("abbrev"), lessons, labs)
             }
