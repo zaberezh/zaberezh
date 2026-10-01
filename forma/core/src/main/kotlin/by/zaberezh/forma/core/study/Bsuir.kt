@@ -29,12 +29,20 @@ data class Lesson(
     val subgroup: Int = 0,             // 0 — вся группа
     val rooms: List<String> = emptyList(),
     val teachers: List<String> = emptyList(),
+    val teachersFull: List<String> = emptyList(),   // «Иванов Иван Иванович»
+    val teacherInfo: List<String> = emptyList(),    // «доцент, к.т.н.»
+    val photos: List<String> = emptyList(),          // ссылки на фото преподавателей (ИИС)
     val from: String? = null,
     val to: String? = null,
     val date: String? = null,
     val note: String = "",
 ) {
     val title get() = full.ifBlank { subject }
+    /** Полное название типа занятия. */
+    val typeFull get() = when (type.uppercase()) {
+        "ЛК" -> "Лекция"; "ПЗ" -> "Практическое занятие"; "ЛР" -> "Лабораторная работа"
+        "КОНС", "КОНСУЛЬТАЦИЯ" -> "Консультация"; else -> type
+    }
 }
 
 /** Скачанное расписание группы. weekAnchor — дата и номер учебной недели (1–4) с сервера. */
@@ -73,10 +81,10 @@ object Bsuir {
     private fun JsonElement?.arr(): List<JsonElement> = (this as? JsonArray) ?: emptyList()
 
     private fun lesson(o: JsonObject, weekday: Int): Lesson {
-        val teachers = o["employees"].arr().mapNotNull { e ->
-            val p = e as? JsonObject ?: return@mapNotNull null
+        val emps = o["employees"].arr().mapNotNull { it as? JsonObject }
+        val teachers = emps.map { p ->
             listOfNotNull(p["lastName"].str(), p["firstName"].str()?.firstOrNull()?.let { "$it." }, p["middleName"].str()?.firstOrNull()?.let { "$it." })
-                .joinToString(" ").takeIf { it.isNotBlank() }
+                .joinToString(" ")
         }
         return Lesson(
             subject = o["subject"].str() ?: o["subjectFullName"].str() ?: "Занятие",
@@ -89,6 +97,9 @@ object Bsuir {
             subgroup = (o["numSubgroup"] as? JsonPrimitive)?.intOrNull ?: 0,
             rooms = o["auditories"].arr().mapNotNull { it.str() },
             teachers = teachers,
+            teachersFull = emps.map { p -> listOfNotNull(p["lastName"].str(), p["firstName"].str(), p["middleName"].str()).joinToString(" ") },
+            teacherInfo = emps.map { p -> listOfNotNull(p["rank"].str(), p["degree"].str()).filter { it.isNotBlank() }.joinToString(", ") },
+            photos = emps.map { p -> p["photoLink"].str().orEmpty() },
             from = date(o["startLessonDate"].str()),
             to = date(o["endLessonDate"].str()),
             date = date(o["dateLesson"].str()),

@@ -33,6 +33,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import by.zaberezh.forma.Forma
 import by.zaberezh.forma.core.SETTINGS
+import by.zaberezh.forma.core.study.STUDY_PREFS
+import by.zaberezh.forma.core.study.TIMETABLE
 import by.zaberezh.forma.core.gym.SPLITS
 import by.zaberezh.forma.core.ai.Claude
 import by.zaberezh.forma.core.r1
@@ -186,6 +188,38 @@ fun SettingsScreen() {
                 })
                 Primary("Сохранить", { saveAll(); msg = "Сохранено" }, Modifier.fillMaxWidth())
                 Note(msg)
+            }
+        }
+        item {
+            val sp = STUDY_PREFS.get(s)
+            val tt = TIMETABLE.get(s)
+            var group by remember(sp.group) { mutableStateOf(sp.group) }
+            var loadingTt by remember { mutableStateOf(false) }
+            var ttMsg by remember { mutableStateOf<String?>(null) }
+            Block("Учёба") {
+                Line {
+                    Field("Группа БГУИР", group, { group = it.filter(Char::isDigit).take(6) }, Modifier.weight(1f))
+                    Secondary("Сохранить", { STUDY_PREFS.set(s, sp.copy(group = group)); ttMsg = "Группа сохранена — расписание обновится" },
+                        enabled = group.length == 6 && group != sp.group)
+                }
+                Text("Подгруппа", style = MaterialTheme.typography.bodyMedium)
+                Buttons {
+                    listOf(0 to "Обе", 1 to "1-я", 2 to "2-я").forEach { (n, label) ->
+                        FilterChip(selected = sp.subgroup == n, onClick = { STUDY_PREFS.set(s, sp.copy(subgroup = n)) }, label = { Text(label) })
+                    }
+                }
+                Line {
+                    Muted(if (tt.fetchedAt > 0) "Расписание ${tt.group}: обновлено ${java.time.format.DateTimeFormatter.ofPattern("d MMM, HH:mm", RU)
+                        .format(java.time.Instant.ofEpochMilli(tt.fetchedAt).atZone(java.time.ZoneId.systemDefault()))}" else "Расписание не загружено",
+                        Modifier.weight(1f))
+                    if (loadingTt) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                    else Flat("Обновить", {
+                        loadingTt = true; ttMsg = null
+                        scope.launch { downloadTimetable(s).onSuccess { ttMsg = "Обновлено" }.onFailure { ttMsg = it.message }; loadingTt = false }
+                    })
+                }
+                Note(ttMsg)
+                Muted("Источник — открытое расписание ИИС БГУИР (iis.bsuir.by).")
             }
         }
         item {

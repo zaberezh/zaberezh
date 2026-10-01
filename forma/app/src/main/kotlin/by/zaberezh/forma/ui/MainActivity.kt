@@ -57,6 +57,7 @@ private val TABS = listOf(
 private val STUDY_TABS = listOf(
     Tab("Расписание", R.drawable.nav_schedule),
     Tab("Лабы", R.drawable.nav_labs),
+    Tab("Кабинет", R.drawable.nav_cabinet),
 )
 private const val SETTINGS_TAB = 99
 private val SECTIONS = listOf("Здоровье", "Учёба")
@@ -133,7 +134,8 @@ class MainActivity : ComponentActivity() {
                             if (settings) SettingsScreen()
                             else if (study) when (tab) {
                                 0 -> ScheduleScreen()
-                                else -> LabsScreen()
+                                1 -> LabsScreen()
+                                else -> CabinetScreen()
                             }
                             else when (tab) {
                                 0 -> TodayScreen(onTab = go)

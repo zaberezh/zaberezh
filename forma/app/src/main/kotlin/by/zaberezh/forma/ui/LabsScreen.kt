@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -42,6 +43,9 @@ import by.zaberezh.forma.core.study.Lab
 import by.zaberezh.forma.core.study.LabTask
 import by.zaberezh.forma.core.study.Study
 import by.zaberezh.forma.core.study.TIMETABLE
+import java.time.format.DateTimeFormatter
+
+private val DM = DateTimeFormatter.ofPattern("d MMM", RU)
 
 /**
  * Лабы: предмет, номер, задания (сделано / нет), своё название по желанию.
@@ -56,7 +60,25 @@ fun LabsScreen() {
     val done = labs.filter { it.second.done }
     var showDone by remember { mutableStateOf(false) }
 
+    val homework = Study.open(s, ctx.today)
     Screen {
+        if (homework.isNotEmpty()) item {
+            Block("Домашка", trailing = { Pill("${homework.size}") }) {
+                homework.forEachIndexed { i, (e, hw) ->
+                    if (i > 0) HorizontalDivider(color = C.line)
+                    androidx.compose.foundation.layout.Row(
+                        Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable { Study.setHomeworkDone(s, e.id, !hw.done) },
+                        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        CheckCircle(hw.done, { Study.setHomeworkDone(s, e.id, !hw.done) }, 28.dp)
+                        Column(Modifier.weight(1f)) {
+                            Text(hw.text, style = MaterialTheme.typography.bodyLarge)
+                            Muted("${hw.subject}${if (hw.type.isNotBlank()) " · ${hw.type}" else ""} · к ${DM.format(java.time.LocalDate.parse(hw.due))}")
+                        }
+                    }
+                }
+            }
+        }
         item {
             Block("Лабы", trailing = { if (labs.isNotEmpty()) Pill("${done.size} из ${labs.size}") }) {
                 if (labs.isEmpty()) Muted("Добавь лабу: предмет, номер и сколько в ней заданий. Задания отмечаются по одному — прогресс лабы считается сам.")
@@ -83,7 +105,7 @@ fun LabsScreen() {
 @Composable
 private fun NewLab(s: Store) {
     var open by remember { mutableStateOf(false) }
-    if (!open) { Primary("+ Новая лаба", { open = true }, Modifier.fillMaxWidth()); return }
+    if (!open) { Primary("+ Новая лаба", { open = true }, Modifier.fillMaxWidth().height(52.dp)); return }
     val subjects = Bsuir.subjects(TIMETABLE.get(s))
     var subject by remember { mutableStateOf("") }
     var number by remember { mutableStateOf("") }
@@ -160,13 +182,15 @@ private fun LabCard(s: Store, id: String, lab: Lab) {
                     rename = t.name to { v: String -> Study.updateLab(s, id) { l -> l.copy(tasks = l.tasks.mapIndexed { j, x -> if (j == i) x.copy(name = v) else x }) } }
                 } }
                 HorizontalDivider(color = C.line)
-                Buttons {
-                    Flat("+ задание", { Study.updateLab(s, id) { it.copy(tasks = it.tasks + LabTask("Задание ${it.tasks.size + 1}")) } })
-                    if (lab.tasks.isNotEmpty()) Flat("− задание", { Study.updateLab(s, id) { it.copy(tasks = it.tasks.dropLast(1)) } }, C.muted)
-                    Flat("Название", { rename = lab.title to { v: String -> Study.updateLab(s, id) { it.copy(title = v) } } })
-                    Flat(if (lab.done) "Вернуть в работу" else "Сдана целиком", { Study.setLabDone(s, id, !lab.done) })
-                    DeleteButton("лабу") { s.delete(id) }
+                Grid2(listOf(0, 1, 2, 3)) { k, m ->
+                    when (k) {
+                        0 -> Secondary("+ Задание", { Study.updateLab(s, id) { it.copy(tasks = it.tasks + LabTask("Задание ${it.tasks.size + 1}")) } }, m)
+                        1 -> Secondary("− Задание", { Study.updateLab(s, id) { it.copy(tasks = it.tasks.dropLast(1)) } }, m, enabled = lab.tasks.isNotEmpty())
+                        2 -> Secondary("Название", { rename = lab.title to { v: String -> Study.updateLab(s, id) { it.copy(title = v) } } }, m)
+                        else -> Primary(if (lab.done) "В работу" else "Сдана", { Study.setLabDone(s, id, !lab.done) }, m)
+                    }
                 }
+                Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { DeleteButton("лабу") { s.delete(id) } }
             }
         }
     }
@@ -185,8 +209,14 @@ private fun LabCard(s: Store, id: String, lab: Lab) {
 
 /** Задание: кружок слева (зелёный с ✓ — сделано), название зачёркивается; нажатие на название — переименовать. */
 @Composable
-private fun TaskRow(t: LabTask, onToggle: () -> Unit, onRename: () -> Unit) = Line {
-    CheckCircle(t.done, onToggle)
-    Text(t.name, Modifier.weight(1f).clickable(onClick = onRename), style = MaterialTheme.typography.bodyMedium,
+private fun TaskRow(t: LabTask, onToggle: () -> Unit, onRename: () -> Unit) = androidx.compose.foundation.layout.Row(
+    Modifier.fillMaxWidth().heightIn(min = 52.dp).clip(RoundedCornerShape(12.dp)).clickable(onClick = onToggle).padding(horizontal = 4.dp),
+    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp),
+) {
+    CheckCircle(t.done, onToggle, 30.dp)
+    Text(t.name, Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge,
         textDecoration = if (t.done) TextDecoration.LineThrough else null, color = if (t.done) C.muted else C.text)
+    Box(Modifier.size(40.dp).clip(RoundedCornerShape(10.dp)).clickable(onClick = onRename), contentAlignment = Alignment.Center) {
+        Text("✎", color = C.muted, style = MaterialTheme.typography.titleMedium)
+    }
 }
