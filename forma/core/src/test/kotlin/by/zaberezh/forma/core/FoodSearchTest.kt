@@ -87,4 +87,23 @@ class FoodSearchTest {
         assertTrue(calls <= 4, "запросов $calls")
         assertEquals(listOf("сникерс"), r.missing)
     }
+
+    @Test fun everydayDishesAndWithCombos() {
+        fun names(q: String) = FoodPipeline(MemoryStore(), fetch = { null }).run(q).also { assertTrue(it.missing.isEmpty(), "не найдено: $q") }.items
+        assertEquals("Суп гороховый", names("гороховый суп").single().name)
+        assertEquals(listOf("Макароны вареные", "Котлета"), names("макароны с 2 котлетами").map { it.name })
+        assertEquals(160.0, names("макароны с 2 котлетами")[1].grams)                 // две котлеты по 80 г
+        assertEquals(2, names("гречка с курицей").size)
+        assertEquals(400.0, names("солянка 400г").single().grams)
+    }
+
+    @Test fun statedGramsWinOverOutsideEstimate() {
+        val est = listOf(FoodItem("Шоколадка Аленка", 100.0, Macro(550.0, 7.0, 35.0, 54.0)), FoodItem("Кола", 330.0, Macro(42.0, 0.0, 0.0, 10.6)))
+        val fixed = by.zaberezh.forma.core.food.keepGrams(listOf("шоколадка аленка 30г", "кола"), est)
+        assertEquals(listOf(30.0, 330.0), fixed.map { it.grams })
+        assertEquals(550.0, fixed[0].per100.kcal)                                      // на 100 г — те же
+        val claude = FoodPipeline(MemoryStore(), fetch = { null }, claude = { _, _ -> listOf(FoodItem("Шоколадка Милка", 90.0, Macro(530.0, 6.0, 30.0, 58.0))) })
+            .run("шоколадка милка с орехами 30 г")
+        assertEquals(30.0, claude.items.single().grams)
+    }
 }
