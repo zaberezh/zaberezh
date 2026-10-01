@@ -49,15 +49,16 @@ private val DM = DateTimeFormatter.ofPattern("d MMM", RU)
 
 /**
  * Лабы: предмет, номер, задания (сделано / нет), своё название по желанию.
- * Прогресс лабы — доля сделанных заданий; сделанная лаба — зелёный кружок с ✓ и зачёркнутое название.
+ * Прогресс лабы — доля сделанных заданий. Сделанную ещё надо сдать (жёлтый ✓, «сдать»); сданная — зелёный ✓ и зачёркнута.
  */
 @Composable
 fun LabsScreen() {
     val ctx = rememberCtx()
     val s = ctx.store
     val labs = Study.labs(s)
-    val active = labs.filter { !it.second.done }
-    val done = labs.filter { it.second.done }
+    val active = labs.filter { it.second.stage == 0 }
+    val toSubmit = labs.filter { it.second.stage == 1 }
+    val done = labs.filter { it.second.stage == 2 }
     var showDone by remember { mutableStateOf(false) }
 
     val homework = Study.open(s, ctx.today)
@@ -80,11 +81,12 @@ fun LabsScreen() {
             }
         }
         item {
-            Block("Лабы", trailing = { if (labs.isNotEmpty()) Pill("${done.size} из ${labs.size}") }) {
+            Block("Лабы", trailing = { if (labs.isNotEmpty()) Pill("сдано ${done.size} из ${labs.size}", if (done.size == labs.size) C.good else C.accent) }) {
                 if (labs.isEmpty()) Muted("Добавь лабу: предмет, номер и сколько в ней заданий. Задания отмечаются по одному — прогресс лабы считается сам.")
                 else {
                     val tasks = active.sumOf { it.second.total }; val tasksDone = active.sumOf { it.second.doneCount }
-                    Stat("Активных", "${active.size}")
+                    Stat("В работе", "${active.size}")
+                    if (toSubmit.isNotEmpty()) Stat("Сделаны — нужно сдать", "${toSubmit.size}", C.warn)
                     if (tasks > 0) Stat("Заданий осталось", "${tasks - tasksDone} из $tasks")
                 }
                 NewLab(s)
@@ -94,8 +96,12 @@ fun LabsScreen() {
             item { Text(subject, style = MaterialTheme.typography.labelLarge, color = C.muted, modifier = Modifier.padding(start = 4.dp, top = 4.dp)) }
             list.forEach { (e, lab) -> item(key = e.id) { LabCard(s, e.id, lab) } }
         }
+        if (toSubmit.isNotEmpty()) {
+            item { Text("Нужно сдать", style = MaterialTheme.typography.labelLarge, color = C.warn, modifier = Modifier.padding(start = 4.dp, top = 4.dp)) }
+            toSubmit.forEach { (e, lab) -> item(key = e.id) { LabCard(s, e.id, lab) } }
+        }
         if (done.isNotEmpty()) {
-            item { Flat(if (showDone) "Скрыть сделанные (${done.size})" else "Сделанные (${done.size})", { showDone = !showDone }, C.muted) }
+            item { Flat(if (showDone) "Скрыть сданные (${done.size})" else "Сданные (${done.size})", { showDone = !showDone }, C.muted) }
             if (showDone) done.forEach { (e, lab) -> item(key = e.id) { LabCard(s, e.id, lab) } }
         }
     }
@@ -135,15 +141,20 @@ private fun NewLab(s: Store) {
     }
 }
 
-/** Кольцо прогресса; лаба сделана — сплошной зелёный круг с ✓. */
+/** Кольцо прогресса; сделана, но не сдана — жёлтый круг с ✓; сдана — сплошной зелёный круг с ✓. */
 @Composable
-private fun ProgressRing(percent: Int, done: Boolean, size: Dp = 40.dp, onClick: () -> Unit) {
+private fun ProgressRing(percent: Int, stage: Int, size: Dp = 40.dp, onClick: () -> Unit) {
+    val done = stage == 2
     val sweep by animateFloatAsState(percent * 3.6f, label = "ring")
     val accent = C.accent; val line = C.line
     Box(Modifier.size(size).clip(RoundedCornerShape(50)).clickable(onClick = onClick), contentAlignment = Alignment.Center) {
         if (done) {
             Box(Modifier.size(size).clip(RoundedCornerShape(50)).background(C.good), contentAlignment = Alignment.Center) {
                 Text("✓", color = C.bg, fontWeight = FontWeight.Bold)
+            }
+        } else if (stage == 1) {
+            Box(Modifier.size(size).clip(RoundedCornerShape(50)).background(C.warn.copy(alpha = 0.18f)), contentAlignment = Alignment.Center) {
+                Text("✓", color = C.warn, fontWeight = FontWeight.Bold)
             }
         } else {
             Canvas(Modifier.size(size)) {
@@ -165,17 +176,23 @@ private fun LabCard(s: Store, id: String, lab: Lab) {
     Block {
         Column(Modifier.animateContentSize(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Line {
-                ProgressRing(lab.percent, lab.done) { Study.setLabDone(s, id, !lab.done) }
+                ProgressRing(lab.percent, lab.stage) { Study.advance(s, id) }
                 Column(Modifier.weight(1f).clickable { expanded = !expanded }) {
                     Text(lab.name, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium,
-                        textDecoration = if (lab.done) TextDecoration.LineThrough else null, color = if (lab.done) C.muted else C.text)
-                    Muted(lab.subject + if (lab.total > 0) " · ${lab.doneCount}/${lab.total} заданий" else "")
+                        textDecoration = if (lab.submitted) TextDecoration.LineThrough else null, color = if (lab.submitted) C.muted else C.text)
+                    when (lab.stage) {
+                        1 -> Text(lab.subject + " · сделана, нужно сдать", style = MaterialTheme.typography.bodySmall, color = C.warn)
+                        2 -> Muted(lab.subject + " · сдана" + (lab.submittedOn?.let { " " + DM.format(java.time.LocalDate.parse(it)) } ?: ""))
+                        else -> Muted(lab.subject + if (lab.total > 0) " · ${lab.doneCount}/${lab.total} заданий" else "")
+                    }
                 }
-                Text("${lab.percent}%", style = MaterialTheme.typography.titleSmall, color = if (lab.done) C.good else C.accent,
+                if (lab.stage == 1) Pill("сдать", C.warn)
+                else Text("${lab.percent}%", style = MaterialTheme.typography.titleSmall, color = if (lab.submitted) C.good else C.accent,
                     modifier = Modifier.clickable { expanded = !expanded })
             }
             if (lab.total > 0) Box(Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(2.dp)).background(C.line)) {
-                Box(Modifier.fillMaxWidth(lab.percent / 100f).height(4.dp).clip(RoundedCornerShape(2.dp)).background(if (lab.done) C.good else C.accent))
+                Box(Modifier.fillMaxWidth(lab.percent / 100f).height(4.dp).clip(RoundedCornerShape(2.dp))
+                    .background(when (lab.stage) { 2 -> C.good; 1 -> C.warn; else -> C.accent }))
             }
             if (expanded) {
                 lab.tasks.forEachIndexed { i, t -> TaskRow(t, { Study.toggleTask(s, id, i) }) {
@@ -187,9 +204,14 @@ private fun LabCard(s: Store, id: String, lab: Lab) {
                         0 -> Secondary("+ Задание", { Study.updateLab(s, id) { it.copy(tasks = it.tasks + LabTask("Задание ${it.tasks.size + 1}")) } }, m)
                         1 -> Secondary("− Задание", { Study.updateLab(s, id) { it.copy(tasks = it.tasks.dropLast(1)) } }, m, enabled = lab.tasks.isNotEmpty())
                         2 -> Secondary("Название", { rename = lab.title to { v: String -> Study.updateLab(s, id) { it.copy(title = v) } } }, m)
-                        else -> Primary(if (lab.done) "В работу" else "Сдана", { Study.setLabDone(s, id, !lab.done) }, m)
+                        else -> when (lab.stage) {
+                            0 -> Primary("Сделана", { Study.setLabDone(s, id, true) }, m)
+                            1 -> Primary("Сдана", { Study.setSubmitted(s, id, true) }, m)
+                            else -> Secondary("Не сдана", { Study.setSubmitted(s, id, false) }, m)
+                        }
                     }
                 }
+                if (lab.stage == 1) Flat("Вернуть в работу", { Study.setLabDone(s, id, false) }, C.muted)
                 Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { DeleteButton("лабу") { s.delete(id) } }
             }
         }

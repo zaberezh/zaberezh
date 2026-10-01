@@ -102,4 +102,20 @@ class StudyTest {
         assertEquals(LocalDateTime.of(2026, 10, 3, 11, 0), nextWaterTime(st, LocalDateTime.of(2026, 10, 2, 23, 30)))  // пт → сб 11:00
         assertEquals(LocalDateTime.of(2026, 10, 4, 23, 0), nextWaterTime(st, LocalDateTime.of(2026, 10, 4, 22, 1)))
     }
+
+    @Test fun labDoneThenSubmitted() {
+        val s = by.zaberezh.forma.core.store.MemoryStore()
+        val id = Study.addLab(s, "ОКГ", 1, 2)
+        fun lab() = LAB.decode(s.get(id)!!)
+        assertEquals(0, lab().stage)
+        Study.toggleTask(s, id, 0); Study.toggleTask(s, id, 1)
+        assertTrue(lab().done); assertTrue(lab().toSubmit); assertEquals(1, lab().stage)   // сделана — но её ещё сдавать
+        Study.advance(s, id, java.time.LocalDate.of(2026, 10, 2))
+        assertTrue(lab().submitted); assertEquals("2026-10-02", lab().submittedOn); assertEquals(2, lab().stage)
+        Study.toggleTask(s, id, 1)                                                          // задание снова не готово —
+        assertFalse(lab().submitted); assertEquals(0, lab().stage)                          // значит и не сдана
+        val other = Study.addLab(s, "МА", 2, 0)
+        Study.advance(s, other); Study.advance(s, other)
+        assertEquals(listOf(0, 2), Study.labs(s).map { it.second.stage })                   // в работе выше сданных
+    }
 }
