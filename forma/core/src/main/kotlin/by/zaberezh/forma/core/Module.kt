@@ -71,8 +71,16 @@ val PULLUP_MAX = TestDef("pullups_max", "Подтягивания: максим�
 
 val SETTINGS = Pref("settings", Settings.serializer()) { Settings() }
 
-/** Миграция сохранённых настроек при обновлении приложения. */
+/** Последняя версия схемы настроек (см. миграции ниже). */
+const val SETTINGS_SCHEMA = 6
+
+/**
+ * Миграция сохранённых настроек при обновлении приложения.
+ * Новая установка (база пустая) миграции не проходит: в ней ничего не создаётся — ни упражнений, ни записей.
+ */
 fun migrateSettings(store: Store) {
+    val fresh = store.kvGet(SETTINGS.key) == null && store.kvGet(PROGRAM.key) == null && store.allTypes().isEmpty()
+    if (fresh) { SETTINGS.set(store, Settings(schema = SETTINGS_SCHEMA)); return }
     var st = SETTINGS.get(store)
     if (st.schema < 2) {
         // v2: активность без ходьбы — старые значения по умолчанию (1.55/1.45) → 1.375

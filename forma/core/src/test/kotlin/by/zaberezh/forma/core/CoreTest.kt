@@ -296,6 +296,18 @@ class CoreTest {
         assertTrue(PROGRAM.get(s).exercises.all { it.id.startsWith("fa_") }) // черновик удалён, остались только упражнения на предплечья
     }
 
+    @Test fun freshInstallHasNoExercisesOrFood() {
+        val s = MemoryStore()
+        migrateSettings(s)                                                    // первый запуск на новом устройстве
+        assertTrue(PROGRAM.get(s).exercises.isEmpty())
+        assertTrue(s.kvGet(PROGRAM.key) == null)                              // программа даже не сохранялась
+        assertEquals(SETTINGS_SCHEMA, SETTINGS.get(s).schema)
+        migrateSettings(s)                                                    // и при следующих запусках тоже
+        assertTrue(PROGRAM.get(s).exercises.isEmpty())
+        assertTrue(s.allTypes().isEmpty())                                    // ни тренировок, ни еды, ни «частого»
+        assertTrue(FoodModule.library(s).isEmpty())
+    }
+
     @Test fun settingsMigrationDropsWalking() {
         val s = MemoryStore()
         SETTINGS.set(s, Settings(profile = Profile(activity = 1.55), apiKey = "k"))
