@@ -282,7 +282,13 @@ class Claude(apiKey: String, private val model: String, baseUrl: String = "") {
 
         /** Журнал последних ответов API — кнопка «Скопировать отладку». */
         private val log = ArrayDeque<String>()
-        @Synchronized fun debug(line: String) { log.addLast(line); while (log.size > 12) log.removeFirst() }
+        @Synchronized fun debug(line: String) { log.addLast(redact(line)); while (log.size > 12) log.removeFirst() }
+
+        private val SECRET = Regex("""(sk-[A-Za-z0-9_\-]{6})[A-Za-z0-9_\-]+|(Bearer\s+)\S+|(SESSION=)[^;\s]+""")
+        /** Ключи и сессии не попадают в журнал отладки, даже если посредник вернул их в тексте ошибки. */
+        fun redact(s: String): String = SECRET.replace(s) { m ->
+            (m.groupValues[1].ifEmpty { m.groupValues[2].ifEmpty { m.groupValues[3] } }) + "•••"
+        }
         @Synchronized fun debugText(): String = "Grind отладка API\n" + log.joinToString("\n")
 
         const val MAX_SEARCHES = 5L

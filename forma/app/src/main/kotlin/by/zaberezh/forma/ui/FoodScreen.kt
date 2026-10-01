@@ -58,7 +58,10 @@ fun FoodScreen() {
     DisposableEffect(Unit) { FoodSearch.visible = true; onDispose { FoodSearch.visible = false } }
     var shotUri by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf<android.net.Uri?>(null) }   // переживает возврат из камеры
     fun sendPhoto(uri: android.net.Uri) { photoJpeg(c, uri)?.let { FoodSearch.photo(ctx, c, it) } ?: run { FoodSearch.err.value = "Не удалось прочитать фото" } }
-    val camera = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { ok -> if (ok) shotUri?.let(::sendPhoto) }
+    val camera = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { ok ->
+        if (ok) shotUri?.let(::sendPhoto)
+        runCatching { java.io.File(c.cacheDir, "photos/meal.jpg").delete() }   // снимок уже сжат в память — на диске не храним
+    }
     val gallery = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri -> uri?.let(::sendPhoto) }
 
     Screen {

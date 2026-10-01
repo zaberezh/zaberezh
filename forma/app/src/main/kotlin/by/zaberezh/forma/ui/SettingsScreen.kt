@@ -64,6 +64,9 @@ private val WEIGH = listOf(
 private val SLEEP = listOf(F("sleepH", "Цель сна", "ч"), F("wakeH", "Подъём", "ч"), F("wakeM", "Подъём", "мин"))
 
 @SuppressLint("MissingPermission")
+/** Экспорт за годы весит единицы мегабайт; больше — чужой файл, в память не читаем. */
+private const val IMPORT_MAX = 64 shl 20
+
 @Composable
 fun SettingsScreen() {
     val ctx = rememberCtx()
@@ -101,13 +104,21 @@ fun SettingsScreen() {
     var available by remember { mutableStateOf(listOf<String>()) }
     val perms = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { refresh++ }
     val export = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
-        uri?.let { c.contentResolver.openOutputStream(it)?.use { o -> o.write(Forma.store.exportJson().toByteArray()) }; msg = "Экспортировано" }
+        uri?.let { u ->
+            msg = runCatching { c.contentResolver.openOutputStream(u, "wt")!!.use { o -> o.write(Forma.store.exportJson().toByteArray()) }; "Экспортировано" }
+                .getOrElse { "Не удалось записать файл: ${it.message}" }
+        }
     }
     val importer = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         uri?.let { u ->
-            msg = runCatching { c.contentResolver.openInputStream(u)!!.use { Forma.store.importJson(it.readBytes().decodeToString()) }
-                by.zaberezh.forma.sys.Secrets.migrate(c, Forma.store); "Импортировано" }
-                .getOrElse { it.message }
+            msg = runCatching {
+                val bytes = c.contentResolver.openInputStream(u)!!.use { it.readUpTo(IMPORT_MAX + 1) }
+                require(bytes.size <= IMPORT_MAX) { "Файл больше ${IMPORT_MAX shr 20} МБ — это точно не экспорт Grind" }
+                val n = Forma.store.importJson(bytes.decodeToString())
+                by.zaberezh.forma.sys.Secrets.migrate(c, Forma.store)
+                Reminders.scheduleAll(c)   // в файле могли быть другие часы напоминаний
+                "Импортировано записей: $n"
+            }.getOrElse { it.message ?: "Не удалось импортировать" }
         }
     }
 

@@ -3,6 +3,8 @@ package by.zaberezh.forma.core
 import by.zaberezh.forma.core.ai.Claude
 import com.anthropic.models.messages.MessageCreateParams
 import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class ClaudeRequestTest {
@@ -15,6 +17,16 @@ class ClaudeRequestTest {
         assertTrue("\"additionalProperties\":false" in json, json)
         assertTrue("\"required\":[\"items\",\"note\"]" in json, json)
         println(json)
+    }
+
+    @Test fun debugLogNeverKeepsSecrets() {
+        val line = "ОШИБКА 401: invalid key sk-cvc-AbCdEf123456789 · Authorization: Bearer abc.def.ghi · Cookie: SESSION=0f1e2d3c; Path=/"
+        val r = Claude.redact(line)
+        assertFalse("AbCdEf123456789" in r, r)
+        assertFalse("abc.def.ghi" in r, r)
+        assertFalse("0f1e2d3c" in r, r)
+        assertTrue("sk-cvc-Ab•••" in r, r)   // префикс остаётся — видно, какой ключ стоит
+        assertEquals("обычный текст 200 OK", Claude.redact("обычный текст 200 OK"))
     }
 }
 

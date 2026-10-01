@@ -86,18 +86,26 @@ class SqlStore(context: Context) : SQLiteOpenHelper(context, "forma.db", null, 1
         return JsonObject(mapOf("format" to JsonPrimitive("forma-1"), "entries" to JsonArray(entries), "kv" to JsonObject(kv))).toString()
     }
 
-    /** Импорт поверх текущих данных (записи с тем же id заменяются). Ключ Claude живёт в сейфе — импорт его не трогает. */
-    fun importJson(text: String) {
-        val root = JSON.parseToJsonElement(text).jsonObject
+    /**
+     * Импорт поверх текущих данных (записи с тем же id заменяются). Ключ Claude живёт в сейфе — импорт его не трогает.
+     * Чужой или битый файл не применяется вовсе: всё в одной транзакции, при ошибке ничего не меняется.
+     */
+    fun importJson(text: String): Int {
+        val root = runCatching { JSON.parseToJsonElement(text).jsonObject }.getOrNull()
+        require(root != null && root["format"]?.jsonPrimitive?.content?.startsWith("forma-") == true) { "Это не файл экспорта Grind" }
         val db = writableDatabase
+        var n = 0
         db.beginTransaction()
         try {
             root["entries"]?.jsonArray?.forEach { el ->
                 val o = el.jsonObject
+                val id = o["id"]?.jsonPrimitive?.content; val type = o["type"]?.jsonPrimitive?.content
+                val ts = o["ts"]?.jsonPrimitive?.long; val data = o["data"]
+                require(id != null && type != null && ts != null && data != null) { "Файл повреждён: запись без id/type/ts/data" }
                 db.insertWithOnConflict("entries", null, ContentValues().apply {
-                    put("id", o["id"]!!.jsonPrimitive.content); put("type", o["type"]!!.jsonPrimitive.content)
-                    put("ts", o["ts"]!!.jsonPrimitive.long); put("data", o["data"].toString())
+                    put("id", id); put("type", type); put("ts", ts); put("data", data.toString())
                 }, SQLiteDatabase.CONFLICT_REPLACE)
+                n++
             }
             root["kv"]?.jsonObject?.forEach { (k, v) ->
                 db.insertWithOnConflict("kv", null, ContentValues().apply { put("k", k); put("v", v.jsonPrimitive.content) }, SQLiteDatabase.CONFLICT_REPLACE)
@@ -105,5 +113,6 @@ class SqlStore(context: Context) : SQLiteOpenHelper(context, "forma.db", null, 1
             db.setTransactionSuccessful()
         } finally { db.endTransaction() }
         changed()
+        return n
     }
 }
