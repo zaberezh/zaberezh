@@ -76,6 +76,10 @@ class MenuTest {
         assertEquals("Мак · Фри большая порция", one("мак картошка фри большая").name)
         assertEquals(151.0, one("мак 10 наггетсов").grams)
         assertEquals("Мак · Сыр фри", one("мак сыр фри").name)
+        assertEquals("Мак · Чикен Классик", one("мак чикен").name)
+        assertEquals("Мак · Мехико Чикен", one("мехико чикен из мака").name)
+        assertEquals("Мак · Цезарь Ролл", one("мак цезарь ролл").name)
+        assertEquals(327.0, Math.round(one("мак чикенбургер").total.kcal).toDouble())
         assertEquals(434.0, Math.round(one("мак стрипсы 5").total.kcal).toDouble())
     }
 

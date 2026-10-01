@@ -54,6 +54,7 @@ class Menu(
             .filter { (_, m) -> must.all { w -> m.keys.any { hit(w, it) } } }
             .minWithOrNull(compareBy(
                 { (_, m) -> if ((m.nums + m.pct).any { n -> sizes.any { same(it, n) } }) 0 else 1 },
+                { (_, m) -> -must.count { it in m.keys } },                         // точное слово важнее начала («чикен» ≠ «чикенбургер»)
                 { (_, m) -> m.words.count { w -> q.none { hit(it, w) } } },
                 { (i, _) -> i },
             ))?.value ?: return null
