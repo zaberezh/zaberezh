@@ -46,10 +46,9 @@ import by.zaberezh.forma.core.study.Omissions
 import by.zaberezh.forma.core.study.Person
 import by.zaberezh.forma.core.study.Rating
 import by.zaberezh.forma.core.study.RatingSubject
-import java.util.Locale
 
 // ---------- общее ----------
-private val RU = Locale.forLanguageTag("ru")
+// RU — общая русская локаль приложения (TodayScreen.kt)
 fun Double.avg(digits: Int = 1): String = String.format(RU, "%.${digits}f", this)
 
 /** Цвет оценки по 10-балльной шкале. */
