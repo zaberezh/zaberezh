@@ -53,6 +53,8 @@ data class Timetable(
     val start: String? = null,
     val end: String? = null,
     val fetchedAt: Long = 0,
+    /** Версия разбора: расписание, скачанное старой версией приложения (без фото и т. п.), перекачивается. */
+    val format: Int = 0,
     val anchorDate: String? = null,
     val anchorWeek: Int? = null,
 )
@@ -68,6 +70,9 @@ val STUDY_PREFS = Pref("study.prefs", StudyPrefs.serializer()) { StudyPrefs() }
  * Учебная неделя БГУИР — цикл из 4 недель; пара идёт в недели из своего weekNumber.
  */
 object Bsuir {
+    /** Текущая версия разбора расписания (2 — фото преподавателей по id). */
+    const val FORMAT = 2
+
     private const val API = "https://iis.bsuir.by/api/v1"
     private val DMY = DateTimeFormatter.ofPattern("dd.MM.yyyy")
     private val DAYS = mapOf("понедельник" to 1, "вторник" to 2, "среда" to 3, "четверг" to 4, "пятница" to 5, "суббота" to 6, "воскресенье" to 7)
@@ -99,7 +104,8 @@ object Bsuir {
             teachers = teachers,
             teachersFull = emps.map { p -> listOfNotNull(p["lastName"].str(), p["firstName"].str(), p["middleName"].str()).joinToString(" ") },
             teacherInfo = emps.map { p -> listOfNotNull(p["rank"].str(), p["degree"].str()).filter { it.isNotBlank() }.joinToString(", ") },
-            photos = emps.map { p -> Iis.photoUrl(p["photoLink"].str() ?: p["photoUrl"].str()) },
+            // нет ссылки — у ИИС есть фото по id преподавателя
+            photos = emps.map { p -> Iis.photoUrl(p["photoLink"].str() ?: p["photoUrl"].str() ?: (p["id"] as? JsonPrimitive)?.intOrNull?.let { "/api/v1/employees/photo/$it" }) },
             from = date(o["startLessonDate"].str()),
             to = date(o["endLessonDate"].str()),
             date = date(o["dateLesson"].str()),
@@ -122,7 +128,7 @@ object Bsuir {
             lessons += lesson(o, LocalDate.parse(d).dayOfWeek.value).copy(date = d, weeks = emptyList())
         }
         return Timetable(group, lessons.sortedWith(compareBy({ it.weekday }, { it.start })),
-            date(root["startDate"].str()), date(root["endDate"].str()), now)
+            date(root["startDate"].str()), date(root["endDate"].str()), now, format = FORMAT)
     }
 
     /** Номер учебной недели 1–4 на дату: от якоря с сервера или от 1 сентября (неделя 1). */

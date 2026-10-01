@@ -109,4 +109,12 @@ class IisTest {
         val p = Iis.profile(s.profile)!!
         assertEquals("Иванов Иван Иванович", p.fio); assertEquals("653502", p.group); assertEquals("https://iis.bsuir.by/p.jpg", p.photo)
     }
+
+    @Test fun teacherPhotoByIdWhenNoLink() {
+        val tt = Bsuir.parse("""{"schedules":{"Среда":[{"subject":"МА","lessonTypeAbbrev":"ЛК","startLessonTime":"09:00","endLessonTime":"10:20",
+            "weekNumber":[1,2,3,4],"employees":[{"id":500434,"lastName":"Иванов","firstName":"Иван","middleName":"Иванович","photoLink":null},
+            {"lastName":"Петров","firstName":"Пётр","photoLink":"null/api/v1/employees/photo/7"}]}]}}""", "653502")
+        assertEquals(listOf("https://iis.bsuir.by/api/v1/employees/photo/500434", "https://iis.bsuir.by/api/v1/employees/photo/7"), tt.lessons.single().photos)
+        assertEquals(Bsuir.FORMAT, tt.format)
+    }
 }
