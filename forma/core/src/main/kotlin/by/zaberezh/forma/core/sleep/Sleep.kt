@@ -91,9 +91,22 @@ object SleepModule : Module {
 
     fun lastNight(s: Store, today: LocalDate) = nights(s, today, today).lastOrNull()?.second
 
-    /** Рекомендуемое время отбоя под цель сна и время подъёма. */
-    fun bedtime(ctx: Ctx): LocalTime =
-        LocalTime.of(ctx.settings.wakeHour, ctx.settings.wakeMinute).minusMinutes((ctx.settings.sleepTargetH * 60).toLong())
+    /**
+     * Подъём в день [day]: если включён будильник по парам и в этот день есть пары — по первой паре
+     * (8:30 → 7:10, 10:05 → 8:30), иначе — время подъёма из настроек сна.
+     */
+    fun wake(ctx: Ctx, day: LocalDate): LocalTime {
+        val st = ctx.settings
+        if (st.wakeAlarm) {
+            val tt = by.zaberezh.forma.core.study.TIMETABLE.get(ctx.store)
+            by.zaberezh.forma.core.study.Study.wakeAt(tt, day, by.zaberezh.forma.core.study.STUDY_PREFS.get(ctx.store).subgroup)
+                ?.let { return it.toLocalTime() }
+        }
+        return LocalTime.of(st.wakeHour, st.wakeMinute)
+    }
+
+    /** Отбой сегодня: завтрашний подъём минус цель сна — завтра к первой паре ложишься раньше, к третьей — позже. */
+    fun bedtime(ctx: Ctx): LocalTime = wake(ctx, ctx.today.plusDays(1)).minusMinutes((ctx.settings.sleepTargetH * 60).toLong())
 
     data class Stats(val n: Int, val avgMin: Int, val bedAvg: String, val wakeAvg: String, val bedSdMin: Int, val short: Int)
 

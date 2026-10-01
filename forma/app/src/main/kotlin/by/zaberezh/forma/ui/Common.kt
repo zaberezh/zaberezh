@@ -80,6 +80,15 @@ object C {
     val accent: Color get() = if (section == 1) study else health
 }
 
+/** Цвет типа занятия: лекция — зелёный, практика — фиолетовый, лаба — жёлтый, консультация — серый, экзамен/зачёт — красный. */
+fun typeColor(t: String): Color = when (t.uppercase()) {
+    "ЛК" -> C.good
+    "ПЗ" -> C.study
+    "ЛР" -> C.warn
+    "КОНС", "КОНСУЛЬТАЦИЯ" -> C.muted
+    else -> C.bad
+}
+
 fun scheme(accent: Color) = darkColorScheme(
     primary = accent, onPrimary = if (accent == C.study) Color(0xFF1C1033) else Color(0xFF0A1A30),
     background = C.bg, onBackground = C.text,

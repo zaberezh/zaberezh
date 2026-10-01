@@ -283,7 +283,7 @@ class Claude(apiKey: String, private val model: String, baseUrl: String = "") {
         /** Журнал последних ответов API — кнопка «Скопировать отладку». */
         private val log = ArrayDeque<String>()
         @Synchronized fun debug(line: String) { log.addLast(line); while (log.size > 12) log.removeFirst() }
-        @Synchronized fun debugText(): String = "Forma отладка API\n" + log.joinToString("\n")
+        @Synchronized fun debugText(): String = "Grind отладка API\n" + log.joinToString("\n")
 
         const val MAX_SEARCHES = 5L
         const val MAX_FETCHES = 3L
