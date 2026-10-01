@@ -97,6 +97,8 @@ private sealed class Row2(val day: LocalDate) {
     class Item(day: LocalDate, val lesson: Lesson, val i: Int) : Row2(day)
     /** Кнопка «Показать прошедшие дни» над первым днём ленты. */
     class More(day: LocalDate) : Row2(day)
+    /** Окно между парами (β). */
+    class Window(day: LocalDate, val gap: by.zaberezh.forma.core.study.Gap) : Row2(day)
 }
 
 /**
@@ -137,7 +139,11 @@ fun ScheduleScreen() {
     val rows = remember(tt, prefs.subgroup, start) {
         (if (start > oldest) listOf<Row2>(Row2.More(start)) else emptyList()) + days.flatMap { d ->
             val ls = if (tt.lessons.isEmpty()) emptyList() else Bsuir.on(tt, d, prefs.subgroup)
-            listOf<Row2>(Row2.Head(d, ls.isEmpty())) + ls.mapIndexed { i, l -> Row2.Item(d, l, i) }
+            val gaps = by.zaberezh.forma.core.study.Focus.gaps(ls)
+            listOf<Row2>(Row2.Head(d, ls.isEmpty())) + ls.flatMapIndexed { i, l ->
+                // окно ставим сразу после пары, на которой оно начинается
+                listOf<Row2>(Row2.Item(d, l, i)) + gaps.filter { g -> g.from.toString() == l.end && ls.drop(i + 1).none { it.end == l.end } }.map { Row2.Window(d, it) }
+            }
         }
     }
     val dayIndex = remember(rows) { rows.withIndex().filter { it.value is Row2.Head }.associate { it.value.day to it.index } }
@@ -171,10 +177,14 @@ fun ScheduleScreen() {
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 24.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            items(rows.size, key = { i -> rows[i].let { r -> when (r) { is Row2.Item -> "l${r.day}-${r.i}"; is Row2.More -> "more"; else -> "h${r.day}" } } }) { i ->
+            items(rows.size, key = { i -> rows[i].let { r -> when (r) { is Row2.Item -> "l${r.day}-${r.i}"; is Row2.More -> "more"; is Row2.Window -> "w${r.day}-${r.gap.from}"; else -> "h${r.day}" } } }) { i ->
                 when (val r = rows[i]) {
                     is Row2.Head -> DayTitle(r.day, today, r.empty, Bsuir.week(tt, r.day))
                     is Row2.Item -> LessonCard(s, tt, r.lesson, r.day, prefs.subgroup)
+                    is Row2.Window -> Text(
+                        "окно ${r.gap.from}–${r.gap.to} · " + (if (r.gap.minutes >= 60) "${r.gap.minutes / 60} ч ${r.gap.minutes % 60} мин" else "${r.gap.minutes} мин"),
+                        Modifier.padding(start = 12.dp), style = MaterialTheme.typography.bodySmall, color = C.muted,
+                    )
                     is Row2.More -> Secondary(
                         if (pastWeeks == 0) "Показать прошедшие дни" else "Показать ещё неделю раньше",
                         { pastWeeks = (pastWeeks + 1).coerceAtMost(MAX_PAST_WEEKS) }, Modifier.fillMaxWidth(),

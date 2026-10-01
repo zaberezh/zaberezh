@@ -181,6 +181,13 @@ private fun StudyToday(ctx: Ctx, onStudy: (Int) -> Unit) {
                 }
             }
         }
+        // β окна между парами: можно поесть, сходить в зал, сделать лабу
+        remember(lessons) { by.zaberezh.forma.core.study.Focus.gaps(lessons) }.forEach { g ->
+            val past = now.isAfter(g.to)
+            Text("окно ${g.from}–${g.to} · " + (if (g.minutes >= 60) "${g.minutes / 60} ч ${g.minutes % 60} мин" else "${g.minutes} мин"),
+                style = MaterialTheme.typography.bodySmall, color = if (past) C.line else C.muted,
+                modifier = Modifier.padding(start = 54.dp))
+        }
         val hw = remember(ctx) { Study.open(s, ctx.today).count { it.second.due == ctx.today.toString() } }
         val all = remember(ctx) { Study.labs(s).map { it.second } }
         val labs = all.count { it.stage == 0 }
