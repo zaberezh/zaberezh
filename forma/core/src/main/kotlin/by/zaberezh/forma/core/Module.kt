@@ -58,9 +58,13 @@ data class Settings(
     val wakeMinute: Int = 30,
     val bedReminder: Boolean = true,
     val counters: List<CounterDef> = listOf(CounterDef("pullups", "Подтягивания")),
-    val tests: List<TestDef> = listOf(TestDef("pullups_max", "Подтягивания: максимум за подход", 7, "раз",
-        "Раз в неделю, в день отдыха или в начале тренировки после разминки. Полная амплитуда: из виса на прямых руках до подбородка над перекладиной, без раскачки. Один подход до отказа.")),
+    val tests: List<TestDef> = listOf(PULLUP_MAX),
 )
+
+/** Максимум подтягиваний за подход — можно записывать каждый день (одна запись на день, правится). */
+val PULLUP_MAX = TestDef("pullups_max", "Подтягивания: максимум за подход", 1, "раз",
+    "Полная амплитуда: из виса на прямых руках до подбородка над перекладиной, без раскачки. Один подход до отказа, после разминки. " +
+        "Повторный ввод за день исправляет запись.")
 
 val SETTINGS = Pref("settings", Settings.serializer()) { Settings() }
 
@@ -84,6 +88,9 @@ fun migrateSettings(store: Store) {
         if (p.exercises.none { (it.muscles["forearms"] ?: 0.0) >= 1.0 })
             PROGRAM.set(store, p.copy(exercises = p.exercises + by.zaberezh.forma.core.gym.FOREARM_SEED.filter { s -> p.ex(s.id) == null }))
         st = st.copy(schema = 5)
+    }
+    if (st.schema < 6) { // v6: максимум подтягиваний — каждый день, а не раз в неделю
+        st = st.copy(tests = st.tests.map { if (it.id == PULLUP_MAX.id) PULLUP_MAX else it }, schema = 6)
     }
     SETTINGS.set(store, st)
 }

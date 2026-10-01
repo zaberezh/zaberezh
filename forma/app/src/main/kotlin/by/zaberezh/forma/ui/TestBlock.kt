@@ -20,10 +20,15 @@ fun TestBlock(ctx: Ctx, def: TestDef) {
     val results = TestModule.results(s, def.id)
     val last = results.lastOrNull()
     val due = TestModule.due(ctx, def)
-    var v by remember { mutableStateOf("") }
+    val today = last?.takeIf { it.first == ctx.today }?.second
+    var v by remember(today) { mutableStateOf(today?.let(TestModule::fmt) ?: "") }
     Block(def.title, trailing = {
-        if (due) Pill(if (last == null) "первый тест" else "пора", C.warn)
-        else Pill("через ${def.everyDays - (TestModule.sinceLast(ctx, def.id) ?: 0)} дн.", C.muted)
+        when {
+            today != null -> Pill("сегодня записано", C.good)
+            def.everyDays <= 1 -> Pill("сегодня не записано", C.muted)
+            due -> Pill(if (last == null) "первый тест" else "пора", C.warn)
+            else -> Pill("через ${def.everyDays - (TestModule.sinceLast(ctx, def.id) ?: 0)} дн.", C.muted)
+        }
     }) {
         if (last != null) BigValue(TestModule.fmt(last.second), def.unit, "${DM.format(last.first)}" +
             (results.dropLast(1).lastOrNull()?.let { p ->
@@ -33,8 +38,9 @@ fun TestBlock(ctx: Ctx, def: TestDef) {
         if (def.hint.isNotEmpty()) Muted(def.hint)
         Line {
             Field("Результат сегодня", v, { v = it }, Modifier.weight(1f), suffix = def.unit)
-            Primary("Записать", { v.num()?.let { TestModule.record(s, def.id, ctx.today, it); v = "" } })
+            Primary(if (today == null) "Записать" else "Изменить", { v.num()?.let { TestModule.record(s, def.id, ctx.today, it) } })
         }
+        results.maxByOrNull { it.second }?.let { (d, best) -> Stat("Рекорд", "${TestModule.fmt(best)} ${def.unit} · ${DM.format(d)}") }
         if (results.size > 1) Muted(results.takeLast(8).reversed().joinToString("   ") { "${DM.format(it.first)}: ${TestModule.fmt(it.second)}" })
         if (last != null && last.first == ctx.today) Flat("Удалить сегодняшний результат", { TestModule.delete(s, def.id, ctx.today) }, C.muted)
     }
