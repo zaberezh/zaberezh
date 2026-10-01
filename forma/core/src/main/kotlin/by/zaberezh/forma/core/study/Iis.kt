@@ -35,10 +35,11 @@ object Iis {
     const val HOST = "https://iis.bsuir.by"
     const val BASE = "$HOST/api/v1"
 
+    // адреса — как у веб-версии ИИС (сверено с рабочим клиентом MyIIS)
     val SECTIONS = listOf(
-        IisSection("cv", "Персональный листок", "/personal-cv", "ФИО, группа, контакты"),
+        IisSection("cv", "Персональные данные", "/personal-information", "ФИО, факультет, курс, группа"),
         IisSection("markbook", "Зачётная книжка", "/markbook", "оценки по семестрам, средний балл"),
-        IisSection("gradebook", "Успеваемость", "/grade-book", "текущие отметки по предметам"),
+        IisSection("rating", "Успеваемость", "/personal-rating", "текущие отметки по предметам"),
         IisSection("omissions", "Пропуски", "/omissions-by-student", "пропущенные часы"),
         IisSection("group", "Моя группа", "/student-groups/user-group-info", "куратор, староста, студенты"),
         IisSection("certificates", "Справки", "/certificate", "заказанные справки"),
@@ -64,18 +65,38 @@ object Iis {
 
     /** Вход по номеру студенческого и паролю ИИС. */
     fun login(http: Http, username: String, password: String, pause: (Long) -> Unit = Thread::sleep): IisSession {
-        val body = buildJsonObject { put("username", username.trim()); put("password", password); put("rememberMe", true) }.toString()
+        // ровно два поля, как шлёт сайт: лишние поля сервер ИИС не принимает
+        val body = buildJsonObject { put("username", username.trim()); put("password", password) }.toString()
         var r = http.send("POST", "$BASE/auth/login", body, headers(null))
         // 502–504 — ИИС перегружен или перезапускается: одна повторная попытка через пару секунд
         if (r.code in 502..504) { pause(2000); r = http.send("POST", "$BASE/auth/login", body, headers(null)) }
         when {
             r.code == 401 || r.code == 403 || r.code == 400 -> throw IisError("Неверный логин или пароль")
-            r.code in 500..599 -> throw IisError("ИИС сейчас недоступен (ошибка ${r.code}) — попробуй через несколько минут")
-            r.code !in 200..299 -> throw IisError("ИИС ответил ошибкой ${r.code}")
+            r.code in 500..599 -> throw IisError("ИИС не пустил через приложение (ошибка ${r.code}${serverMessage(r.body)}). Войди через сайт ИИС — кнопка ниже")
+            r.code !in 200..299 -> throw IisError("ИИС ответил ошибкой ${r.code}${serverMessage(r.body)}")
         }
         val cookie = cookieOf(r.cookies)
         if (cookie.isEmpty()) throw IisError("ИИС не выдал сессию — попробуй позже")
         return IisSession(cookie.joinToString("; "), r.body)
+    }
+
+    /** Текст ошибки из ответа сервера (JSON message/error), без HTML-страниц. */
+    fun serverMessage(body: String): String {
+        val o = runCatching { JSON.parseToJsonElement(body) as? JsonObject }.getOrNull() ?: return ""
+        val m = listOf("message", "error", "detail").firstNotNullOfOrNull { (o[it] as? JsonPrimitive)?.contentOrNull?.takeIf(String::isNotBlank) }
+        return m?.let { ": ${it.take(120)}" }.orEmpty()
+    }
+
+    /**
+     * Сессия из входа на самом сайте ИИС (в окне приложения): берём куки сайта и проверяем их запросом профиля.
+     * null — вход ещё не выполнен.
+     */
+    fun sessionFromCookies(http: Http, cookies: String): IisSession? {
+        val c = cookies.split(';').map { it.trim() }.filter { '=' in it && !it.endsWith("=") }.joinToString("; ")
+        if (c.isEmpty()) return null
+        val s = IisSession(c)
+        val r = http.send("GET", "$BASE/personal-information", null, headers(s))
+        return if (r.code in 200..299 && r.body.trimStart().startsWith("{")) s.copy(profile = r.body) else null
     }
 
     /** GET раздела. 401/403 — сессия истекла. */
@@ -128,7 +149,8 @@ object Iis {
         fun s(vararg k: String) = k.firstNotNullOfOrNull { (o[it] as? JsonPrimitive)?.contentOrNull?.takeIf(String::isNotBlank) }
         Profile(
             fio = s("fio", "fullName", "name") ?: listOfNotNull(s("lastName"), s("firstName"), s("middleName")).joinToString(" "),
-            group = s("group", "groupName", "studentGroup").orEmpty(),
+            group = s("group", "groupName", "studentGroup")
+                ?: ((o["education"] as? JsonArray)?.firstOrNull() as? JsonObject)?.get("group")?.let { (it as? JsonPrimitive)?.contentOrNull }.orEmpty(),
             photo = photoUrl(s("photoUrl", "photoLink", "photo")),
             extra = JsonView.cards(json).firstOrNull()?.rows.orEmpty().take(6),
         )

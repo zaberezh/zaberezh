@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- сессия ИИС не попадает в резервные копии -->
+<!-- сессия ИИС и данные встроенного браузера не попадают в резервные копии -->
 <full-backup-content>
     <exclude domain="sharedpref" path="iis_secure.xml" />
+    <exclude domain="root" path="app_webview/" />
 </full-backup-content>

@@ -78,7 +78,7 @@ class IisTest {
         assertEquals(2, calls)
         val down = Http { _, _, _, _ -> HttpResp(503, "") }
         val e = assertFailsWith<IisError> { Iis.login(down, "1", "p", pause = {}) }
-        assertTrue(e.message!!.contains("недоступен"))
+        assertTrue(e.message!!.contains("503"))
     }
 
     @Test fun photoLinksNormalized() {
@@ -86,5 +86,27 @@ class IisTest {
         assertEquals("https://iis.bsuir.by/api/v1/employees/photo/1", Iis.photoUrl("/api/v1/employees/photo/1"))
         assertEquals("https://iis.bsuir.by/p.jpg", Iis.photoUrl("//iis.bsuir.by/p.jpg"))
         assertEquals("", Iis.photoUrl(null)); assertEquals("", Iis.photoUrl("data:image/png;base64,AAA"))
+    }
+
+    @Test fun loginBodyHasOnlyCredentials() {
+        var sentBody = ""
+        val h = Http { _, _, b, _ -> sentBody = b!!; HttpResp(200, "{}", listOf("SESSION=s1; Path=/api/v1; Secure; HttpOnly")) }
+        assertEquals("SESSION=s1", Iis.login(h, " 65350034 ", "p").cookie)
+        assertEquals("""{"username":"65350034","password":"p"}""", sentBody)
+        val e = assertFailsWith<IisError> { Iis.login(Http { _, _, _, _ -> HttpResp(503, """{"message":"Service down"}""") }, "1", "p", pause = {}) }
+        assertTrue(e.message!!.contains("Service down") && e.message!!.contains("через сайт"))
+    }
+
+    @Test fun sessionFromSiteCookies() {
+        val h = Http { _, url, _, hd ->
+            if (url.endsWith("/personal-information") && hd["Cookie"] == "SESSION=ok")
+                HttpResp(200, """{"firstName":"Иван","lastName":"Иванов","middleName":"Иванович","photo":"https://iis.bsuir.by/p.jpg","education":[{"group":"653502"}]}""")
+            else HttpResp(401, "")
+        }
+        assertEquals(null, Iis.sessionFromCookies(h, ""))
+        assertEquals(null, Iis.sessionFromCookies(h, "SESSION=bad"))
+        val s = Iis.sessionFromCookies(h, "SESSION=ok")!!
+        val p = Iis.profile(s.profile)!!
+        assertEquals("Иванов Иван Иванович", p.fio); assertEquals("653502", p.group); assertEquals("https://iis.bsuir.by/p.jpg", p.photo)
     }
 }
