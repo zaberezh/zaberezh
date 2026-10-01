@@ -11,7 +11,7 @@ class MenuTest {
     private fun one(text: String) = Menus.resolve(text).also { assertEquals(emptyList(), it.rest, "остаток для «$text»") }.items.single()
 
     @Test fun menuLoadsAllRowsWithSaneNumbers() {
-        val kfc = Menus.all.single()
+        val kfc = Menus.all.first()
         assertTrue(kfc.items.size > 150, "позиций: ${kfc.items.size}")
         kfc.items.filter { it.per100.kcal > 20 }.forEach { m ->
             val calc = m.per100.p * 4 + m.per100.f * 9 + m.per100.c * 4
@@ -48,6 +48,14 @@ class MenuTest {
         assertEquals(listOf("гречка 200г"), r.rest)
         val k = r.items.sumOf { it.total.kcal }
         assertTrue(abs(k - (178 * 2.40 + 100 * 2.91 + 500 * 0.425)) < 1, "ккал $k")
+    }
+
+    @Test fun kinzaRestaurant() {
+        val r = Menus.resolve("донер из кинзы, лагман кинза")
+        assertEquals(listOf("Кинза · Донер классический", "Кинза · Лагман курица овощи"), r.items.map { it.name })
+        assertEquals(189.0, r.items[0].per100.kcal); assertEquals(162.3, r.items[1].per100.kcal)
+        assertEquals(250.0, one("кинза донер 250г").grams)
+        assertTrue(Menus.resolve("донер").items.isEmpty())   // без «кинза» — не их донер
     }
 
     @Test fun ignoredWithoutChainOrSignature() {
