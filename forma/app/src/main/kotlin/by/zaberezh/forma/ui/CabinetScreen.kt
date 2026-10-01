@@ -48,6 +48,8 @@ import by.zaberezh.forma.core.study.IisSection
 import by.zaberezh.forma.core.study.IisSession
 import by.zaberezh.forma.core.study.IisUnauthorized
 import by.zaberezh.forma.core.study.Person
+import by.zaberezh.forma.core.study.adoptGroup
+import by.zaberezh.forma.Forma
 import by.zaberezh.forma.sys.SecureStore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -205,6 +207,15 @@ private fun Cabinet(session: IisSession, onExpired: () -> Unit, onLogout: () -> 
 
     val fromLogin = remember(session) { Cabinet.person(null, null, session.profile) }
     val person = data["cv"]?.getOrNull() as? Person ?: fromLogin
+    // группа из ИИС сама становится группой расписания
+    var groupNote by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(person.group) {
+        val store = Forma.store
+        if (adoptGroup(store, person.group)) {
+            groupNote = "Группа ${person.group} взята из ИИС — обновляю расписание…"
+            groupNote = downloadTimetable(store).fold({ "Расписание группы ${person.group} загружено" }, { "Группа ${person.group} сохранена, расписание обновится при открытии" })
+        }
+    }
     Screen {
         item {
             Block {
@@ -217,6 +228,7 @@ private fun Cabinet(session: IisSession, onExpired: () -> Unit, onLogout: () -> 
                         ).joinToString(" · ").replaceFirstChar { it.uppercase() })
                     }
                 }
+                Note(groupNote)
                 Line {
                     Secondary("Сайт ИИС", { c.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://iis.bsuir.by"))) }, Modifier.weight(1f))
                     Secondary("Выйти", { scope.launch { withContext(Dispatchers.IO) { Iis.logout(Iis.jdk, session) }; onLogout() } }, Modifier.weight(1f))

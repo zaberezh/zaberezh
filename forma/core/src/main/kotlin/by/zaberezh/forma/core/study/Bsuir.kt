@@ -66,6 +66,19 @@ val TIMETABLE = Pref("study.timetable", Timetable.serializer()) { Timetable() }
 val STUDY_PREFS = Pref("study.prefs", StudyPrefs.serializer()) { StudyPrefs() }
 
 /**
+ * Группа из ИИС (после входа в кабинет) → настройки расписания. true — группа сменилась
+ * (подгруппа сбрасывается на «обе»: у другой группы она своя).
+ */
+fun adoptGroup(s: by.zaberezh.forma.core.store.Store, group: String): Boolean {
+    val g = group.trim()
+    if (!Regex("""\d{6}""").matches(g)) return false
+    val p = STUDY_PREFS.get(s)
+    if (p.group == g) return false
+    STUDY_PREFS.set(s, p.copy(group = g, subgroup = 0))
+    return true
+}
+
+/**
  * Расписание БГУИР из открытого API ИИС (iis.bsuir.by/api/v1): /schedule?studentGroup=… и /schedule/current-week.
  * Учебная неделя БГУИР — цикл из 4 недель; пара идёт в недели из своего weekNumber.
  */
