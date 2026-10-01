@@ -5,11 +5,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.AssistChip
-import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
@@ -92,22 +88,6 @@ fun FoodScreen() {
                 if (err != null || info != null) Buttons {
                     Flat("Скопировать отладку", { c.copy(Claude.debugText()) }, C.muted)
                     Flat("Сбросить режим API", { Claude.startLevel = 3; err = null }, C.muted)
-                }
-            }
-        }
-        val lib = FoodModule.library(s).take(20)
-        if (lib.isNotEmpty()) item {
-            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Muted("Частое — в один тап:")
-                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    items(lib) { f ->
-                        AssistChip(
-                            onClick = { draft = (draft ?: emptyList()) + FoodItem(f.name, f.grams, f.per100, f.source, "high") },
-                            label = { Text("${f.name} · ${f.grams.r1()} г", maxLines = 1) },
-                            shape = RoundedCornerShape(10.dp),
-                            colors = AssistChipDefaults.assistChipColors(containerColor = C.card, labelColor = C.text),
-                        )
-                    }
                 }
             }
         }

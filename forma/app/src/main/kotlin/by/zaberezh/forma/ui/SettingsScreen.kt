@@ -318,7 +318,7 @@ fun SettingsScreen() {
                     Primary("Экспорт", { export.launch("forma-${ctx.today}.json") }, Modifier.weight(1f))
                     Secondary("Импорт", { importer.launch(arrayOf("application/json", "*/*")) }, Modifier.weight(1f))
                 }
-                Muted("Все данные хранятся только на телефоне. Экспорт — резервная копия без API-ключа.")
+                Muted("Все данные хранятся только на этом телефоне и не попадают в облачные копии. Перенести на новый телефон — «Экспорт» здесь, «Импорт» там (без API-ключа).")
             }
         }
     }
