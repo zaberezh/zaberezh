@@ -8,6 +8,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
@@ -65,6 +66,7 @@ fun LabsScreen() {
 
     val homework = Study.open(s, ctx.today)
     Screen {
+        item { SessionBlock(s, ctx.today, labs.count { it.second.stage < 2 }) }
         if (homework.isNotEmpty()) item {
             Block("Домашка", trailing = { Pill("${homework.size}") }) {
                 homework.forEachIndexed { i, (e, hw) ->
@@ -241,5 +243,48 @@ private fun TaskRow(t: LabTask, onToggle: () -> Unit, onRename: () -> Unit) = an
         textDecoration = if (t.done) TextDecoration.LineThrough else null, color = if (t.done) C.muted else C.text)
     Box(Modifier.size(40.dp).clip(RoundedCornerShape(10.dp)).clickable(onClick = onRename), contentAlignment = Alignment.Center) {
         Text("✎", color = C.muted, style = MaterialTheme.typography.titleMedium)
+    }
+}
+
+private val SDAY = DateTimeFormatter.ofPattern("d MMM, EE", RU)
+
+/**
+ * Сессия: сколько дней до неё (или «идёт»), экзамены и консультации из ИИС с днями до каждого,
+ * и что ещё не сдано из лаб — сдать до сессии.
+ */
+@Composable
+private fun SessionBlock(s: Store, today: java.time.LocalDate, labsLeft: Int) {
+    val info = by.zaberezh.forma.core.study.Session.of(TIMETABLE.get(s), today)
+    val left = info.daysLeft
+    Block("Сессия", trailing = {
+        when {
+            info.running -> Pill("идёт", C.bad)
+            left != null && left >= 0 -> Pill("через $left " + plural(left, "день", "дня", "дней"), if (left <= 14) C.warn else C.accent)
+            else -> {}
+        }
+    }) {
+        if (!info.known) Muted("Расписание сессии в ИИС ещё не опубликовано — экзамены появятся здесь сами после обновления расписания.")
+        else {
+            if (!info.running && left != null && left > 0) BigValue("$left", plural(left, "день", "дня", "дней"), "до сессии · экзаменов: ${info.exams.size}")
+            if (info.running) BigValue("${info.exams.size}", plural(info.exams.size, "экзамен", "экзамена", "экзаменов"), "осталось сдать")
+            info.upcoming.take(12).forEach { x ->
+                val d = java.time.temporal.ChronoUnit.DAYS.between(today, x.day).toInt()
+                androidx.compose.foundation.layout.Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Column(Modifier.width(76.dp)) {
+                        Text(SDAY.format(x.day), style = MaterialTheme.typography.bodyMedium, fontWeight = if (x.exam) FontWeight.SemiBold else null)
+                        Muted(x.lesson.start)
+                    }
+                    Column(Modifier.weight(1f)) {
+                        Text(x.lesson.title, style = MaterialTheme.typography.bodyMedium, fontWeight = if (x.exam) FontWeight.Medium else null,
+                            color = if (x.exam) C.text else C.muted)
+                        Text(listOf(x.lesson.typeFull, x.lesson.rooms.joinToString(", ")).filter(String::isNotBlank).joinToString(" · "),
+                            style = MaterialTheme.typography.bodySmall, color = if (x.exam) C.bad else C.muted)
+                    }
+                    Text(if (d == 0) "сегодня" else if (d == 1) "завтра" else "$d дн.", style = MaterialTheme.typography.bodySmall,
+                        color = if (d <= 3) C.warn else C.muted)
+                }
+            }
+        }
+        if (labsLeft > 0 && !info.running) Text("До сессии сдать лаб: $labsLeft", style = MaterialTheme.typography.bodySmall, color = C.warn)
     }
 }
