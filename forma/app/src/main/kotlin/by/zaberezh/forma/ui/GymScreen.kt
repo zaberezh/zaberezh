@@ -250,11 +250,12 @@ private fun DayPlanBlock(ctx: Ctx, date: LocalDate) {
             Flat("Пересобрать", { GymModule.resetPlan(s, date) })
             Flat(if (busy) "Claude думает…" else "Через Claude", {
                 val st = ctx.settings
-                if (st.apiKey.isBlank()) { err = "API-ключ не задан (Настройки → Claude)"; return@Flat }
+                val apiKey = by.zaberezh.forma.sys.Secrets.claudeKey()
+                if (apiKey.isBlank()) { err = "API-ключ не задан (Настройки → Claude)"; return@Flat }
                 if (busy || p.exercises.isEmpty()) return@Flat
                 busy = true; err = null; info = null
                 scope.launch {
-                    val ai = Claude(st.apiKey, st.model, st.apiUrl)
+                    val ai = Claude(apiKey, st.model, st.apiUrl)
                     val r = withContext(Dispatchers.IO) { runCatching { ai.planDay(METHOD, aiPlanPrompt(ctx, date, plan.focus)) } }
                     busy = false
                     r.onSuccess { (items, note) ->

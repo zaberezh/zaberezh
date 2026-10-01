@@ -35,6 +35,8 @@ interface Store {
     fun kvGet(key: String): String?
     fun kvPut(key: String, value: String?)
     fun allTypes(): List<String>
+    /** Время самой ранней записи (для «с какого дня есть данные») — без загрузки всех записей. */
+    fun firstTs(): Long? = allTypes().mapNotNull { list(it).firstOrNull()?.ts }.minOrNull()
 }
 
 /** Типизированный доступ к записям одного типа. */

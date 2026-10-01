@@ -25,9 +25,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.net.HttpURLConnection
 import java.net.URL
-import java.util.concurrent.ConcurrentHashMap
 
-private val photos = ConcurrentHashMap<String, ImageBitmap>()
+/** Кэш фото в памяти: не больше 64 штук (преподаватели, профиль) — память не растёт бесконечно. */
+private val photos = android.util.LruCache<String, ImageBitmap>(64)
 
 /**
  * Загрузка как в браузере (без User-Agent ИИС отвечает 503); переадресации — только на https, не больше трёх.
@@ -60,10 +60,10 @@ private fun load(start: String, cookie: String?): ImageBitmap? {
 /** Круглое фото по ссылке или data:image (кэш в памяти); пока грузится или нет фото — инициалы. */
 @Composable
 fun RemoteImage(url: String, size: Dp, initials: String, cookie: String? = null) {
-    val img by produceState(photos[url], url) {
+    val img by produceState(photos.get(url), url) {
         if (value == null && (url.startsWith("https://") || url.startsWith("data:image"))) value = withContext(Dispatchers.IO) {
             runCatching { load(url, cookie) }.getOrNull()
-        }?.also { photos[url] = it }
+        }?.also { photos.put(url, it) }
     }
     Box(Modifier.size(size).clip(CircleShape).background(C.cardHi), contentAlignment = Alignment.Center) {
         val b = img

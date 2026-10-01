@@ -99,10 +99,11 @@ fun ReportScreen() {
                 Line {
                     Primary(if (busy) "Анализирую…" else "Анализ Claude", {
                         val st = ctx.settings
-                        if (st.apiKey.isBlank()) { err = "API-ключ не задан (Настройки → Claude). Можно скопировать отчёт в чат."; return@Primary }
+                        val apiKey = by.zaberezh.forma.sys.Secrets.claudeKey(c)
+                        if (apiKey.isBlank()) { err = "API-ключ не задан (Настройки → Claude). Можно скопировать отчёт в чат."; return@Primary }
                         busy = true; err = null
                         scope.launch {
-                            val ai = Claude(st.apiKey, st.model, st.apiUrl)
+                            val ai = Claude(apiKey, st.model, st.apiUrl)
                             val r = withContext(Dispatchers.IO) { runCatching { ai.analyze(METHOD, text, facts, note) } }
                             busy = false
                             r.onSuccess { CHECKUP.save(s, CheckupRec(from.toString(), to.toString(), text, facts, it)); info = "Готово — ниже в истории · ~${ai.used} токенов" }

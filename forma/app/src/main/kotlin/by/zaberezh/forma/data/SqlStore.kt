@@ -19,6 +19,9 @@ import kotlinx.serialization.json.long
 
 /** SQLite-реализация универсального хранилища: одна таблица записей + key-value. */
 class SqlStore(context: Context) : SQLiteOpenHelper(context, "forma.db", null, 1), Store {
+    // WAL: фоновые проверки (ИИС, напоминания) пишут, пока экран читает, — без блокировок и «database is locked»
+    init { setWriteAheadLoggingEnabled(true) }
+
     /** Счётчик изменений — UI перечитывает данные при его смене. */
     val version = mutableIntStateOf(0)
     private fun changed() { version.intValue++ }
@@ -65,6 +68,9 @@ class SqlStore(context: Context) : SQLiteOpenHelper(context, "forma.db", null, 1
         changed()
     }
 
+    override fun firstTs(): Long? =
+        readableDatabase.rawQuery("SELECT MIN(ts) FROM entries", null).use { if (it.moveToFirst() && !it.isNull(0)) it.getLong(0) else null }
+
     override fun allTypes(): List<String> =
         readableDatabase.rawQuery("SELECT DISTINCT type FROM entries", null).use { c -> buildList { while (c.moveToNext()) add(c.getString(0)) } }
 
@@ -80,10 +86,9 @@ class SqlStore(context: Context) : SQLiteOpenHelper(context, "forma.db", null, 1
         return JsonObject(mapOf("format" to JsonPrimitive("forma-1"), "entries" to JsonArray(entries), "kv" to JsonObject(kv))).toString()
     }
 
-    /** Импорт поверх текущих данных (записи с тем же id заменяются). API-ключ сохраняется. */
+    /** Импорт поверх текущих данных (записи с тем же id заменяются). Ключ Claude живёт в сейфе — импорт его не трогает. */
     fun importJson(text: String) {
         val root = JSON.parseToJsonElement(text).jsonObject
-        val key = SETTINGS.get(this).apiKey
         val db = writableDatabase
         db.beginTransaction()
         try {
@@ -99,7 +104,6 @@ class SqlStore(context: Context) : SQLiteOpenHelper(context, "forma.db", null, 1
             }
             db.setTransactionSuccessful()
         } finally { db.endTransaction() }
-        if (key.isNotEmpty()) SETTINGS.set(this, SETTINGS.get(this).copy(apiKey = key))
         changed()
     }
 }

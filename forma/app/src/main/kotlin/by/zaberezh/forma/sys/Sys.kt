@@ -45,6 +45,7 @@ object Notify {
     fun post(
         c: Context, id: Int, title: String, lines: List<String>,
         tap: PendingIntent? = null, actions: List<Notification.Action> = emptyList(), timeoutMs: Long = 0,
+        private: Boolean = false,
     ) {
         if (lines.isEmpty()) return
         if (Build.VERSION.SDK_INT >= 33 && !c.granted(Manifest.permission.POST_NOTIFICATIONS)) return
@@ -57,6 +58,9 @@ object Notify {
             .setContentIntent(pi)
             .setAutoCancel(true)
         actions.forEach { b.addAction(it) }
+        // личное (отметки, пропуски) на экране блокировки — только заголовок без подробностей
+        if (private) b.setVisibility(Notification.VISIBILITY_PRIVATE).setPublicVersion(
+            Notification.Builder(c, CH).setSmallIcon(R.drawable.ic_stat).setContentTitle(title).setContentText("Открой Grind, чтобы посмотреть").build())
         if (timeoutMs > 0) b.setTimeoutAfter(timeoutMs)
         c.getSystemService(NotificationManager::class.java).notify(id, b.build())
     }

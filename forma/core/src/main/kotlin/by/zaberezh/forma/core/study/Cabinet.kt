@@ -105,7 +105,8 @@ object Cabinet {
         val p = parse(profileJson).o(); val i = parse(infoJson).o(); val l = parse(loginJson).o()
         val all = listOfNotNull(p, i, l)
         fun any(vararg k: String) = all.firstNotNullOfOrNull { o -> o.s(*k).takeIf(String::isNotEmpty) }.orEmpty()
-        val edu = i?.get("education").a().firstOrNull().o()
+        // «education» бывает и в ответе на вход через сайт (там тоже /personal-information)
+        val edu = all.firstNotNullOfOrNull { it["education"].a().firstOrNull().o() }
         val fio = listOf(any("lastName"), any("firstName"), any("middleName")).filter(String::isNotEmpty).joinToString(" ")
             .ifEmpty { any("fio", "fullName") }
         val by = listOf(any("belarusianLastName"), any("belarusianFirstName"), any("belarusianMiddleName")).filter(String::isNotEmpty).joinToString(" ")
