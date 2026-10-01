@@ -8,6 +8,12 @@ import java.time.LocalTime
 /** Окно между парами: с конца одной до начала следующей. */
 data class Gap(val from: LocalTime, val to: LocalTime) {
     val minutes get() = java.time.Duration.between(from, to).toMinutes().toInt()
+
+    /** «окно 11:30–13:25 · 1 ч 55 мин» — одинаково на «Сегодня» и в расписании. */
+    fun label(): String {
+        val len = if (minutes < 60) "$minutes мин" else "${minutes / 60} ч" + (if (minutes % 60 > 0) " ${minutes % 60} мин" else "")
+        return "окно $from–$to · $len"
+    }
 }
 
 /** Фокус-сессия над лабой: сколько минут реально поработал. */
