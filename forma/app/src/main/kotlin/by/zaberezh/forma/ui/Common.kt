@@ -117,11 +117,12 @@ fun Screen(content: LazyListScope.() -> Unit) = LazyColumn(
 fun Block(title: String? = null, trailing: (@Composable () -> Unit)? = null, content: @Composable ColumnScope.() -> Unit) = Card(
     Modifier.fillMaxWidth(),
     shape = RoundedCornerShape(16.dp),
-    colors = CardDefaults.cardColors(containerColor = C.card),
+    // явный цвет текста: без него заголовки и текст карточек выходили серыми
+    colors = CardDefaults.cardColors(containerColor = C.card, contentColor = C.text),
 ) {
     Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         if (title != null || trailing != null) Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Text(title ?: "", Modifier.weight(1f), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            Text(title ?: "", Modifier.weight(1f), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, color = C.text)
             trailing?.invoke()
         }
         content()

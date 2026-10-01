@@ -270,7 +270,7 @@ private fun Cabinet(session: IisSession, onExpired: () -> Unit, onLogout: () -> 
 @Composable
 private fun SectionTile(sec: IisSection, info: TileInfo?, loading: Boolean, failed: Boolean, modifier: Modifier, onClick: () -> Unit) = Card(
     modifier.clickable(onClick = onClick), shape = RoundedCornerShape(16.dp),
-    colors = CardDefaults.cardColors(containerColor = C.card),
+    colors = CardDefaults.cardColors(containerColor = C.card, contentColor = C.text),
 ) {
     Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Text(sec.title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, color = C.accent,
