@@ -18,6 +18,8 @@
         android:label="Forma"
         android:icon="@mipmap/ic_launcher"
         android:allowBackup="true"
+        android:fullBackupContent="@xml/backup_rules"
+        android:dataExtractionRules="@xml/data_rules"
         android:theme="@android:style/Theme.Material.NoActionBar">
 
         <activity
