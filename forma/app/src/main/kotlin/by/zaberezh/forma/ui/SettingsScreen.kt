@@ -94,6 +94,7 @@ fun SettingsScreen() {
     var water by remember(st) { mutableStateOf(st.waterReminder) }
     var wake by remember(st) { mutableStateOf(st.wakeAlarm) }
     var iis by remember(st) { mutableStateOf(st.iisWatch) }
+    var eachSet by remember(st) { mutableStateOf(st.logEachSet) }
     var weighOn by remember(st) { mutableStateOf(st.weighReminder) }
     var url by remember(st) { mutableStateOf(st.apiUrl) }
     var model by remember(st) { mutableStateOf(st.model) }
@@ -134,7 +135,7 @@ fun SettingsScreen() {
             sessionsPerWeek = d("sessions", 3.0).toInt().coerceIn(1, 5), sessionMin = d("session", 90.0).toInt().coerceIn(40, 150),
             morningHour = d("hour", 8.0).toInt().coerceIn(0, 23), morningMinute = d("minute", 0.0).toInt().coerceIn(0, 59),
             checkupDays = d("checkup", 14.0).toInt().coerceIn(7, 60),
-            gymWeekends = weekends, split = split, weighReminder = weighOn, waterReminder = water, wakeAlarm = wake, iisWatch = iis,
+            gymWeekends = weekends, split = split, weighReminder = weighOn, waterReminder = water, wakeAlarm = wake, iisWatch = iis, logEachSet = eachSet,
             weighHour = d("wH", 7.0).toInt().coerceIn(0, 23), weighMinute = d("wM", 20.0).toInt().coerceIn(0, 59),
             weighWeekendHour = d("weH", 11.0).toInt().coerceIn(0, 23), weighWeekendMinute = d("weM", 0.0).toInt().coerceIn(0, 59),
             apiKey = "", apiUrl = url.trim(), model = model.trim().ifEmpty { "claude-opus-5-5" },
@@ -184,6 +185,12 @@ fun SettingsScreen() {
                     Text("Выходные — тоже дни зала", Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
                     Switch(checked = weekends, onCheckedChange = { weekends = it })
                 }
+                Line {
+                    Text("Записывать каждый подход", Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+                    Switch(checked = eachSet, onCheckedChange = { eachSet = it })
+                }
+                Muted(if (eachSet) "На тренировке — каждый подход отдельно: вес и повторы."
+                    else "На тренировке — один раз на упражнение: вес × повторы × сколько подходов сделал.")
                 Text("Сплит", style = MaterialTheme.typography.bodyMedium)
                 Buttons {
                     SPLITS.forEach { (id, v) -> FilterChip(selected = split == id, onClick = { split = id }, label = { Text(v.first) }) }
