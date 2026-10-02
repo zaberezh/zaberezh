@@ -84,6 +84,7 @@ fun TodayScreen(onTab: (Int) -> Unit, onStudy: (Int) -> Unit) {
                 style = MaterialTheme.typography.bodyLarge, color = C.muted,
             )
         }
+        item { StudyToday(ctx, onStudy) }   // расписание — первым: с него начинается день
         item {
             val done = tasks.count { it.done }
             Block("План на сегодня", trailing = { Pill("$done из ${tasks.size}", if (done == tasks.size) C.good else C.accent) }) {
@@ -96,7 +97,6 @@ fun TodayScreen(onTab: (Int) -> Unit, onStudy: (Int) -> Unit) {
             }
         }
         item { WaterBlock(ctx) }
-        item { StudyToday(ctx, onStudy) }
     }
 }
 
