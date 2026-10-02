@@ -26,7 +26,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -331,15 +330,13 @@ private fun WorkoutScreen(ctx: Ctx, id: String) {
             ex.id to (x to nextTarget(x, GymModule.history(s, ex.id, e.ts).map { it.second }))
         }
     }
-    var lastSet by remember { mutableLongStateOf(0L) }
-    var restFor by remember { mutableIntStateOf(0) }       // сколько отдыхать после последнего подхода, с
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
     var pick by remember { mutableStateOf(false) }
     var creating by remember { mutableStateOf(false) }
     var cancel by remember { mutableStateOf(false) }
     val view = LocalView.current
     DisposableEffect(Unit) { view.keepScreenOn = true; onDispose { view.keepScreenOn = false } }
-    LaunchedEffect(Unit) { while (true) { now = System.currentTimeMillis(); delay(1000) } }
+    LaunchedEffect(Unit) { while (true) { now = System.currentTimeMillis(); delay(30_000) } }   // минуты тренировки
 
     fun save(nw: Workout) = WORKOUT.save(s, nw, ts = e.ts, id = id)
     fun addToPlan(exId: String) {
@@ -353,18 +350,9 @@ private fun WorkoutScreen(ctx: Ctx, id: String) {
             val done = w.sets.size
             val total = targets.values.sumOf { it.first.sets }
             Block("Тренировка · ${DM.format(date)}", trailing = { Pill("$done / $total подходов") }) {
-                Line {
-                    Column(Modifier.weight(1f)) {
-                        Muted("Идёт")
-                        Text("${(now - w.start) / 60_000} мин", style = MaterialTheme.typography.titleLarge)
-                    }
-                    Column(Modifier.weight(1f)) {
-                        Muted("Отдых")
-                        val r = if (lastSet > 0) (now - lastSet) / 1000 else 0L
-                        val over = restFor > 0 && r >= restFor
-                        Text(if (lastSet > 0) "${r / 60}:${"%02d".format(r % 60)}" + (if (restFor > 0) " из ${restFor / 60}:${"%02d".format(restFor % 60)}" else "") else "—",
-                            style = MaterialTheme.typography.titleLarge, color = if (over) C.good else C.text)
-                    }
+                Column {
+                    Muted("Идёт")
+                    Text("${(now - w.start) / 60_000} мин", style = MaterialTheme.typography.titleLarge)
                 }
                 Line {
                     Primary("Завершить", { save(w.copy(end = System.currentTimeMillis())); s.kvPut(ACTIVE, null) }, Modifier.weight(1f))
@@ -379,11 +367,7 @@ private fun WorkoutScreen(ctx: Ctx, id: String) {
             ExerciseCard(pair.first, pair.second, w.sets.filter { it.ex == exId },
                 superset = mate?.let { "${pairLabels(plan.items)[exId]} · суперсет с «$it»: подход → 60–90 с → подход второго" },
                 eachSet = ctx.settings.logEachSet,
-                onAdd = { sets ->
-                    save(w.copy(sets = w.sets + sets)); lastSet = System.currentTimeMillis()
-                    // отдых на экране (без вибрации и уведомлений): суперсет — 75 с, иначе отдых упражнения
-                    restFor = if (mate != null) 75 else pair.first.restSec
-                },
+                onAdd = { sets -> save(w.copy(sets = w.sets + sets)) },
                 onUndo = { all ->
                     if (all) save(w.copy(sets = w.sets.filter { it.ex != exId }))
                     else {
@@ -438,8 +422,8 @@ private fun ExerciseCard(
     Block(ex.name, trailing = { Pill("${done.size}/${ex.sets}", if (complete) C.good else C.muted) }) {
         if (superset != null) Text(superset, style = MaterialTheme.typography.bodySmall, color = C.accent)
         Stat("Цель", t?.weight?.let { "${it.r1()} кг × ${t.reps.joinToString(", ")}" } ?: "подобрать вес")
-        Muted("${ex.repMin}–${ex.repMax} повт. · в запасе ${ex.rir} · " + (if (superset != null) "между упражнениями пары 60–90 с" else "отдых ${ex.restSec / 60.0} мин") +
-            (t?.note?.takeIf { it.isNotEmpty() }?.let { " · $it" } ?: ""))
+        Muted(listOfNotNull("${ex.repMin}–${ex.repMax} повт.", "в запасе ${ex.rir}",
+            if (superset != null) "между упражнениями пары 60–90 с" else null, t?.note?.takeIf { it.isNotEmpty() }).joinToString(" · "))
         if (done.isNotEmpty()) Buttons {
             done.forEach { Pill("${it.w.r1()} × ${it.r}", C.good) }
         }
