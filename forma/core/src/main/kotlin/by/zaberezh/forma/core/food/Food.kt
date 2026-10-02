@@ -19,9 +19,9 @@ import java.time.LocalDate
 import java.time.temporal.ChronoUnit
 
 @Serializable
-data class Macro(val kcal: Double = 0.0, val p: Double = 0.0, val f: Double = 0.0, val c: Double = 0.0) {
-    operator fun plus(o: Macro) = Macro(kcal + o.kcal, p + o.p, f + o.f, c + o.c)
-    operator fun times(k: Double) = Macro(kcal * k, p * k, f * k, c * k)
+data class Macro(val kcal: Double = 0.0, val p: Double = 0.0, val f: Double = 0.0, val c: Double = 0.0, val fib: Double = 0.0) {
+    operator fun plus(o: Macro) = Macro(kcal + o.kcal, p + o.p, f + o.f, c + o.c, fib + o.fib)
+    operator fun times(k: Double) = Macro(kcal * k, p * k, f * k, c * k, fib * k)
     fun short() = "${kcal.i()} ккал · Б ${p.i()} · Ж ${f.i()} · У ${c.i()}"
 }
 
@@ -44,7 +44,10 @@ data class LibFood(val name: String, val grams: Double, val per100: Macro, val s
 val MEAL = Kind("food.meal", Meal.serializer())
 val LIB = Kind("food.lib", LibFood.serializer())
 
-data class Targets(val kcal: Int, val p: Int, val f: Int, val c: Int, val tdee: Int, val tdeeNote: String)
+data class Targets(val kcal: Int, val p: Int, val f: Int, val c: Int, val tdee: Int, val tdeeNote: String, val fib: Int = FIBER_GOAL)
+
+/** Клетчатка в день, г — рекомендация ВОЗ/EFSA для взрослых (25–30+). */
+const val FIBER_GOAL = 30
 
 fun norm(s: String) = s.lowercase().replace('ё', 'е').replace(Regex("[^\\p{L}\\p{N} ]"), " ").replace(Regex("\\s+"), " ").trim()
 

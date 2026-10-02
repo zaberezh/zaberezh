@@ -106,4 +106,13 @@ class FoodSearchTest {
             .run("шоколадка милка с орехами 30 г")
         assertEquals(30.0, claude.items.single().grams)
     }
+
+    @Test fun fiberFromLibrary() {
+        assertEquals(3.12, basic("один банан").single().total.fib, 0.01)                 // 120 г × 2.6 г/100 г
+        assertEquals(0.0, basic("200г куриная грудка вареная").single().total.fib)        // мясо — без клетчатки
+        val names = Menus.basic.items.map { it.name }.toSet()
+        val fiber = javaClass.getResource("/menus/fiber.txt")!!.readText().lines().filter { it.isNotBlank() && !it.startsWith("#") }
+            .map { it.substringBefore('|').trim() }
+        assertEquals(emptyList(), fiber.filter { it !in names }, "в fiber.txt названия, которых нет в basic.txt")
+    }
 }

@@ -95,6 +95,7 @@ fun SettingsScreen() {
     var wake by remember(st) { mutableStateOf(st.wakeAlarm) }
     var iis by remember(st) { mutableStateOf(st.iisWatch) }
     var eachSet by remember(st) { mutableStateOf(st.logEachSet) }
+    var adv by remember(st) { mutableStateOf(st.advancedMacros) }
     var weighOn by remember(st) { mutableStateOf(st.weighReminder) }
     var url by remember(st) { mutableStateOf(st.apiUrl) }
     var model by remember(st) { mutableStateOf(st.model) }
@@ -135,7 +136,7 @@ fun SettingsScreen() {
             sessionsPerWeek = d("sessions", 3.0).toInt().coerceIn(1, 5), sessionMin = d("session", 90.0).toInt().coerceIn(40, 150),
             morningHour = d("hour", 8.0).toInt().coerceIn(0, 23), morningMinute = d("minute", 0.0).toInt().coerceIn(0, 59),
             checkupDays = d("checkup", 14.0).toInt().coerceIn(7, 60),
-            gymWeekends = weekends, split = split, weighReminder = weighOn, waterReminder = water, wakeAlarm = wake, iisWatch = iis, logEachSet = eachSet,
+            gymWeekends = weekends, split = split, weighReminder = weighOn, waterReminder = water, wakeAlarm = wake, iisWatch = iis, logEachSet = eachSet, advancedMacros = adv,
             weighHour = d("wH", 7.0).toInt().coerceIn(0, 23), weighMinute = d("wM", 20.0).toInt().coerceIn(0, 59),
             weighWeekendHour = d("weH", 11.0).toInt().coerceIn(0, 23), weighWeekendMinute = d("weM", 0.0).toInt().coerceIn(0, 59),
             apiKey = "", apiUrl = url.trim(), model = model.trim().ifEmpty { "claude-opus-5-5" },
@@ -153,6 +154,13 @@ fun SettingsScreen() {
         item {
             Block("Цели питания") {
                 grid(GOALS)
+                Line {
+                    Text("Продвинутое КБЖУ", Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+                    Switch(checked = adv, onCheckedChange = { v ->
+                        adv = v; SETTINGS.set(Forma.store, SETTINGS.get(Forma.store).copy(advancedMacros = v))   // сразу, без «Сохранить»
+                    })
+                }
+                Muted("Кроме КБЖУ — клетчатка: цель ${by.zaberezh.forma.core.food.FIBER_GOAL} г в день, считается по продуктам и ответам Claude.")
                 Muted("Активность 1.375 = только 3 силовые в неделю, ходьба не учитывается. Темп 0.1 кг/нед = медленный набор. " +
                     "Через 2–4 недели записей расход уточняется по реальным данным.")
             }
