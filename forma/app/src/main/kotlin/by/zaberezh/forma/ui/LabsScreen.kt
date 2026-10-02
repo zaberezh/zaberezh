@@ -282,7 +282,7 @@ private fun SessionBlock(s: Store, today: java.time.LocalDate, labsLeft: Int) {
                         Muted(x.lesson.start)
                     }
                     Column(Modifier.weight(1f)) {
-                        Text(x.lesson.title, style = MaterialTheme.typography.bodyMedium, fontWeight = if (x.exam) FontWeight.Medium else null,
+                        Text(x.lesson.short, style = MaterialTheme.typography.bodyMedium, fontWeight = if (x.exam) FontWeight.Medium else null,
                             color = if (x.exam) C.text else C.muted)
                         Text(listOf(x.lesson.typeFull, x.lesson.rooms.joinToString(", ")).filter(String::isNotBlank).joinToString(" · "),
                             style = MaterialTheme.typography.bodySmall, color = if (x.exam) C.bad else C.muted)

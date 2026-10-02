@@ -83,7 +83,7 @@ object WakeAlarm {
         val n = Notification.Builder(c, CH)
             .setSmallIcon(R.drawable.ic_stat)
             .setContentTitle("Подъём — пара в ${first?.start ?: ""}")
-            .setContentText(first?.let { listOf(it.title, it.type, it.rooms.joinToString(", ")).filter(String::isNotBlank).joinToString(" · ") } ?: "")
+            .setContentText(first?.let { listOf(it.short, it.type, it.rooms.joinToString(", ")).filter(String::isNotBlank).joinToString(" · ") } ?: "")
             .setCategory(Notification.CATEGORY_ALARM)
             .setContentIntent(stop).setDeleteIntent(stop)
             .addAction(Notification.Action.Builder(null, "Встал", stop).build())
