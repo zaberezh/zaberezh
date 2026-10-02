@@ -31,14 +31,6 @@
             </intent-filter>
         </activity>
 
-        <provider
-            android:name="androidx.core.content.FileProvider"
-            android:authorities="${applicationId}.files"
-            android:exported="false"
-            android:grantUriPermissions="true">
-            <meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/file_paths" />
-        </provider>
-
         <receiver android:name=".sys.MorningReceiver" android:exported="false" />
         <receiver android:name=".sys.EveningReceiver" android:exported="false" />
         <receiver android:name=".sys.WeighReceiver" android:exported="false" />
@@ -51,7 +43,6 @@
             android:exported="false"
             android:permission="android.permission.BIND_JOB_SERVICE" />
         <receiver android:name=".sys.RestReceiver" android:exported="false" />
-        <receiver android:name=".sys.FocusReceiver" android:exported="false" />
         <receiver android:name=".sys.BootReceiver" android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />

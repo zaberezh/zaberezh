@@ -1,5 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<!-- Снимки еды для распознавания КБЖУ: временные, в кэше приложения. -->
-<paths>
-    <cache-path name="photos" path="photos/" />
-</paths>
