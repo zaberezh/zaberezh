@@ -257,9 +257,10 @@ private fun LessonCard(s: Store, tt: Timetable, l: Lesson, date: LocalDate, subg
     ) {
         Column(Modifier.animateContentSize().padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min)) {
-                Column(Modifier.width(50.dp)) {
-                    Text(l.start, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
-                    Muted(l.end)
+                // время пары — крупно и цветом раздела, конец — сразу под ним, хорошо читается
+                Column(Modifier.width(54.dp)) {
+                    Text(l.start, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = C.study)
+                    Text(l.end, style = MaterialTheme.typography.bodyMedium, color = C.text.copy(alpha = 0.75f))
                 }
                 Box(Modifier.width(4.dp).fillMaxHeight().clip(RoundedCornerShape(2.dp)).background(typeColor(l.type)))
                 Column(Modifier.weight(1f).padding(start = 12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {

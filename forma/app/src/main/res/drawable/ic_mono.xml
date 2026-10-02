@@ -1,8 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Для тематических иконок Android 13+: G и огонёк одним цветом. -->
+<!-- Для тематических иконок Android 13+: шестигранник и молния одним цветом. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
-    <path android:pathData="M70.3,37.7 A23,23 0 1,0 77,54 L58,54" android:strokeColor="#FFFFFFFF" android:strokeWidth="10"
-        android:strokeLineCap="round" android:strokeLineJoin="round" android:fillColor="#00000000" />
-    <path android:pathData="M70,27 C76,34 77,40 72.5,46 C74.5,41.5 71.5,38 69.5,37 C69.5,41.5 65.5,42.5 66.5,47 C61.5,43 62.5,36 70,27 Z" android:fillColor="#FFFFFFFF" />
+    <path android:pathData="M54.0,26.8 L77.2,40.4 L77.2,67.6 L54.0,81.2 L30.8,67.6 L30.8,40.4 Z" android:strokeColor="#FFFFFFFF" android:strokeWidth="4.8" android:strokeLineJoin="round" android:fillColor="#00000000" />
+    <path android:pathData="M58.0,34.8 L42.8,57.2 L52.4,57.2 L49.2,73.2 L65.2,49.2 L55.6,49.2 Z" android:fillColor="#FFFFFFFF" android:strokeColor="#FFFFFFFF" android:strokeWidth="1.5" android:strokeLineJoin="round" />
 </vector>

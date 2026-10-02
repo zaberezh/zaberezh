@@ -187,8 +187,12 @@ private fun StudyToday(ctx: Ctx, onStudy: (Int) -> Unit) {
                         .background(if (current) C.study.copy(alpha = 0.12f) else C.card).clickable { onStudy(0) }.padding(vertical = 6.dp, horizontal = 4.dp),
                     verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
-                    Text(l.start, Modifier.width(44.dp), style = MaterialTheme.typography.bodyMedium, color = if (past) C.muted else C.text)
-                    Box(Modifier.size(width = 4.dp, height = 28.dp).clip(RoundedCornerShape(2.dp)).background(typeColor(l.type).copy(alpha = if (past) 0.4f else 1f)))
+                    // время пары — крупно и цветом раздела, конец — сразу под ним
+                    Column(Modifier.width(48.dp)) {
+                        Text(l.start, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, color = if (past) C.muted else C.study)
+                        Text(l.end, style = MaterialTheme.typography.bodySmall, color = if (past) C.muted else C.text.copy(alpha = 0.75f))
+                    }
+                    Box(Modifier.size(width = 4.dp, height = 34.dp).clip(RoundedCornerShape(2.dp)).background(typeColor(l.type).copy(alpha = if (past) 0.4f else 1f)))
                     Column(Modifier.weight(1f)) {
                         Text(l.title, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium,
                             color = if (past) C.muted else C.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -216,7 +220,7 @@ private fun StudyToday(ctx: Ctx, onStudy: (Int) -> Unit) {
 /** Окно между парами (можно поесть, сходить в зал, сделать лабу): под названиями пар, приглушённо. */
 @Composable
 private fun GapLine(g: by.zaberezh.forma.core.study.Gap, now: LocalTime) {
-    Text(g.label(), Modifier.padding(start = 72.dp, top = 2.dp, bottom = 2.dp),
+    Text(g.label(), Modifier.padding(start = 76.dp, top = 2.dp, bottom = 2.dp),
         style = MaterialTheme.typography.bodySmall, color = if (now.isAfter(g.to)) C.line else C.muted)
 }
 
