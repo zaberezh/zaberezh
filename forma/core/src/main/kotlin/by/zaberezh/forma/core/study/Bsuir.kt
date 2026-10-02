@@ -38,6 +38,8 @@ data class Lesson(
     val note: String = "",
 ) {
     val title get() = full.ifBlank { subject }
+    /** Короткое название для списков: «Математический анализ» → «Мат. анализ»; длинное — аббревиатура из ИИС. */
+    val short get() = shortTitle(full, subject)
     /** Полное название типа занятия. */
     val typeFull get() = when (type.uppercase()) {
         "ЛК" -> "Лекция"; "ПЗ" -> "Практическое занятие"; "ЛР" -> "Лабораторная работа"
@@ -209,4 +211,28 @@ object Bsuir {
         val w = fetch(WEEK_URL)?.let(::parseWeek)
         return if (w != null) tt.copy(anchorDate = today.toString(), anchorWeek = w) else tt
     }
+}
+
+private const val SHORT_KEEP = 14   // до стольких символов название не трогаем
+private const val SHORT_MAX = 21
+private const val VOWELS = "аеёиоуыэюяАЕЁИОУЫЭЮЯ"
+private val ADJ = Regex("(ий|ый|ой|ая|яя|ое|ее|ые|ие|ого|его|ых|их|ому|ему)$")
+
+/** Прилагательное → до первой гласной после 3-й буквы: «Математический» → «Мат.», «Дискретная» → «Дискр.». */
+private fun cut(word: String): String {
+    if (word.length <= 6 || !ADJ.containsMatchIn(word.lowercase())) return word
+    for (i in 3 until word.length - 1) if (word[i] in VOWELS && word[i - 1] !in VOWELS) return word.take(i) + "."
+    return word
+}
+
+/** Название пары, которое влезает в строку: полное, если короткое; иначе прилагательные сокращаются; иначе аббревиатура. */
+fun shortTitle(full: String, abbrev: String): String {
+    val f = full.trim().replace(Regex("\\s+"), " ")
+    if (f.isEmpty()) return abbrev
+    if (f.length <= SHORT_KEEP) return f
+    val cutWords = f.split(" ").joinToString(" ") { w -> if ('-' in w) w else cut(w) }
+    if (cutWords.length <= SHORT_MAX) return cutWords
+    val noBrackets = cutWords.replace(Regex("\\s*\\(.*?\\)"), "").trim()   // «(английский)» — уточнение, без него понятно
+    if (noBrackets.isNotEmpty() && noBrackets.length <= SHORT_MAX) return noBrackets
+    return abbrev.ifBlank { cutWords }
 }

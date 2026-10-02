@@ -173,7 +173,7 @@ private fun StudyToday(ctx: Ctx, onStudy: (Int) -> Unit) {
             lessons.isEmpty() -> {
                 Muted("Сегодня пар нет.")
                 (1L..7L).map { ctx.today.plusDays(it) }.firstNotNullOfOrNull { d -> Bsuir.on(tt, d, sub).firstOrNull()?.let { d to it } }?.let { (d, l) ->
-                    Muted("Дальше: ${d.dayOfWeek.getDisplayName(TextStyle.SHORT, RU)}, ${l.start} — ${l.title}")
+                    Muted("Дальше: ${d.dayOfWeek.getDisplayName(TextStyle.SHORT, RU)}, ${l.start} — ${l.short}")
                 }
             }
             else -> { val shown = mutableSetOf<by.zaberezh.forma.core.study.Gap>(); lessons.forEach { l ->
@@ -194,7 +194,7 @@ private fun StudyToday(ctx: Ctx, onStudy: (Int) -> Unit) {
                     }
                     Box(Modifier.size(width = 4.dp, height = 34.dp).clip(RoundedCornerShape(2.dp)).background(typeColor(l.type).copy(alpha = if (past) 0.4f else 1f)))
                     Column(Modifier.weight(1f)) {
-                        Text(l.title, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium,
+                        Text(l.short, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium,
                             color = if (past) C.muted else C.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         // тип и аудитория — тем же цветом, что в расписании (ЛК — зелёный, ПЗ — фиолетовый, ЛР — жёлтый)
                         Text(listOf(l.type, l.rooms.joinToString(", ")).filter(String::isNotBlank).joinToString(" · "),
