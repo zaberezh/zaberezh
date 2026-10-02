@@ -157,18 +157,18 @@ fun Inset(content: @Composable ColumnScope.() -> Unit) = Column(
     verticalArrangement = Arrangement.spacedBy(8.dp), content = content,
 )
 
-/** Огонёк серии: «🔥 12», погасший — серый. */
+/** Огонёк серии «🔥 12» — только когда 2+ дня подряд. */
 @Composable
-fun StreakPill(st: by.zaberezh.forma.core.daily.Streak) = Pill("🔥 ${st.days}", if (st.alive) C.warn else C.muted)
+fun StreakPill(st: by.zaberezh.forma.core.daily.Streak) { if (st.alive) Pill("🔥 ${st.days}", C.warn) }
 
-/** Подпись под серией: сейвы месяца и напоминание, что сегодня ещё не отмечено. */
+/** Подпись под серией: напоминание, что сегодня ещё не отмечено, или подсказка, как зажечь огонёк. */
 @Composable
 fun StreakNote(st: by.zaberezh.forma.core.daily.Streak, what: String) {
-    val saves = "автосейвов в этом месяце: ${st.savesLeft} из ${by.zaberezh.forma.core.daily.Streaks.SAVES_PER_MONTH}"
     when {
-        !st.alive -> Muted("Серия: начни сегодня — $what. Пропуск закрывается автосейвом (2 в месяц).")
-        !st.doneToday -> Text("Серия ${st.days} дн. — сегодня ещё не $what · $saves", style = MaterialTheme.typography.bodySmall, color = C.warn)
-        else -> Muted("Серия ${st.days} дн." + (if (st.savedDays.isNotEmpty()) " (спасено сейвами: ${st.savedDays.size})" else "") + " · $saves")
+        st.alive && !st.doneToday -> Text("Серия ${st.days} дн. — сегодня ещё не $what, иначе огонёк погаснет",
+            style = MaterialTheme.typography.bodySmall, color = C.warn)
+        st.days == 1 && st.doneToday -> Muted("Завтра ещё раз — загорится огонёк")
+        else -> {}
     }
 }
 
