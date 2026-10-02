@@ -158,7 +158,16 @@ object Menus {
     val all: List<Menu> by lazy { listOf("kfc", "kinza", "mak").map(Menu::load) }
 
     /** Общие продукты (банан, гречка, яйца…) — средние значения из таблиц калорийности и вес штуки. */
-    val basic: Menu by lazy { Menu.load("basic") }
+    val basic: Menu by lazy { Menu.load("basic").withFiber() }
+
+    /** Клетчатка, г/100 г — из menus/fiber.txt по названию продукта (для «продвинутого КБЖУ»). */
+    private fun Menu.withFiber(): Menu {
+        val fib = Menu::class.java.getResource("/menus/fiber.txt")!!.readText().lines()
+            .filter { it.isNotBlank() && !it.startsWith("#") }
+            .mapNotNull { l -> l.split('|').map(String::trim).takeIf { it.size == 2 }?.let { it[0] to it[1].replace(',', '.').toDouble() } }.toMap()
+        return Menu(source, prefix, chain, sig, syn, items.map { i -> fib[i.name]?.let { i.copy(per100 = i.per100.copy(fib = it)) } ?: i },
+            always, soft, scale, conf)
+    }
 
     /** Прогоняет текст через все меню по очереди; что не нашлось ни в одном — в rest. */
     fun resolve(text: String): MenuResult {

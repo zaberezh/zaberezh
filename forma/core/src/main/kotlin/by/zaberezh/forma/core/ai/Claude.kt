@@ -154,7 +154,7 @@ class Claude(apiKey: String, private val model: String, baseUrl: String = "") {
                 val r = LENIENT.decodeFromJsonElement(FoodReport.serializer(), toJson(tool._input().convert(Map::class.java)))
                 val items = r.items.filter { it.grams > 0 && it.kcal >= 0 }.map {
                     val k = 100.0 / it.grams
-                    FoodItem(it.name, it.grams, Macro(it.kcal * k, it.protein * k, it.fat * k, it.carbs * k), it.source, it.confidence)
+                    FoodItem(it.name, it.grams, Macro(it.kcal * k, it.protein * k, it.fat * k, it.carbs * k, it.fiber.coerceAtLeast(0.0) * k), it.source, it.confidence)
                 }
                 // заготовка вместо ответа («Пример позиции», «требуется запрос») = модель не увидела текст
                 val stub = items.any { it.name.startsWith("Пример") || it.source.contains("запрос пользователя") }
@@ -230,7 +230,7 @@ class Claude(apiKey: String, private val model: String, baseUrl: String = "") {
     @Serializable private data class FoodReport(val items: List<Item>, val note: String = "")
     @Serializable private data class Item(
         val name: String, val grams: Double, val kcal: Double, val protein: Double, val fat: Double, val carbs: Double,
-        val source: String = "", val confidence: String = "",
+        val fiber: Double = 0.0, val source: String = "", val confidence: String = "",
     )
 
     companion object {
@@ -372,7 +372,7 @@ class Claude(apiKey: String, private val model: String, baseUrl: String = "") {
                                 "items" to mapOf(
                                     "type" to "object",
                                     "additionalProperties" to false,
-                                    "required" to listOf("name", "grams", "kcal", "protein", "fat", "carbs", "source", "confidence"),
+                                    "required" to listOf("name", "grams", "kcal", "protein", "fat", "carbs", "fiber", "source", "confidence"),
                                     "properties" to mapOf(
                                         "name" to prop("string", "Название по-русски, с заведением/брендом, если есть"),
                                         "grams" to prop("number", "Масса порции, г (для напитков — мл)"),
@@ -380,6 +380,7 @@ class Claude(apiKey: String, private val model: String, baseUrl: String = "") {
                                         "protein" to prop("number", "Белки на порцию, г"),
                                         "fat" to prop("number", "Жиры на порцию, г"),
                                         "carbs" to prop("number", "Углеводы на порцию, г"),
+                                        "fiber" to prop("number", "Клетчатка (пищевые волокна) на порцию, г; не указана — оценка"),
                                         "source" to prop("string", "URL источника или «оценка: …»"),
                                         "confidence" to prop("string", "Уверенность", mapOf("enum" to listOf("high", "medium", "low"))),
                                     ),

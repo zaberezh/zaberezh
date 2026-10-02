@@ -40,7 +40,7 @@ import java.time.format.DateTimeFormatter
 
 private val HHMM = DateTimeFormatter.ofPattern("HH:mm")
 
-private fun Macro.line() = "${kcal.i()} ккал · Б ${p.i()} · Ж ${f.i()} · У ${c.i()}"
+private fun Macro.line(adv: Boolean = false) = "${kcal.i()} ккал · Б ${p.i()} · Ж ${f.i()} · У ${c.i()}" + (if (adv) " · Кл ${fib.r1()}" else "")
 
 @Composable
 fun FoodScreen() {
@@ -53,6 +53,7 @@ fun FoodScreen() {
     var err by FoodSearch.err
     val info by FoodSearch.info
     val c = LocalContext.current
+    val adv = ctx.settings.advancedMacros
     DisposableEffect(Unit) { FoodSearch.visible = true; onDispose { FoodSearch.visible = false } }
 
     Screen {
@@ -65,6 +66,7 @@ fun FoodScreen() {
                 Progress("Белок", t.p, g.p, "г")
                 Progress("Жиры", t.f, g.f, "г")
                 Progress("Углеводы", t.c, g.c, "г")
+                if (adv) Progress("Клетчатка", t.fib, g.fib, "г")
                 Muted("Норма ${g.kcal} ккал = расход ${g.tdee} + набор. Расход: ${g.tdeeNote}")
             }
         }
@@ -90,13 +92,13 @@ fun FoodScreen() {
                     list.forEachIndexed { i, it ->
                         if (i > 0) HorizontalDivider(color = C.line)
                         key(i, it.name) {
-                            DraftItem(it,
+                            DraftItem(it, adv,
                                 { n -> draft = list.toMutableList().also { l -> l[i] = n } },
                                 { draft = list.filterIndexed { j, _ -> j != i } })
                         }
                     }
                     HorizontalDivider(color = C.line)
-                    Stat("Итого", list.fold(Macro()) { a, b -> a + b.total }.line())
+                    Stat("Итого", list.fold(Macro()) { a, b -> a + b.total }.line(adv))
                     Line {
                         Primary("Сохранить", {
                             val ts = if (date == ctx.today) System.currentTimeMillis()
@@ -118,7 +120,7 @@ fun FoodScreen() {
                 Text(m.text, style = MaterialTheme.typography.bodyMedium)
                 m.items.forEach { Stat("${it.name}, ${it.grams.r1()} г", "${it.total.kcal.i()} ккал") }
                 Line {
-                    Muted("Б ${total.p.i()} · Ж ${total.f.i()} · У ${total.c.i()}", Modifier.weight(1f))
+                    Muted("Б ${total.p.i()} · Ж ${total.f.i()} · У ${total.c.i()}" + (if (adv) " · Кл ${total.fib.r1()}" else ""), Modifier.weight(1f))
                     DeleteButton("приём пищи") { s.delete(e.id) }
                 }
             }
@@ -127,25 +129,26 @@ fun FoodScreen() {
 }
 
 @Composable
-private fun DraftItem(item: FoodItem, onChange: (FoodItem) -> Unit, onRemove: () -> Unit) {
+private fun DraftItem(item: FoodItem, adv: Boolean, onChange: (FoodItem) -> Unit, onRemove: () -> Unit) {
     var manual by remember { mutableStateOf(item.per100 == Macro()) }
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Line {
             Text(item.name, Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge)
             NumBound("Масса", item.grams, { g -> onChange(item.copy(grams = g)) }, Modifier.width(110.dp), suffix = "г")
         }
-        Text(item.total.line(), style = MaterialTheme.typography.bodyMedium)
+        Text(item.total.line(adv), style = MaterialTheme.typography.bodyMedium)
         if (item.source.isNotBlank()) Muted(
             (when (item.conf) { "high" -> "точно"; "medium" -> "примерно"; "low" -> "оценка"; else -> "" }) + " · " + item.source,
         )
         if (manual) {
             Muted("КБЖУ на 100 г:")
-            Grid2(listOf("ккал", "Б", "Ж", "У")) { k, m ->
+            Grid2(listOf("ккал", "Б", "Ж", "У") + (if (adv) listOf("Кл") else emptyList())) { k, m ->
                 when (k) {
                     "ккал" -> NumBound("Ккал", item.per100.kcal, { v -> onChange(item.copy(per100 = item.per100.copy(kcal = v))) }, m)
                     "Б" -> NumBound("Белки", item.per100.p, { v -> onChange(item.copy(per100 = item.per100.copy(p = v))) }, m, "г")
                     "Ж" -> NumBound("Жиры", item.per100.f, { v -> onChange(item.copy(per100 = item.per100.copy(f = v))) }, m, "г")
-                    else -> NumBound("Углеводы", item.per100.c, { v -> onChange(item.copy(per100 = item.per100.copy(c = v))) }, m, "г")
+                    "У" -> NumBound("Углеводы", item.per100.c, { v -> onChange(item.copy(per100 = item.per100.copy(c = v))) }, m, "г")
+                    else -> NumBound("Клетчатка", item.per100.fib, { v -> onChange(item.copy(per100 = item.per100.copy(fib = v))) }, m, "г")
                 }
             }
         }
