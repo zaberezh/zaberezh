@@ -42,7 +42,6 @@
             android:name=".sys.IisCheckJob"
             android:exported="false"
             android:permission="android.permission.BIND_JOB_SERVICE" />
-        <receiver android:name=".sys.RestReceiver" android:exported="false" />
         <receiver android:name=".sys.BootReceiver" android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />

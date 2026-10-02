@@ -30,7 +30,8 @@ object Notify {
         c.getSystemService(NotificationManager::class.java)
             .createNotificationChannel(NotificationChannel(CH, "Напоминания", NotificationManager.IMPORTANCE_DEFAULT))
         WakeAlarm.channel(c)
-        Timers.channel(c)
+        // таймер отдыха с вибрацией убран — старый канал уведомлений больше не нужен
+        c.getSystemService(NotificationManager::class.java).deleteNotificationChannel("timers")
     }
 
     /** Готовое уведомление — с той же проверкой разрешения. */
