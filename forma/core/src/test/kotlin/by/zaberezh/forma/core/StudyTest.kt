@@ -125,6 +125,7 @@ class StudyTest {
         fun thu(d: Int) = by.zaberezh.forma.core.study.Bsuir.on(tt, java.time.LocalDate.of(2026, 9, d)).map { it.start to it.title }
         assertEquals(listOf("13:35" to "Консультация по математическому анализу", "15:00" to "Консультация по физике"), thu(3))
         assertEquals(listOf("13:35" to "Консультация по математическому анализу"), thu(10))
+        assertEquals(listOf("315-4 к."), by.zaberezh.forma.core.study.Bsuir.on(tt, java.time.LocalDate.of(2026, 9, 3)).first { it.subject == "МА" && it.type == "Конс" }.rooms)
         assertEquals(2, thu(17).size)
         assertTrue(by.zaberezh.forma.core.study.Bsuir.on(tt.copy(group = "421701"), java.time.LocalDate.of(2026, 9, 3)).isEmpty())
     }
