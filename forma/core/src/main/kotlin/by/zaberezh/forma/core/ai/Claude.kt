@@ -16,9 +16,7 @@ import com.anthropic.errors.NotFoundException
 import com.anthropic.errors.PermissionDeniedException
 import com.anthropic.errors.RateLimitException
 import com.anthropic.errors.UnauthorizedException
-import com.anthropic.models.messages.Base64ImageSource
 import com.anthropic.models.messages.ContentBlockParam
-import com.anthropic.models.messages.ImageBlockParam
 import com.anthropic.models.messages.Message
 import com.anthropic.models.messages.ToolResultBlockParam
 import com.anthropic.models.messages.MessageCreateParams
@@ -178,39 +176,6 @@ class Claude(apiKey: String, private val model: String, baseUrl: String = "") {
         }
         if (web) throw NoWebTools() // 3 попытки с поиском впустую — пробуем без него
         error("Модель не вернула результат" + last.takeIf { it.isNotBlank() }?.let { ": ${it.take(300)}" }.orEmpty())
-    }
-
-    /**
-     * КБЖУ по фото еды: модель определяет блюда, оценивает массу порций по фото (тарелка, приборы, упаковка)
-     * и КБЖУ. Без веб-поиска — один-два запроса. [note] — подпись пользователя («это гречка с курицей», «вес 350 г»).
-     */
-    fun foodsFromPhoto(jpeg: ByteArray, note: String = ""): List<FoodItem> = withFallback(web = false) { photoAt(jpeg, note) }
-
-    private fun photoAt(jpeg: ByteArray, note: String): List<FoodItem> {
-        val img = ContentBlockParam.ofImage(ImageBlockParam.builder().source(Base64ImageSource.builder()
-            .data(java.util.Base64.getEncoder().encodeToString(jpeg)).mediaType(Base64ImageSource.MediaType.IMAGE_JPEG).build()).build())
-        val ask = "На фото — моя еда" + (if (note.isNotBlank()) " (подпись: «$note»)" else "") +
-            ". Определи каждое блюдо и продукт, оцени массу каждой порции по фото (размер тарелки, приборов, упаковки) " +
-            "и КБЖУ именно этой порции. Если в подписи указан вес — используй его. Верни через report_foods; source = «оценка по фото»."
-        val b = base(FOOD_SYSTEM, OutputConfig.Effort.LOW)
-            .addTool(if (level > 0) REPORT_TOOL else REPORT_TOOL.toBuilder().strict(false).build())
-            .addUserMessageOfBlockParams(listOf(img, ContentBlockParam.ofText(ask)))
-        repeat(2) {
-            val m = call(b)
-            val tool = m.content().firstNotNullOfOrNull { it.toolUse().orElse(null)?.takeIf { t -> t.name() == "report_foods" } }
-            if (tool != null) {
-                val r = LENIENT.decodeFromJsonElement(FoodReport.serializer(), toJson(tool._input().convert(Map::class.java)))
-                val items = r.items.filter { it.grams > 0 && it.kcal >= 0 }.map {
-                    val k = 100.0 / it.grams
-                    FoodItem(it.name, it.grams, Macro(it.kcal * k, it.protein * k, it.fat * k, it.carbs * k), it.source.ifBlank { "оценка по фото" }, it.confidence)
-                }
-                if (items.isEmpty()) error("На фото не получилось распознать еду" + r.note.takeIf { it.isNotBlank() }?.let { ": ${it.take(200)}" }.orEmpty())
-                return items
-            }
-            b.addMessage(m)
-            if (m.stopReason().orElse(null) != StopReason.PAUSE_TURN) b.userText("Верни результат вызовом report_foods.")
-        }
-        error("Модель не вернула результат по фото")
     }
 
     /**

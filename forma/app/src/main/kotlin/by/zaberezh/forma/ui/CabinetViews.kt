@@ -94,7 +94,7 @@ private fun Figure(value: String, label: String, modifier: Modifier, color: Colo
 
 @Composable
 private fun Bar(fraction: Float, color: Color) = Box(Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp)).background(C.line)) {
-    Box(Modifier.fillMaxWidth(fraction.coerceIn(0f, 1f)).height(6.dp).clip(RoundedCornerShape(3.dp)).background(color))
+    Box(Modifier.fillMaxWidth(if (fraction.isNaN()) 0f else fraction.coerceIn(0f, 1f)).height(6.dp).clip(RoundedCornerShape(3.dp)).background(color))
 }
 
 @Composable

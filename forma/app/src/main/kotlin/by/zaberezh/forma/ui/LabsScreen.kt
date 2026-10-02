@@ -176,7 +176,6 @@ private fun ProgressRing(percent: Int, stage: Int, size: Dp = 40.dp, onClick: ()
 @Composable
 private fun LabCard(s: Store, id: String, lab: Lab, expanded: Boolean, setExpanded: (Boolean) -> Unit) {
     var rename by remember { mutableStateOf<Pair<String, (String) -> Unit>?>(null) }
-    val c = androidx.compose.ui.platform.LocalContext.current
     Block {
         Column(Modifier.animateContentSize(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Line {
@@ -206,7 +205,6 @@ private fun LabCard(s: Store, id: String, lab: Lab, expanded: Boolean, setExpand
                     .background(when (lab.stage) { 2 -> C.good; 1 -> C.warn; else -> C.accent }))
             }
             if (expanded) {
-                FocusRow(s, id, lab.stage < 2) { if (it) by.zaberezh.forma.sys.Timers.startFocus(c, id) else by.zaberezh.forma.sys.Timers.stopFocus(c) }
                 lab.tasks.forEachIndexed { i, t -> TaskRow(t, { Study.toggleTask(s, id, i) }) {
                     rename = t.name to { v: String -> Study.updateLab(s, id) { l -> l.copy(tasks = l.tasks.mapIndexed { j, x -> if (j == i) x.copy(name = v) else x }) } }
                 } }
@@ -295,29 +293,5 @@ private fun SessionBlock(s: Store, today: java.time.LocalDate, labsLeft: Int) {
             }
         }
         if (labsLeft > 0 && !info.running) Text("До сессии сдать лаб: $labsLeft", style = MaterialTheme.typography.bodySmall, color = C.warn)
-    }
-}
-
-/**
- * β Фокус-сессия: 25 минут работы над этой лабой — по окончании вибрация и перерыв 5 минут.
- * Минуты копятся по лабе: видно, сколько реально ушло на неё.
- */
-@Composable
-private fun FocusRow(s: Store, labId: String, canStart: Boolean, onToggle: (Boolean) -> Unit) {
-    var now by remember { mutableStateOf(System.currentTimeMillis()) }
-    val run = by.zaberezh.forma.core.study.Focus.active(s)
-    val mine = run?.lab == labId
-    if (mine) androidx.compose.runtime.LaunchedEffect(run) { while (true) { kotlinx.coroutines.delay(15_000); now = System.currentTimeMillis() } }
-    val total = remember(s, labId, run) { by.zaberezh.forma.core.study.Focus.minutes(s, labId) }
-    Inset {
-        Line {
-            Column(Modifier.weight(1f)) {
-                Text(if (mine) "Фокус идёт · осталось ${run!!.left(now)} мин" else "Фокус-сессия · β", style = MaterialTheme.typography.bodyMedium,
-                    color = if (mine) C.accent else C.text, fontWeight = FontWeight.Medium)
-                Muted(if (total > 0) "на эту лабу уже ${total / 60} ч ${total % 60} мин" else "25 минут без отвлечений, потом перерыв")
-            }
-            if (mine) Secondary("Стоп", { onToggle(false) })
-            else if (canStart) Primary("▶ 25 мин", { onToggle(true) })
-        }
     }
 }
