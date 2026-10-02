@@ -37,6 +37,10 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -71,10 +75,11 @@ fun CabinetScreen() {
     var site by remember { mutableStateOf(false) }
     val s = session
     fun enter(x: IisSession) {
-        SecureStore.put(c, "cookie", x.cookie)
-        SecureStore.put(c, "profile", x.profile)
-        session = x; notice = null; site = false
-        by.zaberezh.forma.sys.IisCheck.loggedIn(c)
+        // сбой сейфа или планировщика не должен ронять вход: сессия работает и без них, просто не запомнится
+        val saved = runCatching { SecureStore.put(c, "cookie", x.cookie); SecureStore.put(c, "profile", x.profile) }.isSuccess
+        session = x; site = false
+        notice = if (saved) null else "Вошёл, но сессию не удалось сохранить — после перезапуска войди снова"
+        runCatching { by.zaberezh.forma.sys.IisCheck.loggedIn(c) }
     }
     when {
         site -> SiteLogin(onDone = ::enter, onCancel = { wipeWeb(); site = false })
@@ -147,6 +152,7 @@ private fun SiteLogin(onDone: (IisSession) -> Unit, onCancel: () -> Unit) {
     }
 }
 
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 private fun LoginForm(notice: String?, onLogin: (IisSession) -> Unit, onSite: () -> Unit) {
     val scope = rememberCoroutineScope()
@@ -154,6 +160,11 @@ private fun LoginForm(notice: String?, onLogin: (IisSession) -> Unit, onSite: ()
     var pass by remember { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
     var err by remember { mutableStateOf<String?>(null) }
+    val keyboard = LocalSoftwareKeyboardController.current
+    val focus = LocalFocusManager.current
+    val imeOpen = WindowInsets.isImeVisible
+    // «Назад» на форме входа: сначала закрывает клавиатуру; пока идёт вход — никуда не уводит
+    BackHandler(enabled = imeOpen || busy) { keyboard?.hide(); focus.clearFocus() }
     Screen {
         item {
             Block("Вход в ИИС") {
@@ -161,6 +172,7 @@ private fun LoginForm(notice: String?, onLogin: (IisSession) -> Unit, onSite: ()
                 Field("Номер студенческого билета", user, { user = it.filter(Char::isLetterOrDigit).take(12) })
                 Field("Пароль ИИС", pass, { pass = it }, number = false, secret = true)
                 Primary(if (busy) "Вхожу…" else "Войти", {
+                    keyboard?.hide(); focus.clearFocus()
                     busy = true; err = null
                     val u = user; val p = pass
                     scope.launch {
@@ -202,7 +214,10 @@ private fun Cabinet(session: IisSession, onExpired: () -> Unit, onLogout: () -> 
         val r = withContext(Dispatchers.IO) {
             runCatching { Cabinet.load(Iis.jdk, session, id) }.onSuccess { d ->
                 // успеваемость: лабы из ИИС — во вкладку «Лабы», отметки — в снимок для фоновых уведомлений
-                if (d is by.zaberezh.forma.core.study.Rating) { by.zaberezh.forma.sys.IisCheck.apply(d); by.zaberezh.forma.core.study.IisWatch.check(Forma.store, d) }
+                // (их сбой не ломает раздел и не роняет приложение)
+                if (d is by.zaberezh.forma.core.study.Rating) runCatching {
+                    by.zaberezh.forma.sys.IisCheck.apply(d); by.zaberezh.forma.core.study.IisWatch.check(Forma.store, d)
+                }
             }
         }
         busy[id] = false
@@ -211,15 +226,15 @@ private fun Cabinet(session: IisSession, onExpired: () -> Unit, onLogout: () -> 
     // всё сразу в фоне: плитки показывают сводку, а раздел открывается мгновенно
     LaunchedEffect(session) { Iis.SECTIONS.forEach { if (data[it.id]?.isSuccess != true) fetch(it.id) } }
 
-    val fromLogin = remember(session) { Cabinet.person(null, null, session.profile) }
+    val fromLogin = remember(session) { runCatching { Cabinet.person(null, null, session.profile) }.getOrElse { Cabinet.person(null, null) } }
     val person = data["cv"]?.getOrNull() as? Person ?: fromLogin
     // группа из ИИС сама становится группой расписания
     var groupNote by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(person.group) {
         val store = Forma.store
-        if (adoptGroup(store, person.group)) {
+        if (runCatching { adoptGroup(store, person.group) }.getOrDefault(false)) {
             groupNote = "Группа ${person.group} взята из ИИС — обновляю расписание…"
-            groupNote = downloadTimetable(store).fold({ "Расписание группы ${person.group} загружено" }, { "Группа ${person.group} сохранена, расписание обновится при открытии" })
+            groupNote = runCatching { downloadTimetable(store) }.getOrElse { Result.failure(it) }.fold({ "Расписание группы ${person.group} загружено" }, { "Группа ${person.group} сохранена, расписание обновится при открытии" })
         }
     }
     Screen {

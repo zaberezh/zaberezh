@@ -16,7 +16,9 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -61,7 +63,21 @@ fun TodayScreen(onTab: (Int) -> Unit, onStudy: (Int) -> Unit) {
     val ctx = rememberCtx()
     // пересчёт только при изменении данных (ctx меняется с версией хранилища), а не на каждую перерисовку
     val tasks = remember(ctx) { dayTasks(ctx) }
+    val c = androidx.compose.ui.platform.LocalContext.current
+    var crash by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(by.zaberezh.forma.sys.CrashLog.read(c)) }
     Screen {
+        crash?.let { log ->
+            item {
+                Block("Приложение упало в прошлый раз", trailing = { Pill("сбой", C.bad) }) {
+                    Muted(log.lines().firstOrNull { it.contains("Exception") || it.contains("Error") }?.take(200) ?: "подробности внутри")
+                    Muted("Скопируй и пришли в чат — по тексту видно, где именно сломалось.")
+                    Buttons {
+                        Secondary("Скопировать", { c.copy(log) })
+                        Flat("Скрыть", { by.zaberezh.forma.sys.CrashLog.clear(c); crash = null }, C.muted)
+                    }
+                }
+            }
+        }
         item {
             Text(
                 ctx.today.dayOfWeek.getDisplayName(TextStyle.FULL, RU).replaceFirstChar { it.uppercase() } + ", " + DATE.format(ctx.today),
@@ -150,7 +166,7 @@ private fun StudyToday(ctx: Ctx, onStudy: (Int) -> Unit) {
     val lessons = remember(tt, sub, ctx.today) { Bsuir.on(tt, ctx.today, sub) }
     val now = LocalTime.now(ZONE)
     fun time(x: String) = runCatching { LocalTime.parse(x) }.getOrNull()
-    val gaps = remember(lessons) { by.zaberezh.forma.core.study.Focus.gaps(lessons) }
+    val gaps = remember(lessons) { by.zaberezh.forma.core.study.Gaps.gaps(lessons) }
     Block("Учёба сегодня", trailing = { if (lessons.isNotEmpty()) Pill("${lessons.size} " + plural(lessons.size, "пара", "пары", "пар"), C.study) }) {
         when {
             tt.lessons.isEmpty() -> Muted("Расписание ещё не загружено — открой «Учёба → Расписание».")

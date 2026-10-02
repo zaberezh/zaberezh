@@ -17,6 +17,7 @@ object Forma {
 class App : Application() {
     override fun onCreate() {
         super.onCreate()
+        by.zaberezh.forma.sys.CrashLog.install(this)
         Forma.app = applicationContext
         Forma.store = SqlStore(this)
         migrateSettings(Forma.store)
