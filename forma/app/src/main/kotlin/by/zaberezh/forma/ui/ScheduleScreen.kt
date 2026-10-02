@@ -264,7 +264,7 @@ private fun LessonCard(s: Store, tt: Timetable, l: Lesson, date: LocalDate, subg
                 }
                 Box(Modifier.width(4.dp).fillMaxHeight().clip(RoundedCornerShape(2.dp)).background(typeColor(l.type)))
                 Column(Modifier.weight(1f).padding(start = 12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text(l.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, color = C.text)
+                    Text(if (open) l.title else l.short, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, color = C.text)
                     Text(
                         listOfNotNull(l.type.takeIf { it.isNotBlank() }, l.rooms.joinToString(", ").takeIf { it.isNotBlank() },
                             if (l.subgroup > 0) "${l.subgroup}-я подгр." else null).joinToString("  ·  "),

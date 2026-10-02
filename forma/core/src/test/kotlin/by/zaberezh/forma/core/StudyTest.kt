@@ -183,4 +183,16 @@ class StudyTest {
         assertEquals(java.time.LocalTime.of(23, 10), by.zaberezh.forma.core.sleep.SleepModule.bedtime(ctx))   // вторник к 8:30 → подъём 7:10
         assertEquals(java.time.LocalTime.of(1, 0), by.zaberezh.forma.core.sleep.SleepModule.bedtime(by.zaberezh.forma.core.Ctx(s, mon.plusDays(1))))  // в среду пар нет → 9:00
     }
+
+    @Test fun shortLessonTitles() {
+        fun sh(f: String, a: String) = by.zaberezh.forma.core.study.shortTitle(f, a)
+        assertEquals("Физика", sh("Физика", "Физ"))
+        assertEquals("Дискр. математика", sh("Дискретная математика", "ДМ"))
+        assertEquals("Мат. анализ", sh("Математический анализ", "МА"))
+        assertEquals("Иностр. язык", sh("Иностранный язык", "ИнЯз"))
+        assertEquals("Иностр. язык", sh("Иностранный язык (английский)", "ИнЯз"))
+        assertEquals("Физ. культура и спорт", sh("Физическая культура и спорт", "ФК"))
+        assertEquals("ОАиП", sh("Основы алгоритмизации и программирования", "ОАиП"))
+        assertEquals("МА", sh("", "МА"))
+    }
 }
