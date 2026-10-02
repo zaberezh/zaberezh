@@ -27,7 +27,6 @@ import by.zaberezh.forma.core.gym.ExerciseInput
 import by.zaberezh.forma.core.gym.GymModule
 import by.zaberezh.forma.core.gym.MUSCLES
 import by.zaberezh.forma.core.gym.PROGRAM
-import by.zaberezh.forma.core.gym.e1rm
 import by.zaberezh.forma.core.gym.guessBodyweight
 import by.zaberezh.forma.core.gym.guessMuscles
 import by.zaberezh.forma.core.gym.guessStep
@@ -72,8 +71,7 @@ fun ExerciseBase(ctx: Ctx) {
                         val hist = GymModule.history(s, ex.id).takeLast(8).reversed()
                         if (hist.isEmpty()) Muted("Истории пока нет")
                         hist.forEach { (d, sets) ->
-                            Stat(DM.format(d), sets.joinToString("  ") { "${it.w.r1()}×${it.r}" } +
-                                "   e1RM ${sets.maxOf { e1rm(it.w, it.r, ex.bw * bwKg) }.r1()}")
+                            Stat(DM.format(d), sets.joinToString("  ") { "${it.w.r1()}×${it.r}" })
                         }
                         Line {
                             Flat("Изменить", { editing = ex.id })

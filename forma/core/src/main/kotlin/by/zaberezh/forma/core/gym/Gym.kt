@@ -20,7 +20,10 @@ import kotlin.math.min
 
 fun e1rm(w: Double, r: Int, bwLoad: Double = 0.0) = (w + bwLoad) * (1 + min(r, 15) / 30.0)
 
-data class ExTrend(val ex: Exercise, val n: Int, val first: Double, val last: Double, val best: Double, val pctWeek: Double?, val status: String)
+data class ExTrend(
+    val ex: Exercise, val n: Int, val first: Double, val last: Double, val best: Double, val pctWeek: Double?, val status: String,
+    val firstSet: SetLog? = null, val lastSet: SetLog? = null,   // лучший подход первой и последней тренировки периода
+)
 
 fun LocalDate.ofMs(ms: Long): LocalDate = LocalDate.ofInstant(Instant.ofEpochMilli(ms), ZONE)
 
@@ -168,8 +171,9 @@ object GymModule : Module {
 
     fun trend(s: Store, ex: Exercise, to: LocalDate, days: Long = 42): ExTrend {
         val bw = (latestWeight(s) ?: 70.0) * ex.bw
-        val pts = history(s, ex.id).filter { it.first > to.minusDays(days) && it.first <= to }
-            .map { (d, sets) -> d to sets.maxOf { e1rm(it.w, it.r, bw) } }
+        val days0 = history(s, ex.id).filter { it.first > to.minusDays(days) && it.first <= to }
+        val bestSets = days0.map { (_, sets) -> sets.maxBy { e1rm(it.w, it.r, bw) } }
+        val pts = days0.map { (d, sets) -> d to sets.maxOf { e1rm(it.w, it.r, bw) } }
         if (pts.isEmpty()) return ExTrend(ex, 0, 0.0, 0.0, 0.0, null, "нет данных")
         val mean = pts.map { it.second }.average()
         val k = slope(pts.map { ChronoUnit.DAYS.between(to, it.first).toDouble() to it.second })
@@ -181,7 +185,8 @@ object GymModule : Module {
             pct > -1.0 -> "стоит"
             else -> "падает"
         }
-        return ExTrend(ex, pts.size, pts.first().second, pts.last().second, pts.maxOf { it.second }, pct, status)
+        return ExTrend(ex, pts.size, pts.first().second, pts.last().second, pts.maxOf { it.second }, pct, status,
+            bestSets.first(), bestSets.last())
     }
 
     /** Подходы на мышцу за период (≥5 повторов; косвенные с коэффициентом). */
@@ -215,9 +220,16 @@ object GymModule : Module {
 
         val used = workouts(s, from, to).flatMap { it.second.sets.map(SetLog::ex) }.toSet()
         val trends = p.exercises.filter { it.id in used }.map { trend(s, it, to) }
+        // понятным языком: лучший подход в начале и в конце периода, и вывод (сила считается по формуле Эпли)
+        fun set(ex: Exercise, x: SetLog?) = x?.let { (if (ex.bw > 0) (if (it.w > 0) "+${it.w.r1()} кг" else "свой вес") else "${it.w.r1()} кг") + " × ${it.r}" } ?: "—"
         trends.forEach { t ->
-            lines += "${t.ex.name}: e1RM ${t.first.r1()}→${t.last.r1()} кг" +
-                (t.pctWeek?.let { " (${it.pct()}/нед)" } ?: "") + " — ${t.status}"
+            val was = set(t.ex, t.firstSet); val now = set(t.ex, t.lastSet)
+            lines += "${t.ex.name}: " + when {
+                t.n <= 1 -> "$now · пока одна тренировка"
+                t.status == "мало данных" -> "$was → $now · мало тренировок для вывода"
+                else -> "$was → $now · ${if (t.status == "медленно") "растёт медленно" else t.status}" +
+                    (t.pctWeek?.let { " (сила ${it.pct()} в неделю)" } ?: "")
+            }
         }
         val judged = trends.filter { it.status != "мало данных" && it.status != "нет данных" }
         val bad = judged.filter { it.status == "стоит" || it.status == "падает" }
