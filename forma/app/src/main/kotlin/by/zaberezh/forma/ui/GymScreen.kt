@@ -8,6 +8,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -97,13 +99,31 @@ fun startWorkout(ctx: Ctx) {
 @Composable
 private fun GymHome(ctx: Ctx) {
     var sel by remember { mutableStateOf(ctx.today) }
+    var tab by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(0) }
     val s = ctx.store
     Screen {
-        item { WeekCalendar(ctx, sel) { sel = it } }
-        item { DayPlanBlock(ctx, sel) }
-        item { ExerciseBase(ctx) }
+        // разделы вкладки: план недели и дня / база упражнений / история — не всё одной простынёй
         item {
-            val list = GymModule.workouts(s).takeLast(8).reversed()
+            Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(C.card).padding(3.dp)) {
+                listOf("План", "Упражнения", "История").forEachIndexed { i, name ->
+                    Box(Modifier.weight(1f).clip(RoundedCornerShape(10.dp)).background(if (tab == i) C.accent.copy(alpha = 0.18f) else C.card)
+                        .clickable { tab = i }.padding(vertical = 10.dp), contentAlignment = Alignment.Center) {
+                        Text(name, style = MaterialTheme.typography.labelLarge, color = if (tab == i) C.accent else C.muted,
+                            fontWeight = if (tab == i) FontWeight.SemiBold else FontWeight.Normal)
+                    }
+                }
+            }
+        }
+        if (tab == 0) {
+            item { WeekCalendar(ctx, sel) { sel = it } }
+            item { DayPlanBlock(ctx, sel) }
+        }
+        if (tab == 1) {
+            item { ExerciseBase(ctx) }
+            item { BackupBlock(GymModule.program(s), ctx) }
+        }
+        if (tab == 2) item {
+            val list = GymModule.workouts(s).takeLast(20).reversed()
             Block("История тренировок") {
                 if (list.isEmpty()) Muted("Пока пусто")
                 list.forEach { (e, w) ->
@@ -118,7 +138,6 @@ private fun GymHome(ctx: Ctx) {
                 }
             }
         }
-        item { BackupBlock(GymModule.program(s), ctx) }
     }
 }
 
@@ -191,6 +210,8 @@ private fun DayPlanBlock(ctx: Ctx, date: LocalDate) {
             return@Block
         }
         if (!isGym) Muted("По плану сегодня отдых, но потренироваться можно.")
+        // переключатель дня — сразу под заголовком, а не в самом низу плана
+        Secondary(if (isGym) "Сделать днём отдыха" else "Сделать днём зала", { err = GymModule.toggleDay(ctx, date) }, Modifier.fillMaxWidth())
 
         val plan = GymModule.planFor(ctx, date)
         fun save(pl: DayPlan) = GymModule.savePlan(s, pl.copy(source = if (pl.source == "claude") "claude" else "edited"))
@@ -270,7 +291,6 @@ private fun DayPlanBlock(ctx: Ctx, date: LocalDate) {
             if (busy) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
         }
         if (date == ctx.today && plan.items.isNotEmpty()) Primary("Начать тренировку", { startWorkout(ctx) }, Modifier.fillMaxWidth())
-        if (isGym && date != ctx.today) Flat("Сделать днём отдыха", { err = GymModule.toggleDay(ctx, date) }, C.muted)
         Note(info); Err(err)
     }
 }
@@ -313,7 +333,6 @@ private fun WorkoutScreen(ctx: Ctx, id: String) {
     }
     var lastSet by remember { mutableLongStateOf(0L) }
     var restFor by remember { mutableIntStateOf(0) }       // сколько отдыхать после последнего подхода, с
-    val c = androidx.compose.ui.platform.LocalContext.current
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
     var pick by remember { mutableStateOf(false) }
     var creating by remember { mutableStateOf(false) }
@@ -340,7 +359,7 @@ private fun WorkoutScreen(ctx: Ctx, id: String) {
                         Text("${(now - w.start) / 60_000} мин", style = MaterialTheme.typography.titleLarge)
                     }
                     Column(Modifier.weight(1f)) {
-                        Muted("Отдых · β вибрация в конце")
+                        Muted("Отдых")
                         val r = if (lastSet > 0) (now - lastSet) / 1000 else 0L
                         val over = restFor > 0 && r >= restFor
                         Text(if (lastSet > 0) "${r / 60}:${"%02d".format(r % 60)}" + (if (restFor > 0) " из ${restFor / 60}:${"%02d".format(restFor % 60)}" else "") else "—",
@@ -348,7 +367,7 @@ private fun WorkoutScreen(ctx: Ctx, id: String) {
                     }
                 }
                 Line {
-                    Primary("Завершить", { save(w.copy(end = System.currentTimeMillis())); s.kvPut(ACTIVE, null); by.zaberezh.forma.sys.Timers.cancelRest(c) }, Modifier.weight(1f))
+                    Primary("Завершить", { save(w.copy(end = System.currentTimeMillis())); s.kvPut(ACTIVE, null) }, Modifier.weight(1f))
                     Flat("Отменить", { cancel = true }, C.muted)
                 }
             }
@@ -359,18 +378,24 @@ private fun WorkoutScreen(ctx: Ctx, id: String) {
             val mate = item?.pair?.let { l -> plan.items.firstOrNull { it.pair == l && it.ex != exId } }?.let { p.ex(it.ex)?.name }
             ExerciseCard(pair.first, pair.second, w.sets.filter { it.ex == exId },
                 superset = mate?.let { "${pairLabels(plan.items)[exId]} · суперсет с «$it»: подход → 60–90 с → подход второго" },
-                onAdd = { set ->
-                    save(w.copy(sets = w.sets + set)); lastSet = System.currentTimeMillis()
-                    // таймер отдыха: суперсет — 75 с, иначе отдых упражнения; дальше — следующий подход или упражнение
-                    val ex = pair.first
-                    val doneHere = w.sets.count { it.ex == exId } + 1
-                    restFor = if (mate != null) 75 else ex.restSec
-                    by.zaberezh.forma.sys.Timers.startRest(c, restFor,
-                        if (doneHere < ex.sets) "${ex.name}: подход ${doneHere + 1} из ${ex.sets}" else "Переходи к следующему упражнению")
+                eachSet = ctx.settings.logEachSet,
+                onAdd = { sets ->
+                    save(w.copy(sets = w.sets + sets)); lastSet = System.currentTimeMillis()
+                    // отдых на экране (без вибрации и уведомлений): суперсет — 75 с, иначе отдых упражнения
+                    restFor = if (mate != null) 75 else pair.first.restSec
                 },
-                onUndo = {
-                    val i = w.sets.indexOfLast { it.ex == exId }
-                    if (i >= 0) save(w.copy(sets = w.sets.filterIndexed { j, _ -> j != i }))
+                onUndo = { all ->
+                    if (all) save(w.copy(sets = w.sets.filter { it.ex != exId }))
+                    else {
+                        val i = w.sets.indexOfLast { it.ex == exId }
+                        if (i >= 0) save(w.copy(sets = w.sets.filterIndexed { j, _ -> j != i }))
+                    }
+                },
+                onRemove = {
+                    // убрать из сегодняшней тренировки: из плана дня и вместе с записанными подходами
+                    val cur = GymModule.storedPlan(s, date) ?: plan
+                    GymModule.savePlan(s, cur.copy(items = cur.items.filter { it.ex != exId }, source = "edited"))
+                    if (w.sets.any { it.ex == exId }) save(w.copy(sets = w.sets.filter { it.ex != exId }))
                 })
         }
         item {
@@ -394,16 +419,21 @@ private fun WorkoutScreen(ctx: Ctx, id: String) {
         onDismissRequest = { cancel = false },
         title = { Text("Отменить тренировку?") },
         text = { Text("Записанные подходы будут удалены.") },
-        confirmButton = { TextButton({ cancel = false; s.delete(id); s.kvPut(ACTIVE, null); by.zaberezh.forma.sys.Timers.cancelRest(c) }) { Text("Удалить", color = C.bad) } },
+        confirmButton = { TextButton({ cancel = false; s.delete(id); s.kvPut(ACTIVE, null) }) { Text("Удалить", color = C.bad) } },
         dismissButton = { TextButton({ cancel = false }) { Text("Назад") } },
         containerColor = C.cardHi,
     )
 }
 
 @Composable
-private fun ExerciseCard(ex: Exercise, t: Target?, done: List<SetLog>, superset: String? = null, onAdd: (SetLog) -> Unit, onUndo: () -> Unit) {
+private fun ExerciseCard(
+    ex: Exercise, t: Target?, done: List<SetLog>, superset: String? = null, eachSet: Boolean = true,
+    onAdd: (List<SetLog>) -> Unit, onUndo: (all: Boolean) -> Unit, onRemove: () -> Unit,
+) {
     var wt by remember(ex.id, done.size) { mutableStateOf((done.lastOrNull()?.w ?: t?.weight)?.r1() ?: "") }
-    var rp by remember(ex.id, done.size) { mutableStateOf((t?.reps?.getOrNull(done.size) ?: done.lastOrNull()?.r)?.toString() ?: "") }
+    var rp by remember(ex.id, done.size) { mutableStateOf((t?.reps?.getOrNull(done.size) ?: done.lastOrNull()?.r ?: t?.reps?.firstOrNull())?.toString() ?: "") }
+    var n by remember(ex.id, done.size) { mutableStateOf(ex.sets.toString()) }
+    var askRemove by remember { mutableStateOf(false) }
     val complete = done.size >= ex.sets
     Block(ex.name, trailing = { Pill("${done.size}/${ex.sets}", if (complete) C.good else C.muted) }) {
         if (superset != null) Text(superset, style = MaterialTheme.typography.bodySmall, color = C.accent)
@@ -413,16 +443,41 @@ private fun ExerciseCard(ex: Exercise, t: Target?, done: List<SetLog>, superset:
         if (done.isNotEmpty()) Buttons {
             done.forEach { Pill("${it.w.r1()} × ${it.r}", C.good) }
         }
-        Line {
-            Field(if (ex.bw > 0) "Доп. вес" else "Вес", wt, { wt = it }, Modifier.weight(1f), suffix = "кг")
-            Field("Повторы", rp, { rp = it }, Modifier.weight(1f))
-        }
-        Line {
-            Primary("Записать подход", {
-                val r = rp.num()?.toInt()
-                if (r != null && r > 0) onAdd(SetLog(ex.id, wt.num() ?: 0.0, r))
-            }, Modifier.weight(1f))
-            if (done.isNotEmpty()) Flat("Отменить последний", onUndo, C.muted)
+        val weightLabel = if (ex.bw > 0) "Доп. вес" else "Вес"
+        if (eachSet) {
+            Line {
+                Field(weightLabel, wt, { wt = it }, Modifier.weight(1f), suffix = "кг")
+                Field("Повторы", rp, { rp = it }, Modifier.weight(1f))
+            }
+            Line {
+                Primary("Записать подход", {
+                    val r = rp.num()?.toInt()
+                    if (r != null && r > 0) onAdd(listOf(SetLog(ex.id, wt.num() ?: 0.0, r)))
+                }, Modifier.weight(1f))
+                if (done.isNotEmpty()) Flat("Отменить последний", { onUndo(false) }, C.muted)
+            }
+        } else if (done.isEmpty()) {
+            // один итог на упражнение: «сколько на сколько» и сколько подходов так сделал
+            Line {
+                Field(weightLabel, wt, { wt = it }, Modifier.weight(1.2f), suffix = "кг")
+                Field("Повторы", rp, { rp = it }, Modifier.weight(1f))
+                Field("Подходы", n, { n = it }, Modifier.weight(1f))
+            }
+            Primary("Записать", {
+                val r = rp.num()?.toInt(); val k = n.num()?.toInt()?.coerceIn(1, 10) ?: 1
+                if (r != null && r > 0) onAdd(List(k) { SetLog(ex.id, wt.num() ?: 0.0, r) })
+            }, Modifier.fillMaxWidth())
+        } else Flat("Изменить", { onUndo(true) }, C.muted)
+        Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterEnd) {
+            Flat("Убрать из тренировки", { if (done.isEmpty()) onRemove() else askRemove = true }, C.muted)
         }
     }
+    if (askRemove) AlertDialog(
+        onDismissRequest = { askRemove = false },
+        title = { Text("Убрать «${ex.name}»?") },
+        text = { Text("Записанные подходы этого упражнения тоже удалятся.") },
+        confirmButton = { TextButton({ askRemove = false; onRemove() }) { Text("Убрать", color = C.bad) } },
+        dismissButton = { TextButton({ askRemove = false }) { Text("Назад") } },
+        containerColor = C.cardHi,
+    )
 }

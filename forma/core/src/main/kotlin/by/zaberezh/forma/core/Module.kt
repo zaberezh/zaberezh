@@ -31,6 +31,7 @@ data class Settings(
     val profile: Profile = Profile(),
     val sessionsPerWeek: Int = 3,
     val gymWeekends: Boolean = true,    // выходные тоже могут быть днями зала
+    val logEachSet: Boolean = true,     // записывать каждый подход; false — один итог «вес × повторы × подходы» на упражнение
     val supersets: Boolean = false,     // суперсеты не используются (решение пользователя)
     val split: String = "ul",
     val sessionMin: Int = 90,
