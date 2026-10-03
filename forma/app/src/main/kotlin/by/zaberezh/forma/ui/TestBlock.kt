@@ -21,10 +21,12 @@ fun TestBlock(ctx: Ctx, def: TestDef) {
     val last = results.lastOrNull()
     val due = TestModule.due(ctx, def)
     val today = last?.takeIf { it.first == ctx.today }?.second
+    // теста сегодня не было, но подходы записаны — максимум взят из лучшего подхода
+    val fromSets = today != null && TestModule.recorded(s, def.id).lastOrNull()?.first != ctx.today
     var v by remember(today) { mutableStateOf(today?.let(TestModule::fmt) ?: "") }
     Block(def.title, trailing = {
         when {
-            today != null -> Pill("сегодня записано", C.good)
+            today != null -> Pill(if (fromSets) "из подходов" else "сегодня записано", C.good)
             def.everyDays <= 1 -> Pill("сегодня не записано", C.muted)
             due -> Pill(if (last == null) "первый тест" else "пора", C.warn)
             else -> Pill("через ${def.everyDays - (TestModule.sinceLast(ctx, def.id) ?: 0)} дн.", C.muted)
@@ -41,10 +43,11 @@ fun TestBlock(ctx: Ctx, def: TestDef) {
         Inset {
             Line {
                 Field("Результат сегодня", v, { v = it }, Modifier.weight(1f), suffix = def.unit)
-                Primary(if (today == null) "Записать" else "Изменить", { v.num()?.let { TestModule.record(s, def.id, ctx.today, it) } })
+                Primary(if (today == null || fromSets) "Записать" else "Изменить", { v.num()?.let { TestModule.record(s, def.id, ctx.today, it) } })
             }
             if (def.hint.isNotEmpty()) Muted(def.hint)
-            if (last != null && last.first == ctx.today) Flat("Удалить сегодняшний результат", { TestModule.delete(s, def.id, ctx.today) }, C.muted)
+            if (fromSets) Muted("Теста сегодня не было — показан лучший подход из записанных. Сделаешь тест — запиши, он заменит.")
+            if (last != null && last.first == ctx.today && !fromSets) Flat("Удалить сегодняшний результат", { TestModule.delete(s, def.id, ctx.today) }, C.muted)
         }
     }
 }

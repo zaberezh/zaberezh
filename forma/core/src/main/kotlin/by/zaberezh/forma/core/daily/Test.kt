@@ -21,8 +21,26 @@ object TestModule : Module {
     override val id = "tests"
     override val title = "Тесты"
 
-    fun results(s: Store, test: String): List<Pair<LocalDate, Double>> =
+    /** Тест «максимум за подход» ↔ ежедневный счётчик, из подходов которого его можно взять. */
+    private val FROM_COUNTER = mapOf("pullups_max" to "pullups")
+
+    /** Только то, что записано как тест (для «пора проверить максимум»). */
+    fun recorded(s: Store, test: String): List<Pair<LocalDate, Double>> =
         TEST.all(s).filter { it.second.test == test }.map { LocalDate.parse(it.second.date) to it.second.value }.sortedBy { it.first }
+
+    /**
+     * Результаты по дням: записанный тест, а в дни без теста — лучший подход из счётчика за этот день
+     * (максимум подтягиваний за раз, который внёс).
+     */
+    fun results(s: Store, test: String): List<Pair<LocalDate, Double>> {
+        val own = recorded(s, test)
+        val counter = FROM_COUNTER[test] ?: return own
+        val days = own.map { it.first }.toSet()
+        val fromSets = COUNT.all(s).map { it.second }.filter { it.counter == counter }
+            .mapNotNull { d -> (d.sets.maxOrNull() ?: d.n.takeIf { it > 0 })?.let { LocalDate.parse(d.date) to it.toDouble() } }
+            .filter { it.first !in days }
+        return (own + fromSets).sortedBy { it.first }
+    }
 
     /** Один результат на день — повторная запись за день заменяет прежнюю. */
     fun record(s: Store, test: String, day: LocalDate, value: Double) {
@@ -32,7 +50,7 @@ object TestModule : Module {
     fun delete(s: Store, test: String, day: LocalDate) = s.delete("test:$test:$day")
 
     /** Дней с последнего теста (null — не было). */
-    fun sinceLast(ctx: Ctx, test: String): Long? = results(ctx.store, test).lastOrNull()?.let { ChronoUnit.DAYS.between(it.first, ctx.today) }
+    fun sinceLast(ctx: Ctx, test: String): Long? = recorded(ctx.store, test).lastOrNull()?.let { ChronoUnit.DAYS.between(it.first, ctx.today) }
 
     fun due(ctx: Ctx, def: TestDef): Boolean = (sinceLast(ctx, def.id) ?: Long.MAX_VALUE) >= def.everyDays
 

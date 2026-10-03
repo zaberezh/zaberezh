@@ -119,21 +119,6 @@ object Study {
 
     private fun Lab.keepConsistent() = if (!done && submitted) copy(submitted = false, submittedOn = null) else this
 
-    // ---------- подъём по первой паре ----------
-    /**
-     * Будильник на день: от первой пары (консультации не в счёт). К 1-й паре (до 8:30 включительно) — за [firstMin] минут
-     * (8:30 → 7:10), к остальным — за [laterMin] (10:05 → 8:30). Нет пар — null.
-     */
-    fun wakeAt(tt: Timetable, day: LocalDate, subgroup: Int = 0, firstMin: Long = 80, laterMin: Long = 95): java.time.LocalDateTime? {
-        val first = Bsuir.on(tt, day, subgroup).filter { !it.type.startsWith("Конс", true) }
-            .mapNotNull { runCatching { java.time.LocalTime.parse(it.start) }.getOrNull() }.minOrNull() ?: return null
-        return day.atTime(first.minusMinutes(if (first <= java.time.LocalTime.of(8, 30)) firstMin else laterMin))
-    }
-
-    /** Ближайший будильник после [now] (сегодня, если ещё не прошёл, иначе следующие дни с парами — до недели вперёд). */
-    fun nextWake(tt: Timetable, now: java.time.LocalDateTime, subgroup: Int = 0): java.time.LocalDateTime? =
-        (0L..7L).asSequence().mapNotNull { wakeAt(tt, now.toLocalDate().plusDays(it), subgroup) }.firstOrNull { it.isAfter(now) }
-
     // ---------- лабы из ИИС ----------
     private const val HIDDEN = "study.lab.hidden"
 

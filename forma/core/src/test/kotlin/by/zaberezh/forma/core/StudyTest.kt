@@ -144,20 +144,6 @@ class StudyTest {
         assertEquals(500, by.zaberezh.forma.core.daily.WaterLog.ml(s, day))
     }
 
-    @Test fun alarmFromFirstLesson() {
-        fun tt(vararg starts: Pair<Int, String>) = by.zaberezh.forma.core.study.Timetable("1", starts.map { (wd, t) ->
-            by.zaberezh.forma.core.study.Lesson("X", type = "ЛК", start = t, weekday = wd) })
-        val mon = LocalDate.of(2026, 10, 5)
-        assertEquals(mon.atTime(7, 10), Study.wakeAt(tt(1 to "08:30", 1 to "10:05"), mon))     // к первой — 7:10
-        assertEquals(mon.atTime(8, 30), Study.wakeAt(tt(1 to "10:05"), mon))                   // ко второй — 8:30
-        assertEquals(null, Study.wakeAt(tt(2 to "08:30"), mon))                                // в понедельник пар нет
-        // консультации не будят
-        val consult = by.zaberezh.forma.core.study.Timetable("1", listOf(by.zaberezh.forma.core.study.Lesson("МА", type = "Конс", start = "13:35", weekday = 1)))
-        assertEquals(null, Study.wakeAt(consult, mon))
-        // вечером понедельника — будильник на вторник
-        assertEquals(mon.plusDays(1).atTime(7, 10), Study.nextWake(tt(1 to "08:30", 2 to "08:30"), mon.atTime(21, 0)))
-    }
-
     @Test fun sessionCountdownAndExams() {
         val tt = by.zaberezh.forma.core.study.Timetable("653502", listOf(
             by.zaberezh.forma.core.study.Lesson("МА", "Математический анализ", "Консультация", "10:00", date = "2027-01-09"),
@@ -173,15 +159,10 @@ class StudyTest {
         assertFalse(by.zaberezh.forma.core.study.Session.of(tt.copy(lessons = emptyList(), examsStart = null), LocalDate.of(2026, 12, 30)).known)
     }
 
-    @Test fun bedtimeFollowsTomorrowsFirstClass() {
+    @Test fun bedtimeFromSleepSettings() {
         val s = by.zaberezh.forma.core.store.MemoryStore()
-        val mon = LocalDate.of(2026, 10, 5)
-        by.zaberezh.forma.core.SETTINGS.set(s, by.zaberezh.forma.core.Settings(sleepTargetH = 8.0, wakeHour = 9, wakeMinute = 0))
-        by.zaberezh.forma.core.study.TIMETABLE.set(s, by.zaberezh.forma.core.study.Timetable("1", listOf(
-            by.zaberezh.forma.core.study.Lesson("X", type = "ЛК", start = "08:30", weekday = 2))))
-        val ctx = by.zaberezh.forma.core.Ctx(s, mon)
-        assertEquals(java.time.LocalTime.of(23, 10), by.zaberezh.forma.core.sleep.SleepModule.bedtime(ctx))   // вторник к 8:30 → подъём 7:10
-        assertEquals(java.time.LocalTime.of(1, 0), by.zaberezh.forma.core.sleep.SleepModule.bedtime(by.zaberezh.forma.core.Ctx(s, mon.plusDays(1))))  // в среду пар нет → 9:00
+        by.zaberezh.forma.core.SETTINGS.set(s, by.zaberezh.forma.core.Settings(sleepTargetH = 8.0, wakeHour = 7, wakeMinute = 30))
+        assertEquals(java.time.LocalTime.of(23, 30), by.zaberezh.forma.core.sleep.SleepModule.bedtime(by.zaberezh.forma.core.Ctx(s, LocalDate.of(2026, 10, 5))))
     }
 
     @Test fun shortLessonTitles() {

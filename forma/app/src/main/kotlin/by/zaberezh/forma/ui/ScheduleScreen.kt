@@ -108,12 +108,11 @@ fun ScheduleScreen() {
     var loading by remember { mutableStateOf(false) }
     var err by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
-    val appCtx = androidx.compose.ui.platform.LocalContext.current.applicationContext
     fun refresh() {
         if (loading) return
         loading = true; err = null
         scope.launch {
-            downloadTimetable(s).onFailure { err = it.message ?: "Ошибка загрузки" }.onSuccess { by.zaberezh.forma.sys.WakeAlarm.schedule(appCtx) }
+            downloadTimetable(s).onFailure { err = it.message ?: "Ошибка загрузки" }
             loading = false
         }
     }

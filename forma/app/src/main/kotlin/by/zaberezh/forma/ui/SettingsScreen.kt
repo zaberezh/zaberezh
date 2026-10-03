@@ -92,7 +92,6 @@ fun SettingsScreen() {
     var weekends by remember(st) { mutableStateOf(st.gymWeekends) }
     var split by remember(st) { mutableStateOf(st.split) }
     var water by remember(st) { mutableStateOf(st.waterReminder) }
-    var wake by remember(st) { mutableStateOf(st.wakeAlarm) }
     var iis by remember(st) { mutableStateOf(st.iisWatch) }
     var eachSet by remember(st) { mutableStateOf(st.logEachSet) }
     var adv by remember(st) { mutableStateOf(st.advancedMacros) }
@@ -136,7 +135,7 @@ fun SettingsScreen() {
             sessionsPerWeek = d("sessions", 3.0).toInt().coerceIn(1, 5), sessionMin = d("session", 90.0).toInt().coerceIn(40, 150),
             morningHour = d("hour", 8.0).toInt().coerceIn(0, 23), morningMinute = d("minute", 0.0).toInt().coerceIn(0, 59),
             checkupDays = d("checkup", 14.0).toInt().coerceIn(7, 60),
-            gymWeekends = weekends, split = split, weighReminder = weighOn, waterReminder = water, wakeAlarm = wake, iisWatch = iis, logEachSet = eachSet, advancedMacros = adv,
+            gymWeekends = weekends, split = split, weighReminder = weighOn, waterReminder = water, iisWatch = iis, logEachSet = eachSet, advancedMacros = adv,
             weighHour = d("wH", 7.0).toInt().coerceIn(0, 23), weighMinute = d("wM", 20.0).toInt().coerceIn(0, 59),
             weighWeekendHour = d("weH", 11.0).toInt().coerceIn(0, 23), weighWeekendMinute = d("weM", 0.0).toInt().coerceIn(0, 59),
             apiKey = "", apiUrl = url.trim(), model = model.trim().ifEmpty { "claude-opus-5-5" },
@@ -178,12 +177,6 @@ fun SettingsScreen() {
                     Switch(checked = water, onCheckedChange = { water = it })
                 }
                 Muted("Будни — с ${st.waterWeekdayFrom}:00 до ${st.waterTo}:00, выходные — с ${st.waterWeekendFrom}:00 до ${st.waterTo}:00.")
-                Line {
-                    Text("Будильник по первой паре", Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
-                    Switch(checked = wake, onCheckedChange = { wake = it })
-                }
-                Muted("Без звука, вибрацией: пара в 8:30 — подъём в 7:10, в 10:05 — в 8:30. " +
-                    (by.zaberezh.forma.sys.WakeAlarm.next()?.let { "Следующий: " + java.time.format.DateTimeFormatter.ofPattern("EEEE, HH:mm", RU).format(it) + "." } ?: "Ближайшую неделю пар нет."))
                 Line {
                     Text("Новые отметки и пропуски из ИИС", Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
                     Switch(checked = iis, onCheckedChange = { iis = it })

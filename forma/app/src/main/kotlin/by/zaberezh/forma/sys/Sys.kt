@@ -29,9 +29,8 @@ object Notify {
     fun channels(c: Context) {
         c.getSystemService(NotificationManager::class.java)
             .createNotificationChannel(NotificationChannel(CH, "Напоминания", NotificationManager.IMPORTANCE_DEFAULT))
-        WakeAlarm.channel(c)
-        // таймер отдыха с вибрацией убран — старый канал уведомлений больше не нужен
-        c.getSystemService(NotificationManager::class.java).deleteNotificationChannel("timers")
+        // убранные функции: таймер отдыха и будильник по парам — их каналы уведомлений больше не нужны
+        listOf("timers", "wake", "wake_alarm").forEach { c.getSystemService(NotificationManager::class.java).deleteNotificationChannel(it) }
     }
 
     /** Готовое уведомление — с той же проверкой разрешения. */
@@ -96,8 +95,14 @@ class MorningReceiver : BroadcastReceiver() {
  */
 object Reminders {
     fun scheduleAll(c: Context) {
-        listOf(Morning::schedule, Evening::schedule, Weigh::schedule, Water::schedule, WakeAlarm::schedule, IisCheck::schedule)
+        listOf(Morning::schedule, Evening::schedule, Weigh::schedule, Water::schedule, IisCheck::schedule)
             .forEach { runCatching { it(c) } }   // сбой одного не мешает остальным
+        // будильник по парам убран: снимаем поставленный прежней версией (класса приёмника уже нет — ищем по имени)
+        runCatching {
+            val old = Intent().setClassName(c, "by.zaberezh.forma.sys.WakeReceiver")
+            c.getSystemService(android.app.AlarmManager::class.java).cancel(
+                android.app.PendingIntent.getBroadcast(c, 11, old, android.app.PendingIntent.FLAG_IMMUTABLE or android.app.PendingIntent.FLAG_UPDATE_CURRENT))
+        }
     }
 }
 
