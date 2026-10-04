@@ -55,7 +55,9 @@ class Menu(
             .minWithOrNull(compareBy(
                 { (_, m) -> if ((m.nums + m.pct).any { n -> sizes.any { same(it, n) } }) 0 else 1 },
                 { (_, m) -> -must.count { it in m.keys } },                         // точное слово важнее начала («чикен» ≠ «чикенбургер»)
-                { (_, m) -> m.words.count { w -> q.none { hit(it, w) } } },
+                // форма того же слова важнее другого слова с тем же началом: «сыра» — это «сыр», а не «сырник»
+                { (_, m) -> -must.count { w -> m.keys.any { k -> w.startsWith(k) || k.startsWith(w) } } },
+                { (_, m) -> m.words.count { w -> q.none { hit(it, w) } && w !in soft } },  // «вареные» — не лишнее слово
                 { (i, _) -> i },
             ))?.value ?: return null
         val grams = qn.firstOrNull { it.unit == "g" }?.v ?: run {
