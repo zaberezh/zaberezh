@@ -115,4 +115,25 @@ class FoodSearchTest {
             .map { it.substringBefore('|').trim() }
         assertEquals(emptyList(), fiber.filter { it !in names }, "в fiber.txt названия, которых нет в basic.txt")
     }
+
+    @Test fun everydayFoodsAndWordForms() {
+        fun names(q: String) = basic(q).map { it.name to it.grams }
+        assertEquals(listOf("Макароны вареные" to 300.0, "Индейка копченая" to 50.0), names("макароны 300г и копченое мясо индейки"))
+        assertEquals(listOf("Сыр твердый" to 50.0), names("сыра 50 г"))                 // «сыра» — сыр, а не сырник
+        assertEquals(listOf("Сыр твердый" to 60.0), names("2 куска сыра"))
+        assertEquals("Сыр плавленый", names("плавленый сыр").single().first)
+        assertEquals("Сырник", names("сырник").single().first)
+        assertEquals("Индейка вареная", names("мясо индейки").single().first)
+        assertEquals("Макароны вареные", names("паста 200г").single().first)            // не арахисовая паста
+        assertEquals("Макароны вареные", names("спагетти").single().first)              // не болоньезе
+        assertEquals("Арахисовая паста", names("арахисовая паста 30г").single().first)
+        assertEquals("Хлеб белый", names("2 куска хлеба").single().first)
+        assertEquals("Ветчина", names("ветчина").single().first)
+    }
+
+    @Test fun networkFailureKeepsTableResults() {
+        val r = FoodPipeline(MemoryStore(), fetch = { error("нет сети") }).run("макароны 300г, плавленый сыр, суши филадельфия")
+        assertEquals(listOf("Макароны вареные", "Сыр плавленый"), r.items.map { it.name })
+        assertEquals(listOf("суши филадельфия"), r.missing)
+    }
 }

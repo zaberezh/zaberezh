@@ -66,9 +66,10 @@ class FoodPipeline(
         var hints = emptyList<ShopPage>()
         if (rest.isNotEmpty()) {
             stage("ищу на edostavka.by…")
-            val r = shopResolve(rest.joinToString(", "), shop)
-            add("edostavka.by", r.items)
-            rest = r.unresolved; hints = r.hints
+            // сбой магазина (сеть, разметка сайта) не должен терять то, что уже нашлось в таблице
+            runCatching { shopResolve(rest.joinToString(", "), shop) }
+                .onSuccess { r -> add("edostavka.by", r.items); rest = r.unresolved; hints = r.hints }
+                .onFailure { log("edostavka: ${it.message}") }
         }
 
         if (rest.isNotEmpty()) {
