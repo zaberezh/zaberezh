@@ -64,8 +64,9 @@ private fun loadSession(c: Context): IisSession? =
     SecureStore.get(c, "cookie")?.let { IisSession(it, SecureStore.get(c, "profile").orEmpty()) }
 
 /**
- * Личный кабинет ИИС в дизайне приложения. Безопасность: пароль уходит один раз только на https://iis.bsuir.by
- * и нигде не сохраняется; хранится лишь cookie сессии, зашифрованная ключом Android Keystore; «Выйти» стирает и её, и ключ.
+ * Личный кабинет ИИС в дизайне приложения. Безопасность: пароль уходит только на https://iis.bsuir.by;
+ * хранится сессия (и, если включено «Оставаться в системе», логин с паролем) — только в сейфе Android Keystore.
+ * Сессия истекла — тихий повторный вход сохранённым паролем; «Выйти» стирает всё вместе с ключом.
  */
 @Composable
 fun CabinetScreen() {
@@ -74,17 +75,31 @@ fun CabinetScreen() {
     var notice by remember { mutableStateOf<String?>(null) }
     var site by remember { mutableStateOf(false) }
     val s = session
-    fun enter(x: IisSession) {
+    val scope = rememberCoroutineScope()
+    var renewing by remember { mutableStateOf(false) }
+    fun enter(x: IisSession, creds: Pair<String, String>? = null) {
         // сбой сейфа или планировщика не должен ронять вход: сессия работает и без них, просто не запомнится
         val saved = runCatching { SecureStore.put(c, "cookie", x.cookie); SecureStore.put(c, "profile", x.profile) }.isSuccess
+        runCatching { if (creds != null) by.zaberezh.forma.sys.IisAuth.remember(c, creds.first, creds.second) else by.zaberezh.forma.sys.IisAuth.forget(c) }
         session = x; site = false
         notice = if (saved) null else "Вошёл, но сессию не удалось сохранить — после перезапуска войди снова"
         runCatching { by.zaberezh.forma.sys.IisCheck.loggedIn(c) }
     }
     when {
-        site -> SiteLogin(onDone = ::enter, onCancel = { wipeWeb(); site = false })
+        site -> SiteLogin(onDone = { enter(it) }, onCancel = { wipeWeb(); site = false })
         s == null -> LoginForm(notice, onLogin = ::enter, onSite = { wipeWeb(); site = true })
-        else -> Cabinet(s, onExpired = { SecureStore.clear(c); wipeWeb(); session = null; notice = "Сессия закончилась — войди снова" },
+        else -> Cabinet(s, onExpired = {
+            // сессия ИИС истекла: тихо входим заново сохранённым паролем; не вышло — просим войти
+            if (!renewing) {
+                renewing = true
+                scope.launch {
+                    val fresh = withContext(Dispatchers.IO) { by.zaberezh.forma.sys.IisAuth.renew(c) }
+                    renewing = false
+                    if (fresh != null) session = fresh
+                    else { SecureStore.clear(c); wipeWeb(); session = null; notice = "Сессия закончилась — войди снова" }
+                }
+            }
+        },
             onLogout = { SecureStore.clear(c); wipeWeb(); session = null; notice = null })
     }
 }
@@ -154,12 +169,13 @@ private fun SiteLogin(onDone: (IisSession) -> Unit, onCancel: () -> Unit) {
 
 @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
-private fun LoginForm(notice: String?, onLogin: (IisSession) -> Unit, onSite: () -> Unit) {
+private fun LoginForm(notice: String?, onLogin: (IisSession, Pair<String, String>?) -> Unit, onSite: () -> Unit) {
     val scope = rememberCoroutineScope()
     var user by remember { mutableStateOf("") }
     var pass by remember { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
     var err by remember { mutableStateOf<String?>(null) }
+    var stay by remember { mutableStateOf(true) }
     val keyboard = LocalSoftwareKeyboardController.current
     val focus = LocalFocusManager.current
     val imeOpen = WindowInsets.isImeVisible
@@ -174,25 +190,32 @@ private fun LoginForm(notice: String?, onLogin: (IisSession) -> Unit, onSite: ()
                 Primary(if (busy) "Вхожу…" else "Войти", {
                     keyboard?.hide(); focus.clearFocus()
                     busy = true; err = null
-                    val u = user; val p = pass
+                    val u = user; val p = pass; val keep = stay
                     scope.launch {
                         val r = withContext(Dispatchers.IO) { runCatching { Iis.login(Iis.jdk, u, p) } }
                         busy = false
                         r.onSuccess { sess ->
-                            pass = ""   // пароль не держим даже в поле
-                            onLogin(sess)
+                            pass = ""   // в поле пароль не держим
+                            onLogin(sess, if (keep) u to p else null)
                         }.onFailure { err = it.message ?: "Не удалось войти" }
                     }
                 }, Modifier.fillMaxWidth().heightIn(min = 52.dp), enabled = !busy && user.isNotBlank() && pass.isNotBlank())
                 Err(err)
+                Line {
+                    Column(Modifier.weight(1f)) {
+                        Text("Оставаться в системе", style = MaterialTheme.typography.bodyMedium)
+                        Muted("Сессия ИИС живёт недолго: с этим приложение само войдёт снова. Пароль — только в сейфе Keystore.")
+                    }
+                    androidx.compose.material3.Switch(checked = stay, onCheckedChange = { stay = it })
+                }
                 Secondary("Войти через сайт ИИС", onSite, Modifier.fillMaxWidth().heightIn(min = 52.dp))
                 Muted("Если вход выше не работает — откроется страница iis.bsuir.by прямо в приложении.")
             }
         }
         item {
             Block("Как хранятся данные") {
-                Muted("• Пароль отправляется один раз по HTTPS только на iis.bsuir.by и нигде не сохраняется — ни в приложении, ни в экспорте.")
-                Muted("• Остаётся только ключ сессии ИИС, зашифрованный AES-256 ключом из Android Keystore: его нельзя достать из телефона, он не попадает в резервные копии.")
+                Muted("• Пароль уходит по HTTPS только на iis.bsuir.by. С «Оставаться в системе» он хранится зашифрованным AES-256 ключом Android Keystore (ключ нельзя достать из телефона), без — не хранится вовсе. В экспорт и резервные копии не попадает.")
+                Muted("• Сессия ИИС — тоже только в этом сейфе.")
                 Muted("• При входе через сайт пароль вводится на странице ИИС, приложение его не видит; после входа встроенный браузер очищается.")
                 Muted("• Запросы на любые другие адреса и переадресации запрещены. «Выйти» стирает сессию и ключ шифрования.")
             }

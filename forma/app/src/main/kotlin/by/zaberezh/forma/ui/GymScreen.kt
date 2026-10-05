@@ -121,6 +121,7 @@ private fun GymHome(ctx: Ctx) {
             item { ExerciseBase(ctx) }
             item { BackupBlock(GymModule.program(s), ctx) }
         }
+        if (tab == 2) item { GymYears(ctx) }
         if (tab == 2) item {
             val list = GymModule.workouts(s).takeLast(20).reversed()
             Block("История тренировок") {

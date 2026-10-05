@@ -122,7 +122,7 @@ fun ScheduleScreen() {
         if (tt.group != prefs.group || old || System.currentTimeMillis() - tt.fetchedAt > 3 * 24 * 3600_000L) refresh()
     }
 
-    // лента: начинается с сегодня и идёт на 10 недель вперёд; прошедшие дни — только по кнопке (по неделе за нажатие)
+    // лента: начинается с сегодня и идёт на 10 недель вперёд; прошедшие дни (≈ семестр) — по кнопке, все сразу
     var pastWeeks by rememberSaveable { mutableIntStateOf(0) }
     val oldest = monday(today).minusWeeks(MAX_PAST_WEEKS.toLong())
     val start = if (pastWeeks == 0) today else monday(today).minusWeeks(pastWeeks.toLong())
@@ -175,10 +175,10 @@ fun ScheduleScreen() {
                     is Row2.Item -> LessonCard(s, tt, r.lesson, r.day, prefs.subgroup)
                     is Row2.Window -> Text(r.gap.label(), Modifier.padding(start = 12.dp), style = MaterialTheme.typography.bodySmall,
                         color = if (r.day == today && java.time.LocalTime.now(by.zaberezh.forma.core.store.ZONE).isAfter(r.gap.to)) C.line else C.muted)
-                    is Row2.More -> Secondary(
-                        if (pastWeeks == 0) "Показать прошедшие дни" else "Показать ещё неделю раньше",
-                        { pastWeeks = (pastWeeks + 1).coerceAtMost(MAX_PAST_WEEKS) }, Modifier.fillMaxWidth(),
-                    )
+                    // все прошедшие дни разом появляются выше, а лента остаётся на сегодняшнем дне — листай вверх
+                    is Row2.More -> Secondary("Показать прошедшие дни", {
+                        pending = today; pastWeeks = MAX_PAST_WEEKS
+                    }, Modifier.fillMaxWidth())
                 }
             }
         }
