@@ -20,10 +20,59 @@ class WebFood(private val fetch: (String) -> String? = Edostavka::httpGet, priva
         return FoodItem(name.replaceFirstChar { it.uppercase() }, grams ?: 100.0, f.per100, "интернет: ${f.from}$note", "medium")
     }
 
-    fun lookup(name: String): Found? {
+    /**
+     * Порядок: Open Food Facts (открытая база продуктов, JSON — не ломается от вёрстки и капчи) →
+     * поиск по сайту calorizator.ru → поисковики. Первый источник с правдоподобным ответом и берётся.
+     */
+    fun lookup(name: String): Found? =
+        runCatching { openFoodFacts(name) }.onFailure { log("openfoodfacts: ${it.message}") }.getOrNull()
+            ?: runCatching { calorizator(name) }.onFailure { log("calorizator: ${it.message}") }.getOrNull()
+            ?: searchEngines(name)
+
+    /** Open Food Facts: товары по запросу, у которых название похоже на запрос; берётся медиана по калориям. */
+    fun openFoodFacts(name: String): Found? {
+        val q = URLEncoder.encode(name, "UTF-8")
+        val json = fetch("https://world.openfoodfacts.org/cgi/search.pl?search_terms=$q&search_simple=1&action=process&json=1&page_size=24" +
+            "&fields=product_name,product_name_ru,nutriments") ?: return null.also { log("openfoodfacts: нет ответа") }
+        val root = kotlinx.serialization.json.Json.parseToJsonElement(json) as? kotlinx.serialization.json.JsonObject ?: return null
+        val stems = Menu.tokens(name).filter { it.length >= 3 }.map { it.take(4) }
+        val pool = (root["products"] as? kotlinx.serialization.json.JsonArray).orEmpty().mapNotNull { el ->
+            val o = el as? kotlinx.serialization.json.JsonObject ?: return@mapNotNull null
+            fun str(k: String) = (o[k] as? kotlinx.serialization.json.JsonPrimitive)?.content.orEmpty()
+            val title = str("product_name_ru").ifBlank { str("product_name") }
+            val words = Menu.tokens(title)
+            if (stems.isNotEmpty() && stems.none { s -> words.any { it.startsWith(s) } }) return@mapNotNull null
+            val n = o["nutriments"] as? kotlinx.serialization.json.JsonObject ?: return@mapNotNull null
+            fun num(k: String) = (n[k] as? kotlinx.serialization.json.JsonPrimitive)?.content?.toDoubleOrNull()
+            val p = num("proteins_100g") ?: return@mapNotNull null
+            val f = num("fat_100g") ?: return@mapNotNull null
+            val c = num("carbohydrates_100g") ?: return@mapNotNull null
+            val kcal = num("energy-kcal_100g") ?: (p * 4 + f * 9 + c * 4)
+            Macro(kcal, p, f, c, num("fiber_100g") ?: 0.0).takeIf(::plausible)
+        }
+        log("openfoodfacts: подходящих ${pool.size}")
+        if (pool.isEmpty()) return null
+        val median = pool.map { it.kcal }.sorted()[pool.size / 2]
+        return Found(pool.minBy { kotlin.math.abs(it.kcal - median) }, "Open Food Facts")
+    }
+
+    /** Поиск по сайту calorizator.ru → страницы продуктов (таблица «на 100 г»). */
+    fun calorizator(name: String): Found? {
+        val html = fetch("https://calorizator.ru/search/node/" + URLEncoder.encode(name, "UTF-8").replace("+", "%20")) ?: return null
+        val links = Regex("(?:https?://(?:www\\.)?calorizator\\.ru)?(/product/[^\"'#?\\s<>]+)").findAll(html)
+            .map { "https://calorizator.ru" + it.groupValues[1] }.distinct().take(3).toList()
+        log("calorizator: страниц ${links.size}")
+        for (url in links) {
+            val page = fetch(url) ?: continue
+            macrosIn(Edostavka.textOf(page), maxOf = 1).firstOrNull()?.let { return Found(it, "calorizator.ru") }
+        }
+        return null
+    }
+
+    fun searchEngines(name: String): Found? {
         val q = URLEncoder.encode("$name калорийность на 100 грамм белки жиры углеводы", "UTF-8")
         val found = mutableListOf<Found>()
-        for (src in listOf("https://html.duckduckgo.com/html/?q=$q", "https://www.bing.com/search?q=$q")) {
+        for (src in listOf("https://html.duckduckgo.com/html/?q=$q", "https://www.bing.com/search?q=$q&setlang=ru", "https://lite.duckduckgo.com/lite/?q=$q")) {
             val html = fetch(src) ?: continue
             val engine = src.substringAfter("//").substringBefore('/')
             found += macrosIn(Edostavka.textOf(html), maxOf = 4).map { Found(it, "выдача $engine") }

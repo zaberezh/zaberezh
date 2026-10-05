@@ -136,4 +136,21 @@ class FoodSearchTest {
         assertEquals(listOf("Макароны вареные", "Сыр плавленый"), r.items.map { it.name })
         assertEquals(listOf("суши филадельфия"), r.missing)
     }
+
+    @Test fun openFoodFactsThenCalorizatorSearch() {
+        val off = """{"count":3,"products":[
+            {"product_name":"Грудка индейки копчёная","nutriments":{"energy-kcal_100g":110,"proteins_100g":20,"fat_100g":3,"carbohydrates_100g":0.5}},
+            {"product_name_ru":"Индейка копчено-вареная","nutriments":{"energy-kcal_100g":130,"proteins_100g":19,"fat_100g":6,"carbohydrates_100g":0.4,"fiber_100g":0}},
+            {"product_name":"Сок яблочный","nutriments":{"energy-kcal_100g":46,"proteins_100g":0.1,"fat_100g":0.1,"carbohydrates_100g":11}}]}"""
+        val viaOff = WebFood(fetch = { url -> if ("openfoodfacts" in url) off else null }).lookup("индейка копченая")
+        assertEquals("Open Food Facts", viaOff?.from)
+        assertEquals(130.0, viaOff?.per100?.kcal)                      // медиана по двум индейкам, сок отброшен по названию
+
+        val search = """<ol class="search-results"><li><a href="https://calorizator.ru/product/meat/turkey-1">Индейка</a></li></ol>"""
+        val page = "<table><tr><td>Калорийность</td><td>276 кКал</td></tr><tr><td>Белки</td><td>19.5 г</td></tr>" +
+            "<tr><td>Жиры</td><td>22 г</td></tr><tr><td>Углеводы</td><td>0 г</td></tr></table>"
+        val viaSite = WebFood(fetch = { url -> when { "/search/node/" in url -> search; "/product/meat/turkey-1" in url -> page; else -> null } }).lookup("индейка")
+        assertEquals("calorizator.ru", viaSite?.from)
+        assertEquals(19.5, viaSite?.per100?.p)
+    }
 }

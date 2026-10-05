@@ -61,7 +61,12 @@ object IisCheck {
         val cookie = SecureStore.get(c, "cookie") ?: return
         val session = IisSession(cookie, SecureStore.get(c, "profile").orEmpty())
         val r = try {
-            Cabinet.load(Iis.jdk, session, "rating") as Rating
+            try { Cabinet.load(Iis.jdk, session, "rating") as Rating }
+            catch (e: IisUnauthorized) {
+                // сессия истекла — тихий повторный вход сохранённым паролем (если включено «Оставаться в системе»)
+                val fresh = IisAuth.renew(c) ?: throw e
+                Cabinet.load(Iis.jdk, fresh, "rating") as Rating
+            }
         } catch (e: IisUnauthorized) {
             if (s.kvGet(EXPIRED) == null) {
                 Notify.post(c, 23, "Сессия ИИС закончилась", listOf("Войди в «Учёба → Кабинет», чтобы снова получать отметки и пропуски."))
