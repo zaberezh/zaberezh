@@ -139,10 +139,8 @@ fun ScheduleScreen() {
         val days = generateSequence(start) { it.plusDays(1) }.takeWhile { !it.isAfter(end) }.toList()
         (if (start > oldest) listOf<Row2>(Row2.More(start)) else emptyList()) + days.flatMap { d ->
             val ls = if (tt.lessons.isEmpty()) emptyList() else Bsuir.on(tt, d, prefs.subgroup)
-            val gaps = by.zaberezh.forma.core.study.Gaps.gaps(ls)
             listOf<Row2>(Row2.Head(d, ls.isEmpty())) + ls.flatMapIndexed { i, l ->
-                // окно ставим сразу после пары, на которой оно начинается
-                listOf<Row2>(Row2.Item(d, l, i)) + gaps.filter { g -> g.from.toString() == l.end && ls.drop(i + 1).none { it.end == l.end } }.map { Row2.Window(d, it) }
+                listOf<Row2>(Row2.Item(d, l, i))
             }
         }
     }
