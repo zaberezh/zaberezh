@@ -8,15 +8,16 @@ jobs:
   probe:
     runs-on: ubuntu-latest
     steps:
-      - name: Probe sosedi API calls (temporary, run 4)
+      - name: Probe sosedi API (temporary, run 5)
         run: |
           UA="Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0 Mobile Safari/537.36"
           curl -sSL -m 40 -A "$UA" "https://sosedi-dostavka.by/static/js/main.724c4081.js" -o b.js
-          echo "=== get/post calls"; grep -oE '\.(get|post|put)\("[^"]{1,80}"' b.js | sort -u | head -80
-          echo "=== get with concat"; grep -oE '\.(get|post)\("[^"]{0,60}"\.concat\([^)]{0,40}\)' b.js | sort -u | head -40
-          echo "=== template-ish paths"; grep -oE '"/[a-z-]+/"\.concat' b.js | sort -u | head -40
-          echo "=== product fields"; grep -oE '.{300}composition:C.{300}' b.js | head -2
+          echo "=== baseURL"; grep -oE '.{120}baseURL.{160}' b.js | head -5
+          echo "=== productsList"; grep -oE '.{200}api/productsList/.{200}' b.js | head -3
+          echo "=== search usage"; grep -oE '.{160}(searchText|searchQuery|search:|"search"|query:).{160}' b.js | grep -v "pathname" | head -8
+          echo "=== headers set"; grep -oE '.{100}headers.{140}' b.js | grep -iE 'darkstore|store|lang|x-' | head -8
+          H=(-H "Accept: application/json" -H "Origin: https://sosedi-dostavka.by" -H "Referer: https://sosedi-dostavka.by/")
           q="%D1%81%D1%8B%D1%80"
-          for u in "https://api.bazar-store.by/products?search=$q" "https://api.bazar-store.by/products/search?query=$q" "https://api.bazar-store.by/search?query=$q" "https://api.bazar-store.by/v1/products?search=$q" "https://api.bazar-store.by/products?query=$q" "https://api.bazar-store.by/"; do
-            echo "=== $u"; curl -sS -m 20 -A "$UA" -H "Accept: application/json" -H "Origin: https://sosedi-dostavka.by" -H "Referer: https://sosedi-dostavka.by/" -w "\nHTTP %{http_code}\n" "$u" | head -c 900; echo
+          for u in "https://api.bazar-store.by/products/?search=$q" "https://api.bazar-store.by/api/productsList/?search=$q" "https://api.bazar-store.by/api/products/?search=$q" "https://api.bazar-store.by/api/v1/products/?search=$q" "https://api.bazar-store.by/products/search/?q=$q" "https://api.bazar-store.by/darkstores/"; do
+            echo "=== $u"; curl -sS -m 15 -A "$UA" "${H[@]}" -w "\nHTTP %{http_code}\n" "$u" | head -c 700; echo
           done
