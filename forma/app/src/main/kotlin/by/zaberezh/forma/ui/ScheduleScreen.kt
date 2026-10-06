@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -149,18 +150,31 @@ fun ScheduleScreen() {
     val visible by remember(rows) { derivedStateOf { rows.getOrNull(list.firstVisibleItemIndex)?.day ?: today } }
     // переход к дню из прошлого сначала раскрывает нужные недели, потом прокручивает
     var pending by remember { mutableStateOf<LocalDate?>(null) }
+    // выбранный нажатием день держит подсветку, пока лента до него едет (иначе она прыгает по промежуточным дням)
+    var chosen by remember { mutableStateOf<LocalDate?>(null) }
+    var scrollJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
+    val selected = chosen ?: visible
     fun go(d: LocalDate) {
         val target = d.coerceIn(oldest, end)
+        chosen = target
+        scrollJob?.cancel()                       // быстрые нажатия: прошлая прокрутка не спорит с новой
         if (target < start) {
             pastWeeks = ChronoUnit.WEEKS.between(monday(target), monday(today)).toInt().coerceIn(1, MAX_PAST_WEEKS)
             pending = target
-        } else dayIndex[target]?.let { scope.launch { list.animateScrollToItem(it) } }
+        } else dayIndex[target]?.let { i ->
+            scrollJob = scope.launch {
+                try {
+                    // далеко — сразу, близко — плавно
+                    if (kotlin.math.abs(i - list.firstVisibleItemIndex) > 25) list.scrollToItem(i) else list.animateScrollToItem(i)
+                } finally { if (chosen == target) chosen = null }
+            }
+        } ?: run { chosen = null }
     }
-    LaunchedEffect(rows) { pending?.let { d -> dayIndex[d]?.let { list.scrollToItem(it) }; pending = null } }
+    LaunchedEffect(rows) { pending?.let { d -> dayIndex[d]?.let { list.scrollToItem(it) }; pending = null; chosen = null } }
 
     Column(Modifier.fillMaxSize()) {
         Box(Modifier.padding(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 8.dp)) {
-            WeekHeader(tt, visible, today, prefs.subgroup, onDay = ::go, onWeek = { k -> go(monday(visible).plusWeeks(k)) })
+            WeekHeader(tt, selected, today, prefs.subgroup, onDay = ::go, onWeek = { k -> go(monday(selected).plusWeeks(k)) })
         }
         if (tt.lessons.isEmpty()) Box(Modifier.padding(horizontal = 16.dp)) {
             Block("Расписание группы ${prefs.group}") {
@@ -218,13 +232,19 @@ private fun WeekHeader(tt: Timetable, visible: LocalDate, today: LocalDate, subg
             }
             NavArrow("›", { onWeek(1) })
         }
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+        // подсветка дня — одна плашка, которая плавно едет к выбранному дню, а не перескакивает
+        androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxWidth()) {
+            val gap = 4.dp
+            val cell = (maxWidth - gap * 6) / 7
+            val idx = java.time.temporal.ChronoUnit.DAYS.between(mon, visible).toInt().coerceIn(0, 6)
+            val x by androidx.compose.animation.core.animateDpAsState((cell + gap) * idx, label = "day")
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(gap)) {
             (0L..6L).map(mon::plusDays).forEach { d ->
                 val n = if (tt.lessons.isEmpty()) 0 else Bsuir.on(tt, d, subgroup).size
                 val sel = d == visible
                 Column(
                     Modifier.weight(1f).clip(RoundedCornerShape(10.dp))
-                        .background(if (sel) C.accent.copy(alpha = 0.18f) else C.cardHi).clickable { onDay(d) }.padding(vertical = 6.dp),
+                        .background(C.cardHi).clickable { onDay(d) }.padding(vertical = 6.dp),
                     horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(2.dp),
                 ) {
                     Text(DOW.format(d), style = MaterialTheme.typography.labelSmall, color = if (d == today) C.accent else C.muted)
@@ -232,6 +252,10 @@ private fun WeekHeader(tt: Timetable, visible: LocalDate, today: LocalDate, subg
                         color = if (sel || d == today) C.accent else C.text)
                     Text(if (n == 0) "–" else "$n", style = MaterialTheme.typography.labelSmall, color = C.muted)
                 }
+            }
+        }
+            Box(Modifier.matchParentSize()) {
+                Box(Modifier.offset(x = x).width(cell).fillMaxHeight().clip(RoundedCornerShape(10.dp)).background(C.accent.copy(alpha = 0.18f)))
             }
         }
         if (monday(visible) != monday(today) || visible != today) Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
