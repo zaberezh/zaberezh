@@ -8,15 +8,13 @@ jobs:
   probe:
     runs-on: ubuntu-latest
     steps:
-      - name: Probe sosedi-dostavka.by API (temporary, run 2)
+      - name: Probe sosedi API calls (temporary, run 3)
         run: |
           UA="Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0 Mobile Safari/537.36"
-          curl -sSL -m 25 -A "$UA" https://sosedi-dostavka.by/ -o home.html
-          grep -oE 'src="[^"]+\.js"' home.html
-          for js in $(grep -oE '/static/js/[^"]+\.js' home.html); do
-            curl -sSL -m 40 -A "$UA" "https://sosedi-dostavka.by$js" -o b.js; echo "=== $js $(wc -c < b.js)"
-            grep -oE 'https?://[a-zA-Z0-9.-]+(/[a-zA-Z0-9_./-]*)?' b.js | sort -u | grep -viE 'w3|react|schema|google|yandex|facebook|apple|mozilla|github|sentry' | head -40
-            grep -oE '"/[a-zA-Z0-9_./-]*(api|search|product|catalog|goods|item)[a-zA-Z0-9_./{}-]*"' b.js | sort -u | head -60
-            grep -oE '.{60}(search|Search)[^"]{0,10}".{0,80}' b.js | head -15
-            grep -oE '.{40}(nutri|calor|energy|protein|proteins|fat|carbo|kcal|belki|bzhu|БЖУ|белк|ккал).{60}' b.js | head -25
-          done
+          curl -sSL -m 40 -A "$UA" "https://sosedi-dostavka.by/static/js/main.724c4081.js" -o b.js
+          echo "=== around api host"; grep -oE '.{150}api\.bazar-store\.by.{150}' b.js | head -5
+          echo "=== quoted paths with v1/v2"; grep -oE '"[a-zA-Z0-9_./-]*/v[0-9][a-zA-Z0-9_./-]*"' b.js | sort -u | head -80
+          echo "=== concat paths"; grep -oE 'concat\([a-zA-Z.]+,"/[^"]{2,80}"' b.js | sort -u | head -80
+          echo "=== search-ish"; grep -oE '"[a-zA-Z0-9_./-]*(search|query|find)[a-zA-Z0-9_./-]*"' b.js | sort -u | head -40
+          echo "=== nutrition keys"; grep -oE '.{50}(calories|energyValue|energy_value|proteins|nutritional|nutrition|composition|kkal|bju|belki)[^,]{0,60}' b.js | head -20
+          echo "=== headers"; grep -oE '.{80}(Authorization|x-api|X-Api|apiKey|api_key|token)[^,]{0,80}' b.js | head -10
