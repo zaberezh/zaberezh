@@ -125,7 +125,14 @@ fun ScheduleScreen() {
     // лента: начинается с сегодня и идёт на 10 недель вперёд; прошедшие дни (≈ семестр) — по кнопке, все сразу
     var pastWeeks by rememberSaveable { mutableIntStateOf(0) }
     val oldest = monday(today).minusWeeks(MAX_PAST_WEEKS.toLong())
-    val start = if (pastWeeks == 0) today else monday(today).minusWeeks(pastWeeks.toLong())
+    // учебный день закончился (последняя пара прошла или пар нет) — лента начинается с завтра, сегодня уходит в прошедшие
+    val todayOver = run {   // без remember: после конца последней пары лента переключится при следующей перерисовке
+        val ends = if (tt.lessons.isEmpty()) emptyList() else Bsuir.on(tt, today, prefs.subgroup)
+            .mapNotNull { runCatching { java.time.LocalTime.parse(it.end) }.getOrNull() }
+        ends.isEmpty() || java.time.LocalTime.now(by.zaberezh.forma.core.store.ZONE).isAfter(ends.max())
+    }
+    val first = if (todayOver) today.plusDays(1) else today
+    val start = if (pastWeeks == 0) first else monday(today).minusWeeks(pastWeeks.toLong())
     val end = monday(today).plusWeeks(10).plusDays(6)
     val rows = remember(tt, prefs.subgroup, start) {
         val days = generateSequence(start) { it.plusDays(1) }.takeWhile { !it.isAfter(end) }.toList()
@@ -177,7 +184,7 @@ fun ScheduleScreen() {
                         color = if (r.day == today && java.time.LocalTime.now(by.zaberezh.forma.core.store.ZONE).isAfter(r.gap.to)) C.line else C.muted)
                     // все прошедшие дни разом появляются выше, а лента остаётся на сегодняшнем дне — листай вверх
                     is Row2.More -> Secondary("Показать прошедшие дни", {
-                        pending = today; pastWeeks = MAX_PAST_WEEKS
+                        pending = first; pastWeeks = MAX_PAST_WEEKS
                     }, Modifier.fillMaxWidth())
                 }
             }
