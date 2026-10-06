@@ -21,11 +21,12 @@ class WebFood(private val fetch: (String) -> String? = Edostavka::httpGet, priva
     }
 
     /**
-     * Порядок: Open Food Facts (открытая база продуктов, JSON — не ломается от вёрстки и капчи) →
+     * Порядок: «Соседи» (sosedi-dostavka.by — белорусские товары с этикеткой) → Open Food Facts (открытая база продуктов, JSON — не ломается от вёрстки и капчи) →
      * поиск по сайту calorizator.ru → поисковики. Первый источник с правдоподобным ответом и берётся.
      */
     fun lookup(name: String): Found? =
-        runCatching { openFoodFacts(name) }.onFailure { log("openfoodfacts: ${it.message}") }.getOrNull()
+        runCatching { sosedi(name) }.onFailure { log("sosedi: ${it.message}") }.getOrNull()
+            ?: runCatching { openFoodFacts(name) }.onFailure { log("openfoodfacts: ${it.message}") }.getOrNull()
             ?: runCatching { calorizator(name) }.onFailure { log("calorizator: ${it.message}") }.getOrNull()
             ?: searchEngines(name)
 
@@ -54,6 +55,30 @@ class WebFood(private val fetch: (String) -> String? = Edostavka::httpGet, priva
         if (pool.isEmpty()) return null
         val median = pool.map { it.kcal }.sorted()[pool.size / 2]
         return Found(pool.minBy { kotlin.math.abs(it.kcal - median) }, "Open Food Facts")
+    }
+
+    /**
+     * sosedi-dostavka.by: поиск по сайту → карточки товаров → «пищевая ценность на 100 г» с этикетки.
+     * Адрес поиска перебирается из типичных вариантов (у магазинов на Битриксе — /search/?q=).
+     */
+    fun sosedi(name: String): Found? {
+        val q = URLEncoder.encode(name, "UTF-8")
+        val host = "https://sosedi-dostavka.by"
+        for (search in listOf("$host/search/?q=$q", "$host/catalog/?q=$q", "$host/search?query=$q")) {
+            val html = fetch(search) ?: continue
+            val links = Regex("href=[\"']((?:https?://(?:www\\.)?sosedi-dostavka\\.by)?/(?:product|products|catalog|goods|item)/[^\"'#?\\s<>]+)").findAll(html)
+                .map { it.groupValues[1].let { u -> if (u.startsWith("/")) host + u else u } }
+                .filter { u -> u.trimEnd('/').count { it == '/' } >= 4 }        // карточка товара, а не раздел каталога
+                .distinct().take(3).toList()
+            log("sosedi: $search → карточек ${links.size}")
+            for (url in links) {
+                val text = Edostavka.textOf(fetch(url) ?: continue)
+                val m = macrosIn(text, maxOf = 1).firstOrNull() ?: Edostavka.parseMacros(text)?.takeIf(::plausible)
+                if (m != null) return Found(m, "sosedi-dostavka.by")
+            }
+            if (links.isNotEmpty()) break
+        }
+        return null
     }
 
     /** Поиск по сайту calorizator.ru → страницы продуктов (таблица «на 100 г»). */
