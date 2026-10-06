@@ -153,4 +153,13 @@ class FoodSearchTest {
         assertEquals("calorizator.ru", viaSite?.from)
         assertEquals(19.5, viaSite?.per100?.p)
     }
+
+    @Test fun sosediShopFirst() {
+        val search = """<div class="product-card"><a href="/product/indeyka-kopchenaya-grudka-300g/">Грудка индейки копчёная</a></div>"""
+        val card = "<h1>Грудка индейки копчёная 300 г</h1><div>Пищевая ценность на 100 г: белки 21 г, жиры 4 г, углеводы 1 г, энергетическая ценность 124 ккал</div>"
+        val f = WebFood(fetch = { url -> when { "sosedi-dostavka.by/search" in url -> search; "/product/indeyka" in url -> card; else -> null } })
+            .lookup("индейка копченая")
+        assertEquals("sosedi-dostavka.by", f?.from)
+        assertEquals(21.0, f?.per100?.p)
+    }
 }
