@@ -8,13 +8,15 @@ jobs:
   probe:
     runs-on: ubuntu-latest
     steps:
-      - name: Probe sosedi API calls (temporary, run 3)
+      - name: Probe sosedi API calls (temporary, run 4)
         run: |
           UA="Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0 Mobile Safari/537.36"
           curl -sSL -m 40 -A "$UA" "https://sosedi-dostavka.by/static/js/main.724c4081.js" -o b.js
-          echo "=== around api host"; grep -oE '.{150}api\.bazar-store\.by.{150}' b.js | head -5
-          echo "=== quoted paths with v1/v2"; grep -oE '"[a-zA-Z0-9_./-]*/v[0-9][a-zA-Z0-9_./-]*"' b.js | sort -u | head -80
-          echo "=== concat paths"; grep -oE 'concat\([a-zA-Z.]+,"/[^"]{2,80}"' b.js | sort -u | head -80
-          echo "=== search-ish"; grep -oE '"[a-zA-Z0-9_./-]*(search|query|find)[a-zA-Z0-9_./-]*"' b.js | sort -u | head -40
-          echo "=== nutrition keys"; grep -oE '.{50}(calories|energyValue|energy_value|proteins|nutritional|nutrition|composition|kkal|bju|belki)[^,]{0,60}' b.js | head -20
-          echo "=== headers"; grep -oE '.{80}(Authorization|x-api|X-Api|apiKey|api_key|token)[^,]{0,80}' b.js | head -10
+          echo "=== get/post calls"; grep -oE '\.(get|post|put)\("[^"]{1,80}"' b.js | sort -u | head -80
+          echo "=== get with concat"; grep -oE '\.(get|post)\("[^"]{0,60}"\.concat\([^)]{0,40}\)' b.js | sort -u | head -40
+          echo "=== template-ish paths"; grep -oE '"/[a-z-]+/"\.concat' b.js | sort -u | head -40
+          echo "=== product fields"; grep -oE '.{300}composition:C.{300}' b.js | head -2
+          q="%D1%81%D1%8B%D1%80"
+          for u in "https://api.bazar-store.by/products?search=$q" "https://api.bazar-store.by/products/search?query=$q" "https://api.bazar-store.by/search?query=$q" "https://api.bazar-store.by/v1/products?search=$q" "https://api.bazar-store.by/products?query=$q" "https://api.bazar-store.by/"; do
+            echo "=== $u"; curl -sS -m 20 -A "$UA" -H "Accept: application/json" -H "Origin: https://sosedi-dostavka.by" -H "Referer: https://sosedi-dostavka.by/" -w "\nHTTP %{http_code}\n" "$u" | head -c 900; echo
+          done
