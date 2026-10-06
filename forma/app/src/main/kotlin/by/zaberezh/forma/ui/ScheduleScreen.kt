@@ -6,6 +6,8 @@ import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -288,22 +290,18 @@ private fun LessonCard(s: Store, tt: Timetable, l: Lesson, date: LocalDate, subg
             Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min)) {
                 // время пары — крупно и цветом раздела, конец — сразу под ним, хорошо читается
                 val pause = l.pause
-                Column(Modifier.width(54.dp).fillMaxHeight(), verticalArrangement = Arrangement.SpaceBetween) {
-                    Column {
-                        Text(l.start, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = C.study)
-                        if (pause == null) Text(l.end, style = MaterialTheme.typography.bodyMedium, color = C.text.copy(alpha = 0.75f))
-                    }
-                    // перерыв через 40 минут — напротив разрыва полоски
-                    if (pause != null) Column(Modifier.padding(vertical = 4.dp)) {
-                        Text("перерыв", fontSize = 10.sp, color = C.muted, maxLines = 1)
-                        Text("${pause.first}–${pause.second}", fontSize = 10.sp, color = C.muted, maxLines = 1)
-                    }
-                    if (pause != null) Text(l.end, style = MaterialTheme.typography.bodyMedium, color = C.text.copy(alpha = 0.75f))
+                Column(Modifier.width(54.dp)) {
+                    Text(l.start, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = C.study)
+                    Text(l.end, style = MaterialTheme.typography.bodyMedium, color = C.text.copy(alpha = 0.75f))
                 }
-                // полоска типа пары; если есть перерыв — разорвана посередине: две половины по 40 минут
-                Column(Modifier.width(4.dp).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(if (pause != null) 8.dp else 0.dp)) {
+                // полоска пары; посередине — перегородка с временем перерыва, текст повёрнут (читается сверху вниз)
+                Column(Modifier.width(if (pause != null) 16.dp else 4.dp).fillMaxHeight(), horizontalAlignment = Alignment.CenterHorizontally) {
                     Box(Modifier.width(4.dp).weight(1f).clip(RoundedCornerShape(2.dp)).background(typeColor(l.type)))
-                    if (pause != null) Box(Modifier.width(4.dp).weight(1f).clip(RoundedCornerShape(2.dp)).background(typeColor(l.type)))
+                    if (pause != null) {
+                        Text("${pause.first}–${pause.second}", Modifier.padding(vertical = 4.dp).verticalText(), fontSize = 9.sp,
+                            color = C.muted, maxLines = 1, softWrap = false)
+                        Box(Modifier.width(4.dp).weight(1f).clip(RoundedCornerShape(2.dp)).background(typeColor(l.type)))
+                    }
                 }
                 Column(Modifier.weight(1f).padding(start = 12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text(if (open) l.title else l.short, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, color = C.text)
@@ -361,3 +359,9 @@ private fun LessonDetails(s: Store, tt: Timetable, l: Lesson, date: LocalDate, s
     Primary(if (next != null) "Записать — появится ${DM.format(next)}" else "Записать ДЗ",
         { Study.addHomework(s, tt, l, date, text, subgroup); text = "" }, Modifier.fillMaxWidth(), enabled = text.isNotBlank())
 }
+
+/** Текст, повёрнутый на 90°: читается сверху вниз и занимает место по вертикали. */
+private fun Modifier.verticalText() = layout { measurable, constraints ->
+    val p = measurable.measure(constraints.copy(minWidth = 0, maxWidth = androidx.compose.ui.unit.Constraints.Infinity, minHeight = 0))
+    layout(p.height, p.width) { p.place(-(p.width - p.height) / 2, (p.width - p.height) / 2) }
+}.rotate(90f)
