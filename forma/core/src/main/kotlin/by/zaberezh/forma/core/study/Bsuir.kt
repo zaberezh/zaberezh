@@ -40,15 +40,6 @@ data class Lesson(
     val title get() = full.ifBlank { subject }
     /** Короткое название для списков: «Математический анализ» → «Мат. анализ»; длинное — аббревиатура из ИИС. */
     val short get() = shortTitle(full, subject)
-    /** Перерыв внутри пары: через 40 минут, до начала второй половины (8:30–9:55 → 9:10–9:15). Короткая пара — null. */
-    val pause: Pair<java.time.LocalTime, java.time.LocalTime>?
-        get() {
-            val a = runCatching { java.time.LocalTime.parse(start) }.getOrNull() ?: return null
-            val b = runCatching { java.time.LocalTime.parse(end) }.getOrNull() ?: return null
-            val min = java.time.Duration.between(a, b).toMinutes()
-            if (min < 80) return null
-            return a.plusMinutes(40) to b.minusMinutes(40)
-        }
     /** Полное название типа занятия. */
     val typeFull get() = when (type.uppercase()) {
         "ЛК" -> "Лекция"; "ПЗ" -> "Практическое занятие"; "ЛР" -> "Лабораторная работа"
