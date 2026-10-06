@@ -176,4 +176,10 @@ class StudyTest {
         assertEquals("ОАиП", sh("Основы алгоритмизации и программирования", "ОАиП"))
         assertEquals("МА", sh("", "МА"))
     }
+
+    @Test fun breakInsideAPair() {
+        val l = by.zaberezh.forma.core.study.Lesson("X", start = "08:30", end = "09:55")
+        assertEquals(java.time.LocalTime.of(9, 10) to java.time.LocalTime.of(9, 15), l.pause)
+        assertEquals(null, by.zaberezh.forma.core.study.Lesson("X", start = "13:35", end = "14:20").pause)   // короткое — без перерыва
+    }
 }

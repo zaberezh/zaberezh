@@ -49,6 +49,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import by.zaberezh.forma.core.food.Edostavka
 import by.zaberezh.forma.core.store.Store
 import by.zaberezh.forma.core.study.Bsuir
@@ -264,11 +265,24 @@ private fun LessonCard(s: Store, tt: Timetable, l: Lesson, date: LocalDate, subg
         Column(Modifier.animateContentSize().padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min)) {
                 // время пары — крупно и цветом раздела, конец — сразу под ним, хорошо читается
-                Column(Modifier.width(54.dp)) {
-                    Text(l.start, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = C.study)
-                    Text(l.end, style = MaterialTheme.typography.bodyMedium, color = C.text.copy(alpha = 0.75f))
+                val pause = l.pause
+                Column(Modifier.width(54.dp).fillMaxHeight(), verticalArrangement = Arrangement.SpaceBetween) {
+                    Column {
+                        Text(l.start, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = C.study)
+                        if (pause == null) Text(l.end, style = MaterialTheme.typography.bodyMedium, color = C.text.copy(alpha = 0.75f))
+                    }
+                    // перерыв через 40 минут — напротив разрыва полоски
+                    if (pause != null) Column(Modifier.padding(vertical = 4.dp)) {
+                        Text("перерыв", fontSize = 10.sp, color = C.muted, maxLines = 1)
+                        Text("${pause.first}–${pause.second}", fontSize = 10.sp, color = C.muted, maxLines = 1)
+                    }
+                    if (pause != null) Text(l.end, style = MaterialTheme.typography.bodyMedium, color = C.text.copy(alpha = 0.75f))
                 }
-                Box(Modifier.width(4.dp).fillMaxHeight().clip(RoundedCornerShape(2.dp)).background(typeColor(l.type)))
+                // полоска типа пары; если есть перерыв — разорвана посередине: две половины по 40 минут
+                Column(Modifier.width(4.dp).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(if (pause != null) 8.dp else 0.dp)) {
+                    Box(Modifier.width(4.dp).weight(1f).clip(RoundedCornerShape(2.dp)).background(typeColor(l.type)))
+                    if (pause != null) Box(Modifier.width(4.dp).weight(1f).clip(RoundedCornerShape(2.dp)).background(typeColor(l.type)))
+                }
                 Column(Modifier.weight(1f).padding(start = 12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text(if (open) l.title else l.short, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, color = C.text)
                     Text(
