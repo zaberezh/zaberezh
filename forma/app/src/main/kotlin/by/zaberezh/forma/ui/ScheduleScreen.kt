@@ -7,7 +7,6 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.draw.rotate
-import androidx.compose.ui.layout.layout
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -24,6 +23,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.requiredWidth
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -51,6 +51,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import by.zaberezh.forma.core.food.Edostavka
@@ -298,8 +299,11 @@ private fun LessonCard(s: Store, tt: Timetable, l: Lesson, date: LocalDate, subg
                 Column(Modifier.width(if (pause != null) 16.dp else 4.dp).fillMaxHeight(), horizontalAlignment = Alignment.CenterHorizontally) {
                     Box(Modifier.width(4.dp).weight(1f).clip(RoundedCornerShape(2.dp)).background(typeColor(l.type)))
                     if (pause != null) {
-                        Text("${pause.first}–${pause.second}", Modifier.padding(vertical = 4.dp).verticalText(), fontSize = 9.sp,
-                            color = C.muted, maxLines = 1, softWrap = false)
+                        // фиксированный блок: текст раскладывается горизонтально и поворачивается вокруг центра
+                        Box(Modifier.padding(vertical = 4.dp).width(14.dp).height(64.dp), contentAlignment = Alignment.Center) {
+                            Text("${pause.first}–${pause.second}", Modifier.requiredWidth(64.dp).rotate(90f), fontSize = 10.sp,
+                                color = C.muted, maxLines = 1, softWrap = false, textAlign = TextAlign.Center)
+                        }
                         Box(Modifier.width(4.dp).weight(1f).clip(RoundedCornerShape(2.dp)).background(typeColor(l.type)))
                     }
                 }
@@ -360,8 +364,3 @@ private fun LessonDetails(s: Store, tt: Timetable, l: Lesson, date: LocalDate, s
         { Study.addHomework(s, tt, l, date, text, subgroup); text = "" }, Modifier.fillMaxWidth(), enabled = text.isNotBlank())
 }
 
-/** Текст, повёрнутый на 90°: читается сверху вниз и занимает место по вертикали. */
-private fun Modifier.verticalText() = layout { measurable, constraints ->
-    val p = measurable.measure(constraints.copy(minWidth = 0, maxWidth = androidx.compose.ui.unit.Constraints.Infinity, minHeight = 0))
-    layout(p.height, p.width) { p.place(-(p.width - p.height) / 2, (p.width - p.height) / 2) }
-}.rotate(90f)
