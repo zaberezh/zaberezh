@@ -14,7 +14,7 @@ const { chromium } = require('playwright');
   await p.goto('https://sosedi-dostavka.by/', { waitUntil: 'networkidle', timeout: 60000 }).catch(e => console.log('goto', e.message));
   // маршруты в бандле
   for (const s of scripts) {
-    const js = await (await p.request.get(s)).text();
+    const js = await (await p.request.get(s, { timeout: 20000 })).text().catch(() => '');
     const hits = new Set((js.match(/["'`][^"'`\s]{0,40}(product|Product)[^"'`\s]{0,60}["'`]/g) || []));
     console.log('SCRIPT', s, [...hits].slice(0, 80).join(' | '));
   }
