@@ -6,7 +6,6 @@ import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -23,7 +22,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.requiredWidth
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -51,9 +49,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import by.zaberezh.forma.core.food.Edostavka
 import by.zaberezh.forma.core.store.Store
 import by.zaberezh.forma.core.study.Bsuir
@@ -290,23 +286,11 @@ private fun LessonCard(s: Store, tt: Timetable, l: Lesson, date: LocalDate, subg
         Column(Modifier.animateContentSize().padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min)) {
                 // время пары — крупно и цветом раздела, конец — сразу под ним, хорошо читается
-                val pause = l.pause
                 Column(Modifier.width(54.dp)) {
                     Text(l.start, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = C.study)
                     Text(l.end, style = MaterialTheme.typography.bodyMedium, color = C.text.copy(alpha = 0.75f))
                 }
-                // полоска пары; посередине — перегородка с временем перерыва, текст повёрнут (читается сверху вниз)
-                Column(Modifier.width(if (pause != null) 16.dp else 4.dp).fillMaxHeight(), horizontalAlignment = Alignment.CenterHorizontally) {
-                    Box(Modifier.width(4.dp).weight(1f).clip(RoundedCornerShape(2.dp)).background(typeColor(l.type)))
-                    if (pause != null) {
-                        // фиксированный блок: текст раскладывается горизонтально и поворачивается вокруг центра
-                        Box(Modifier.padding(vertical = 4.dp).width(14.dp).height(64.dp), contentAlignment = Alignment.Center) {
-                            Text("${pause.first}–${pause.second}", Modifier.requiredWidth(64.dp).rotate(90f), fontSize = 10.sp,
-                                color = C.muted, maxLines = 1, softWrap = false, textAlign = TextAlign.Center)
-                        }
-                        Box(Modifier.width(4.dp).weight(1f).clip(RoundedCornerShape(2.dp)).background(typeColor(l.type)))
-                    }
-                }
+                Box(Modifier.width(4.dp).fillMaxHeight().clip(RoundedCornerShape(2.dp)).background(typeColor(l.type)))
                 Column(Modifier.weight(1f).padding(start = 12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text(if (open) l.title else l.short, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, color = C.text)
                     Text(
@@ -363,4 +347,3 @@ private fun LessonDetails(s: Store, tt: Timetable, l: Lesson, date: LocalDate, s
     Primary(if (next != null) "Записать — появится ${DM.format(next)}" else "Записать ДЗ",
         { Study.addHomework(s, tt, l, date, text, subgroup); text = "" }, Modifier.fillMaxWidth(), enabled = text.isNotBlank())
 }
-
