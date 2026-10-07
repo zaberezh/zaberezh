@@ -48,7 +48,7 @@ private data class F(val key: String, val label: String, val suffix: String? = n
 
 private val PROFILE = listOf(F("age", "Возраст", "лет"), F("height", "Рост", "см"))
 private val GOALS = listOf(
-    F("activity", "Активность", "×BMR"), F("gain", "Темп веса", "кг/нед"),
+    F("activity", "Активность", "×BMR"), F("target", "Целевой вес", "кг"), F("gain", "Темп веса", "кг/нед"),
     F("protein", "Белок", "г/кг"), F("fat", "Доля жиров", "0–1"),
     F("kcal", "Калории вручную", "ккал"),
 )
@@ -79,7 +79,7 @@ fun SettingsScreen() {
     val f = remember(st) {
         mutableStateMapOf(
             "age" to p.age.toString(), "height" to p.heightCm.r1(), "activity" to p.activity.toString(),
-            "gain" to p.gainKgPerWeek.toString(), "protein" to p.proteinPerKg.toString(), "fat" to p.fatShare.toString(),
+            "gain" to p.gainKgPerWeek.toString(), "target" to (p.targetKg?.r1() ?: ""), "protein" to p.proteinPerKg.toString(), "fat" to p.fatShare.toString(),
             "kcal" to (st.kcalOverride?.toString() ?: ""), "sessions" to st.sessionsPerWeek.toString(), "session" to st.sessionMin.toString(),
             "hour" to st.morningHour.toString(), "minute" to "%02d".format(st.morningMinute), "checkup" to st.checkupDays.toString(),
             "wH" to st.weighHour.toString(), "wM" to "%02d".format(st.weighMinute),
@@ -129,7 +129,7 @@ fun SettingsScreen() {
         SETTINGS.set(s, SETTINGS.get(s).copy(
             profile = p.copy(
                 age = d("age", 18.0).toInt(), heightCm = d("height", 180.0), activity = d("activity", 1.375),
-                gainKgPerWeek = d("gain", 0.1), proteinPerKg = d("protein", 2.0), fatShare = d("fat", 0.25),
+                gainKgPerWeek = d("gain", 0.1), targetKg = f["target"]?.num()?.takeIf { it in 30.0..250.0 }, proteinPerKg = d("protein", 2.0), fatShare = d("fat", 0.25),
             ),
             kcalOverride = f["kcal"]?.num()?.toInt(),
             sessionsPerWeek = d("sessions", 3.0).toInt().coerceIn(1, 5), sessionMin = d("session", 90.0).toInt().coerceIn(40, 150),
@@ -160,6 +160,8 @@ fun SettingsScreen() {
                     })
                 }
                 Muted("Кроме КБЖУ — клетчатка: цель ${by.zaberezh.forma.core.food.FIBER_GOAL} г в день, считается по продуктам и ответам Claude.")
+                Muted("Целевой вес: больше текущего — набор +${by.zaberezh.forma.core.body.GAIN_PACE} кг/нед, меньше — похудение " +
+                    "−${by.zaberezh.forma.core.body.LOSS_PACE} кг/нед, рядом с целью — держим вес. Пусто — работает «Темп веса».")
                 Muted("Активность 1.375 = только 3 силовые в неделю, ходьба не учитывается. Темп 0.1 кг/нед = медленный набор. " +
                     "Через 2–4 недели записей расход уточняется по реальным данным.")
             }

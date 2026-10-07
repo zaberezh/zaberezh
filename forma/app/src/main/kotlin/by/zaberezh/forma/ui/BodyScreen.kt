@@ -61,7 +61,8 @@ fun BodyScreen() {
             val all = WEIGHT.all(s)
             val trend = trendWeight(s, ctx.today)
             val rate = weightRate(s, ctx.today)
-            val goal = ctx.settings.profile.gainKgPerWeek
+            val wg = by.zaberezh.forma.core.body.weightGoal(s, ctx.settings.profile, ctx.today)
+            val goal = wg.rate
             val streak = by.zaberezh.forma.core.daily.Streaks.weighIns(s, ctx.today)
             Block("Вес", trailing = { StreakPill(streak) }) {
                 StreakNote(streak, "взвешивался")
@@ -69,7 +70,7 @@ fun BodyScreen() {
                 else Muted("Взвешивайся утром натощак, минимум 4 раза в неделю")
                 if (rate != null) Stat("Темп за 3 недели", "${if (rate >= 0) "+" else ""}${rate.r2()} кг/нед",
                     if (abs(rate - goal) <= 0.15) C.good else C.warn)
-                Stat("Цель", "+${goal.r2()} кг/нед")
+                Stat("Цель", wg.label)
                 Line {
                     Field("Вес сегодня", w, { w = it }, Modifier.weight(1f), suffix = "кг")
                     Primary(if (todayW == null) "Сохранить" else "Изменить", { w.num()?.let { saveWeight(s, ctx.today, it) } })
