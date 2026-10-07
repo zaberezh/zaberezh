@@ -7,6 +7,7 @@ import by.zaberezh.forma.core.Section
 import by.zaberezh.forma.core.body.dailyWeights
 import by.zaberezh.forma.core.body.latestWeight
 import by.zaberezh.forma.core.body.weightRate
+import by.zaberezh.forma.core.body.weightGoal
 import by.zaberezh.forma.core.i
 import by.zaberezh.forma.core.r2
 import by.zaberezh.forma.core.slope
@@ -86,7 +87,7 @@ object FoodModule : Module {
         val ad = adaptiveTdee(dailyWeights(ctx.store, from, to), intake(ctx.store, from, to), to)
         val tdee = ad?.let { (v, w) -> v * w + formula * (1 - w) } ?: formula
         val note = ad?.let { "по данным ${it.first.i()} (доверие ${(it.second * 100).i()}%), формула ${formula.i()}" } ?: "формула (мало данных для адаптации)"
-        val kcal = st.kcalOverride?.toDouble() ?: (tdee + p.gainKgPerWeek * 7700 / 7)
+        val kcal = st.kcalOverride?.toDouble() ?: (tdee + weightGoal(ctx.store, p, ctx.today).rate * 7700 / 7)
         val prot = p.proteinPerKg * kg
         val fat = kcal * p.fatShare / 9
         val carb = ((kcal - prot * 4 - fat * 9) / 4).coerceAtLeast(0.0)
@@ -127,7 +128,7 @@ object FoodModule : Module {
         if (logged.isNotEmpty() && avg.p < g.p * 0.9) actions += "Белок ${avg.p.i()} г при цели ${g.p} — добери (творог, яйца, курица, протеин)."
 
         val rate = weightRate(s, to, days)
-        val target = ctx.settings.profile.gainKgPerWeek
+        val target = weightGoal(s, ctx.settings.profile, to).rate
         if (rate != null) {
             if (rate > target + 0.15) actions += "Вес растёт быстрее цели (${rate.r2()} кг/нед) → −150 ккал."
             else if (rate < target - 0.15) actions += "Вес ниже цели (${rate.r2()} кг/нед) → +150 ккал (если силовые стоят — обязательно)."

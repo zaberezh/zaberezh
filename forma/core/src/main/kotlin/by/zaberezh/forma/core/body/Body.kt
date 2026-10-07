@@ -69,6 +69,41 @@ fun trendWeight(s: Store, to: LocalDate): Double? {
     return ema
 }
 
+/** Темп набора к целевому весу, кг/нед: медленный, чтобы росли мышцы, а не жир. */
+const val GAIN_PACE = 0.25
+/** Темп похудения к целевому весу, кг/нед: сила и мышцы сохраняются. */
+const val LOSS_PACE = 0.5
+/** Ближе этого к цели — держим вес. */
+const val HOLD_KG = 0.5
+
+/** Цель по весу: темп (кг/нед) и, если задан целевой вес, — сам вес. */
+data class WeightGoal(val rate: Double, val targetKg: Double? = null, val current: Double? = null) {
+    /** Сколько недель до цели при этом темпе; null — цели нет или уже держим. */
+    val weeks: Int? get() = if (targetKg == null || current == null || rate == 0.0) null
+        else kotlin.math.ceil((targetKg - current) / rate).toInt().coerceAtLeast(1)
+    val label: String get() = when {
+        targetKg == null -> "${if (rate >= 0) "+" else ""}${rate.r2()} кг/нед"
+        rate == 0.0 -> "${targetKg.r1()} кг — держим вес"
+        else -> "${targetKg.r1()} кг · ${if (rate > 0) "+" else ""}${rate.r2()} кг/нед" + (weeks?.let { " · ≈$it нед" } ?: "")
+    }
+}
+
+/** Целевой вес задан — набор или похудение по текущему (сглаженному) весу; иначе — темп из настроек. */
+fun weightGoal(p: by.zaberezh.forma.core.Profile, current: Double?): WeightGoal {
+    val t = p.targetKg ?: return WeightGoal(p.gainKgPerWeek)
+    if (current == null) return WeightGoal(p.gainKgPerWeek, t)
+    val diff = t - current
+    val rate = when {
+        kotlin.math.abs(diff) < HOLD_KG -> 0.0
+        diff > 0 -> GAIN_PACE
+        else -> -LOSS_PACE
+    }
+    return WeightGoal(rate, t, current)
+}
+
+fun weightGoal(s: Store, p: by.zaberezh.forma.core.Profile, day: LocalDate): WeightGoal =
+    weightGoal(p, trendWeight(s, day) ?: latestWeight(s))
+
 /** Ближайшее время напоминания взвеситься: будни и выходные — своё время. */
 fun nextWeighTime(st: by.zaberezh.forma.core.Settings, now: java.time.LocalDateTime): java.time.LocalDateTime {
     for (i in 0L..7L) {
@@ -105,7 +140,9 @@ object BodyModule : Module {
         val actions = mutableListOf<String>()
         val w = dailyWeights(s, from, to)
         val rate = weightRate(s, to, ChronoUnit.DAYS.between(from, to) + 1)
-        val target = ctx.settings.profile.gainKgPerWeek
+        val goal = weightGoal(s, ctx.settings.profile, to)
+        val target = goal.rate
+        goal.targetKg?.let { lines += "Цель: ${goal.label}" }
         if (w.isNotEmpty()) lines += "Вес: ${w.first().second.r1()} → ${w.last().second.r1()} кг, взвешиваний ${w.size}"
         trendWeight(s, to)?.let { lines += "Сглаженный вес: ${it.r1()} кг" }
         rate?.let { lines += "Темп: ${it.r2()} кг/нед (цель ${target.r2()})" }
@@ -126,7 +163,7 @@ object BodyModule : Module {
             val dw = (cur.second["waist"] ?: 0.0) - (prev?.second?.get("waist") ?: cur.second["waist"] ?: 0.0)
             if (prev != null && dw >= 1.0) actions += "Талия +${dw.r1()} см — набор идёт с жиром, срежь 150 ккал."
         }
-        return Section(title, lines, actions, mapOf("weights" to w.size, "rate_kg_week" to rate, "target_rate" to target,
+        return Section(title, lines, actions, mapOf("weights" to w.size, "rate_kg_week" to rate, "target_rate" to target, "target_kg" to goal.targetKg,
             "measure_last" to cur?.second, "measure_prev" to prev?.second))
     }
 }
