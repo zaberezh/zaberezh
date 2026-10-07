@@ -21,13 +21,44 @@ class WebFood(private val fetch: (String) -> String? = Edostavka::httpGet, priva
     }
 
     /**
-     * Порядок: Open Food Facts (открытая база продуктов, JSON — не ломается от вёрстки и капчи) →
+     * Порядок: «Соседи» (sosedi-dostavka.by — белорусские товары, КБЖУ с этикетки) → Open Food Facts (открытая база продуктов) →
      * поиск по сайту calorizator.ru → поисковики. Первый источник с правдоподобным ответом и берётся.
      */
     fun lookup(name: String): Found? =
-        runCatching { openFoodFacts(name) }.onFailure { log("openfoodfacts: ${it.message}") }.getOrNull()
+        runCatching { sosedi(name) }.onFailure { log("sosedi: ${it.message}") }.getOrNull()
+            ?: runCatching { openFoodFacts(name) }.onFailure { log("openfoodfacts: ${it.message}") }.getOrNull()
             ?: runCatching { calorizator(name) }.onFailure { log("calorizator: ${it.message}") }.getOrNull()
             ?: searchEngines(name)
+
+    /**
+     * sosedi-dostavka.by: их открытый API (тот же, что у сайта) — поиск → карточка товара с КБЖУ на 100 г.
+     * Берутся только товары, в названии которых есть все слова запроса («кефир депи» не подменяется «молоком депи»).
+     */
+    fun sosedi(name: String): Found? {
+        val json = kotlinx.serialization.json.Json
+        val q = URLEncoder.encode(name, "UTF-8").replace("+", "%20")
+        val found = json.parseToJsonElement(fetch("$SOSEDI/v2/products/search?query=$q") ?: return null.also { log("sosedi: нет ответа") })
+        val stems = Menu.tokens(name).filter { it.length >= 3 }.map { it.take(4) }
+        val hits = ((found as? kotlinx.serialization.json.JsonObject)?.get("data") as? kotlinx.serialization.json.JsonArray).orEmpty().mapNotNull { el ->
+            val o = el as? kotlinx.serialization.json.JsonObject ?: return@mapNotNull null
+            val id = (o["id"] as? kotlinx.serialization.json.JsonPrimitive)?.content ?: return@mapNotNull null
+            val title = (o["name"] as? kotlinx.serialization.json.JsonPrimitive)?.content.orEmpty().replace(Regex("^\\d{8,14}\\s+"), "")
+            val words = Menu.tokens(title)
+            if (stems.isEmpty() || !stems.all { s -> words.any { it.startsWith(s) } }) return@mapNotNull null
+            // меньше лишних слов — ближе к запросу: «макароны» → сначала просто макароны, а не «макароны с ветчиной»
+            val qw = Menu.tokens(name)
+            val dish = words.count { it in JOIN && it !in qw } * 2           // «с ветчиной», «в соусе» — уже блюдо, а не продукт
+            Triple(id, title, words.count { w -> w.length >= 3 && stems.none { w.startsWith(it) } } + dish)
+        }.sortedBy { it.third }.take(3)
+        log("sosedi: подходящих ${hits.size}")
+        for ((id, title) in hits) {
+            val o = json.parseToJsonElement(fetch("$SOSEDI/products/$id/$DARKSTORE") ?: continue) as? kotlinx.serialization.json.JsonObject ?: continue
+            fun num(k: String) = (o[k] as? kotlinx.serialization.json.JsonPrimitive)?.content?.replace(',', '.')?.toDoubleOrNull()
+            val m = labelMacro(num("calorie"), num("protein"), num("fat"), num("carbohydrate")) ?: continue
+            return Found(m, "sosedi-dostavka.by · $title")
+        }
+        return null
+    }
 
     /** Open Food Facts: товары по запросу, у которых название похоже на запрос; берётся медиана по калориям. */
     fun openFoodFacts(name: String): Found? {
@@ -97,6 +128,26 @@ class WebFood(private val fetch: (String) -> String? = Edostavka::httpGet, priva
         private const val N = "(\\d+(?:[.,]\\d+)?)"
 
         private fun d(s: String) = s.replace(',', '.').toDouble()
+
+        private val JOIN = setOf("с", "со", "в", "во", "и")
+        private const val SOSEDI = "https://dev.bazar-store.by"
+        private const val DARKSTORE = 10   // склад «Соседей» в Минске; КБЖУ у товара одинаковое на любом
+
+        /**
+         * КБЖУ с этикетки магазина. В поле калорий бывают и ккал, и кДж (кефир 1,5%: 174.5 — это кДж):
+         * верим тому варианту, что сходится с 4·Б + 9·Ж + 4·У; не сходится ни один — считаем по БЖУ.
+         * Пустые белки или углеводы (бывает у части товаров) считаются нулём, только если калории с этим сходятся;
+         * без жиров товар не берём: у творога 9% с пустым полем жиров «сходятся» и неверные 70 ккал.
+         */
+        fun labelMacro(cal: Double?, p: Double?, f: Double?, c: Double?): Macro? {
+            if (f == null) return null
+            val full = p != null && c != null
+            val pp = p ?: 0.0; val ff = f ?: 0.0; val cc = c ?: 0.0
+            val calc = pp * 4 + ff * 9 + cc * 4
+            val kcal = listOfNotNull(cal, cal?.div(4.184)).firstOrNull { it > 0 && kotlin.math.abs(it - calc) <= 0.25 * it }
+                ?: calc.takeIf { full } ?: return null
+            return Macro(kcal, pp, ff, cc).takeIf { calc > 0 && plausible(it) }
+        }
 
         /** Калории сходятся с 4·Б + 9·Ж + 4·У (±25%) и правдоподобны для 100 г. */
         fun plausible(m: Macro): Boolean {
