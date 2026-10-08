@@ -12,6 +12,9 @@ data class FoodResult(val items: List<FoodItem>, val how: String, val missing: L
  * 6) Claude — только то, что не нашлось нигде.
  * Сетевые шаги делят общий бюджет времени, поэтому поиск не «висит».
  */
+/** Что за еда — выбирает человек: домашнюю не ищем в магазинах, покупную ищем там в первую очередь. */
+enum class FoodKind { AUTO, HOME, SHOP }
+
 /** «с» / «со» между блюдами: «гречка с курицей». */
 private val WITH = Regex("\\s+(?:с|со)\\s+", RegexOption.IGNORE_CASE)
 
@@ -34,6 +37,7 @@ class FoodPipeline(
     private val clock: () -> Long = System::currentTimeMillis,
     /** Браузер со страницей edostavka.by (на телефоне — невидимый WebView); null — edostavka пропускается. */
     edostavka: PageRunner? = null,
+    private val kind: FoodKind = FoodKind.AUTO,
 ) {
     private val deadline = clock() + netBudgetMs
     private val timed: (String) -> String? = { url -> if (clock() > deadline) null.also { log("время вышло: $url") } else fetch(url) }
@@ -42,9 +46,7 @@ class FoodPipeline(
     private val web = WebFood(timed, log)
 
     fun run(text: String): FoodResult {
-        val items = mutableListOf<FoodItem>()
-        val how = linkedMapOf<String, Int>()
-        fun add(step: String, found: List<FoodItem>) { if (found.isNotEmpty()) { items += found; how[step] = (how[step] ?: 0) + found.size } }
+        items.clear(); how.clear()
 
         val menu = Menus.resolve(text)
         add("меню заведения", menu.items)
@@ -52,6 +54,10 @@ class FoodPipeline(
 
         val lib = LibraryResolver(store)
         rest = rest.filter { part -> lib.resolve(part)?.also { add("библиотека", it) } == null }
+
+        var hints = emptyList<ShopPage>()
+        // «из магазина»: сначала товары магазинов — даже «кефир» или «творог 5%» (это конкретная пачка, а не среднее по таблице)
+        if (rest.isNotEmpty() && kind == FoodKind.SHOP) rest = shopStage(rest, all = true) { hints = it }
 
         if (rest.isNotEmpty()) {
             val basic = Menus.basic.resolve(rest.joinToString(", "))
@@ -66,17 +72,8 @@ class FoodPipeline(
             }
         }
 
-        var hints = emptyList<ShopPage>()
-        if (rest.isNotEmpty()) {
-            stage("ищу в магазинах (edostavka, Соседи)…")
-            // сбой магазина (сеть, разметка сайта) не должен терять то, что уже нашлось в таблице
-            runCatching { shops.resolve(rest) }
-                .onSuccess { r ->
-                    r.items.groupBy { it.source.substringBefore(" ·") }.forEach { (shop, l) -> add(shop, l) }
-                    rest = r.unresolved; hints = r.hints
-                }
-                .onFailure { log("магазины: ${it.message}") }
-        }
+        // «домашняя» — в магазинах не ищем: там другой продукт с другими цифрами
+        if (rest.isNotEmpty() && kind == FoodKind.AUTO) rest = shopStage(rest, all = false) { hints = it }
 
         if (rest.isNotEmpty()) {
             stage("ищу в интернете…")
@@ -89,10 +86,24 @@ class FoodPipeline(
             stage("спрашиваю Claude…")
             // ошибка Claude не теряет то, что уже найдено
             val asked = rest
-            runCatching { ask(asked.joinToString(", "), hints) }
+            val what = asked.joinToString(", ") + when (kind) { FoodKind.HOME -> " (домашняя еда)"; FoodKind.SHOP -> " (магазинный продукт)"; else -> "" }
+            runCatching { ask(what, hints) }
                 .onSuccess { add("Claude", keepGrams(asked, it)); rest = emptyList() }
                 .onFailure { error = it; log("Claude: ${it.message}") }
         }
         return FoodResult(items, how.entries.joinToString(" · ") { "${it.value} ${it.key}" }, rest, error)
+    }
+
+    private val items = mutableListOf<FoodItem>()
+    private val how = linkedMapOf<String, Int>()
+    private fun add(step: String, found: List<FoodItem>) { if (found.isNotEmpty()) { items += found; how[step] = (how[step] ?: 0) + found.size } }
+
+    /** Магазины; сбой (сеть, разметка сайта) не теряет найденное раньше. Возвращает то, что не нашлось. */
+    private fun shopStage(rest: List<String>, all: Boolean, hints: (List<ShopPage>) -> Unit): List<String> {
+        stage("ищу в магазинах (edostavka, Соседи)…")
+        return runCatching { shops.resolve(rest, all) }
+            .onSuccess { r -> r.items.groupBy { it.source.substringBefore(" ·") }.forEach { (shop, l) -> add(shop, l) }; hints(r.hints) }
+            .onFailure { log("магазины: ${it.message}") }
+            .getOrNull()?.unresolved ?: rest
     }
 }

@@ -23,6 +23,8 @@ object FoodSearch {
     val busy = mutableStateOf(false)
     val err = mutableStateOf<String?>(null)
     val info = mutableStateOf<String?>(null)
+    /** Домашняя еда или из магазина: выбирает человек рядом с полем «Что съел». */
+    val kind = mutableStateOf(by.zaberezh.forma.core.food.FoodKind.AUTO)
     @Volatile var visible = false
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
@@ -45,7 +47,8 @@ object FoodSearch {
                         },
                         stage = { msg -> scope.launch { info.value = msg } },
                         log = { Claude.debug("поиск: $it") },
-                        edostavka = by.zaberezh.forma.sys.EdoBrowser)
+                        edostavka = by.zaberezh.forma.sys.EdoBrowser,
+                        kind = kind.value)
                     val res = pipeline.run(q)
                     how = res.how
                     res.error?.let { if (res.items.isEmpty()) throw it }
