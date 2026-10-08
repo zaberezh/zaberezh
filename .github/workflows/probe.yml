@@ -5,10 +5,25 @@ on:
 jobs:
   probe:
     runs-on: ubuntu-latest
-    timeout-minutes: 12
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
-      - run: |
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@v4
+      - name: variants
+        run: |
+          cp .github/probe/LiveShopsTest.kt forma/core/src/test/kotlin/by/zaberezh/forma/core/
+          mkdir -p /tmp/live
+          cd forma && LIVE=variants LIVE_DIR=/tmp/live ./gradlew :core:test --tests '*LiveShopsTest*' -i 2>&1 | grep "LIVE" || true
+          ls -la /tmp/live
+      - name: record edostavka
+        run: |
           npm i playwright@1.47.2 >/dev/null 2>&1
           npx playwright install --with-deps chromium >/dev/null 2>&1
-          timeout 300 node .github/probe/shops.js || true
+          timeout 400 node .github/probe/record.js /tmp/live || true
+      - name: run
+        run: |
+          cd forma && LIVE=run LIVE_DIR=/tmp/live ./gradlew :core:cleanTest :core:test --tests '*LiveShopsTest*' -i 2>&1 | grep "LIVE" || true

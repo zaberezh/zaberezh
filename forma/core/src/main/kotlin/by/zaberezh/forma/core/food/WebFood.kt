@@ -21,44 +21,13 @@ class WebFood(private val fetch: (String) -> String? = Edostavka::httpGet, priva
     }
 
     /**
-     * Порядок: «Соседи» (sosedi-dostavka.by — белорусские товары, КБЖУ с этикетки) → Open Food Facts (открытая база продуктов) →
-     * поиск по сайту calorizator.ru → поисковики. Первый источник с правдоподобным ответом и берётся.
+     * Порядок: Open Food Facts (открытая база продуктов, JSON) → поиск по сайту calorizator.ru → поисковики.
+     * Магазины (edostavka, «Соседи») ищутся раньше, отдельным шагом — см. [ShopFinder].
      */
     fun lookup(name: String): Found? =
-        runCatching { sosedi(name) }.onFailure { log("sosedi: ${it.message}") }.getOrNull()
-            ?: runCatching { openFoodFacts(name) }.onFailure { log("openfoodfacts: ${it.message}") }.getOrNull()
+        runCatching { openFoodFacts(name) }.onFailure { log("openfoodfacts: ${it.message}") }.getOrNull()
             ?: runCatching { calorizator(name) }.onFailure { log("calorizator: ${it.message}") }.getOrNull()
             ?: searchEngines(name)
-
-    /**
-     * sosedi-dostavka.by: их открытый API (тот же, что у сайта) — поиск → карточка товара с КБЖУ на 100 г.
-     * Берутся только товары, в названии которых есть все слова запроса («кефир депи» не подменяется «молоком депи»).
-     */
-    fun sosedi(name: String): Found? {
-        val json = kotlinx.serialization.json.Json
-        val q = URLEncoder.encode(name, "UTF-8").replace("+", "%20")
-        val found = json.parseToJsonElement(fetch("$SOSEDI/v2/products/search?query=$q") ?: return null.also { log("sosedi: нет ответа") })
-        val stems = Menu.tokens(name).filter { it.length >= 3 }.map { it.take(4) }
-        val hits = ((found as? kotlinx.serialization.json.JsonObject)?.get("data") as? kotlinx.serialization.json.JsonArray).orEmpty().mapNotNull { el ->
-            val o = el as? kotlinx.serialization.json.JsonObject ?: return@mapNotNull null
-            val id = (o["id"] as? kotlinx.serialization.json.JsonPrimitive)?.content ?: return@mapNotNull null
-            val title = (o["name"] as? kotlinx.serialization.json.JsonPrimitive)?.content.orEmpty().replace(Regex("^\\d{8,14}\\s+"), "")
-            val words = Menu.tokens(title)
-            if (stems.isEmpty() || !stems.all { s -> words.any { it.startsWith(s) } }) return@mapNotNull null
-            // меньше лишних слов — ближе к запросу: «макароны» → сначала просто макароны, а не «макароны с ветчиной»
-            val qw = Menu.tokens(name)
-            val dish = words.count { it in JOIN && it !in qw } * 2           // «с ветчиной», «в соусе» — уже блюдо, а не продукт
-            Triple(id, title, words.count { w -> w.length >= 3 && stems.none { w.startsWith(it) } } + dish)
-        }.sortedBy { it.third }.take(3)
-        log("sosedi: подходящих ${hits.size}")
-        for ((id, title) in hits) {
-            val o = json.parseToJsonElement(fetch("$SOSEDI/products/$id/$DARKSTORE") ?: continue) as? kotlinx.serialization.json.JsonObject ?: continue
-            fun num(k: String) = (o[k] as? kotlinx.serialization.json.JsonPrimitive)?.content?.replace(',', '.')?.toDoubleOrNull()
-            val m = labelMacro(num("calorie"), num("protein"), num("fat"), num("carbohydrate")) ?: continue
-            return Found(m, "sosedi-dostavka.by · $title")
-        }
-        return null
-    }
 
     /** Open Food Facts: товары по запросу, у которых название похоже на запрос; берётся медиана по калориям. */
     fun openFoodFacts(name: String): Found? {
@@ -129,9 +98,6 @@ class WebFood(private val fetch: (String) -> String? = Edostavka::httpGet, priva
 
         private fun d(s: String) = s.replace(',', '.').toDouble()
 
-        private val JOIN = setOf("с", "со", "в", "во", "и")
-        private const val SOSEDI = "https://dev.bazar-store.by"
-        private const val DARKSTORE = 10   // склад «Соседей» в Минске; КБЖУ у товара одинаковое на любом
 
         /**
          * КБЖУ с этикетки магазина. В поле калорий бывают и ккал, и кДж (кефир 1,5%: 174.5 — это кДж):

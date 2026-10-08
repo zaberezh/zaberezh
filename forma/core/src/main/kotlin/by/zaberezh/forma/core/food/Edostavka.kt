@@ -1,58 +1,74 @@
 package by.zaberezh.forma.core.food
 
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import java.net.HttpURLConnection
 import java.net.URL
-import java.net.URLEncoder
 
-/** Страница товара: название (с массой упаковки), кусок текста с КБЖУ и что удалось разобрать. */
+/** Страница магазина, найденная для позиции: подсказка для Claude (если сам товар не подошёл уверенно). */
 data class ShopPage(val url: String, val title: String, val snippet: String, val per100: Macro?, val packGrams: Double?)
 
+/** Выполняет скрипт на странице edostavka.by в настоящем браузере и возвращает результат JSON-строкой (null — не вышло). */
+fun interface PageRunner { fun run(script: String): String? }
+
 /**
- * Точные КБЖУ магазинных продуктов с edostavka.by — запросы идут прямо с телефона, без ИИ и токенов.
- * Поиск: edostavka.by/search?query=…, товар: edostavka.by/product/<id>, КБЖУ — блок «На 100 грамм».
+ * edostavka.by: точные КБЖУ магазинных товаров. Сайт пускает только настоящий браузер (перед ним проверка, которую
+ * простой запрос не проходит), поэтому поиск идёт со страницы самого сайта в браузере телефона ([PageRunner]) —
+ * теми же запросами, что делает сайт, когда ищешь в нём руками. КБЖУ приходят прямо в выдаче поиска.
  */
-class Edostavka(private val fetch: (String) -> String? = ::httpGet, private val log: (String) -> Unit = {}) {
+class Edostavka(private val page: PageRunner?, private val log: (String) -> Unit = {}) : Shop {
+    override val title = "edostavka.by"
 
-    /** Найти товар под одну позицию. null — не нашли или название не совпало. */
-    fun lookup(query: String): ShopPage? = candidates(query).firstOrNull { matches(query, it.title) }
-
-    /** Страницы по запросу (до 3), даже если КБЖУ не разобрались — пригодятся Claude как контекст. */
-    fun candidates(query: String): List<ShopPage> {
-        val q = cleanQuery(query)
-        if (q.isBlank()) return emptyList()
-        val enc = URLEncoder.encode(q, "UTF-8")
-        val site = URLEncoder.encode("site:edostavka.by $q", "UTF-8")
-        // сам сайт; если результаты рисуются скриптом — ссылки через поисковики
-        val sources = listOf(
-            "https://edostavka.by/search?query=$enc",
-            "https://html.duckduckgo.com/html/?q=$site",
-            "https://www.bing.com/search?q=$site",
-        )
-        var ids = emptyList<String>()
-        for (src in sources) {
-            val html = fetch(src)?.let { runCatching { java.net.URLDecoder.decode(it, "UTF-8") }.getOrDefault(it) } ?: continue
-            ids = Regex("(?:edostavka\\.by)?/product/(\\d{4,})").findAll(html).map { it.groupValues[1] }.distinct().take(3).toList()
-            log("поиск ${src.substringBefore("?")}: товаров ${ids.size}")
-            if (ids.isNotEmpty()) break
-        }
-        return ids.mapNotNull { id -> page("https://edostavka.by/product/$id") }
-            .sortedByDescending { score(q, it.title) }
+    override fun search(query: String): List<ShopItem> {
+        val run = page ?: return emptyList()
+        val raw = run.run("($SCRIPT).search(${JsonPrimitive(query)})") ?: return emptyList<ShopItem>().also { log("edostavka: страница не ответила") }
+        return parseSearch(raw, log).also { log("edostavka «$query»: товаров ${it.size}") }
     }
 
-    fun page(url: String): ShopPage? {
-        val html = fetch(url) ?: return null.also { log("страница не открылась: $url") }
-        val title = Regex("<title[^>]*>(.*?)</title>", RegexOption.DOT_MATCHES_ALL).find(html)?.groupValues?.get(1)
-            ?.let(::decode)?.substringBefore(" купить")?.trim().orEmpty()
-        val text = textOf(html)
-        val at = listOf("На 100 г", "на 100 г", "100 грамм", "Белки").map { text.indexOf(it) }.filter { it >= 0 }.minOrNull()
-        val snippet = if (at == null) "" else text.substring(at, minOf(text.length, at + 260))
-        return ShopPage(url, title, snippet, parseMacros(snippet), packGrams(title)).also {
-            log("$url · «$title» · КБЖУ ${it.per100?.let { m -> "${m.kcal}/${m.p}/${m.f}/${m.c}" } ?: "не разобраны: ${snippet.take(120)}"}")
-        }
+    override fun details(item: ShopItem): ShopItem? {
+        if (item.per100 != null) return item
+        val raw = page?.run("($SCRIPT).product(${JsonPrimitive(item.id)})") ?: return null
+        val o = Json.parseToJsonElement(raw) as? JsonObject ?: return null
+        return parseItem(o)?.let { item.copy(per100 = it.per100, packGrams = it.packGrams ?: item.packGrams) }?.takeIf { it.per100 != null }
     }
 
     companion object {
         private const val NUM = "(\\d+(?:[.,]\\d+)?)"
+
+        /** Скрипт для страницы сайта: поиск (search.json сайта) и карточка товара; лежит в resources/shops/edostavka.js. */
+        val SCRIPT: String by lazy { Edostavka::class.java.getResource("/shops/edostavka.js")!!.readText().trim() }
+
+        /** Ответ скрипта поиска: {items:[{id, name, pack, props:{Белки, Жиры, Углеводы, Энергетическая ценность}}]} или {error}. */
+        fun parseSearch(json: String, log: (String) -> Unit = {}): List<ShopItem> {
+            val root = runCatching { Json.parseToJsonElement(json) }.getOrNull() as? JsonObject ?: return emptyList()
+            root.str("error")?.let { log("edostavka: $it"); return emptyList() }
+            return (root["items"] as? JsonArray).orEmpty().mapNotNull { (it as? JsonObject)?.let(::parseItem) }
+        }
+
+        private fun parseItem(o: JsonObject): ShopItem? {
+            val id = o.str("id") ?: return null
+            val raw = o.str("name").orEmpty().trim().trimEnd(',').trim()
+            val pack = o.str("pack").orEmpty().trim()
+            // в названии не всегда есть масса («Сыр Гауда Премиум 45%,») — тогда её даёт packagingInfo («200 г»)
+            val name = if (pack.isNotEmpty() && packGrams(raw) == null && packGrams(pack) != null) "$raw, $pack" else raw
+            val props = (o["props"] as? JsonObject)?.mapValues { (_, v) -> (v as? JsonPrimitive)?.content.orEmpty() }.orEmpty()
+            return ShopItem("edostavka.by", id, name, "https://edostavka.by/product/$id", macroOf(props), packGrams(name), pieceGrams(name))
+        }
+
+        /** КБЖУ из свойств товара: «Белки 3», «Жиры 3.3», «Углеводы 4», «Энергетическая ценность 56,8 ккал/237,4 кДж». */
+        fun macroOf(props: Map<String, String>): Macro? {
+            fun value(vararg keys: String) = props.entries.firstOrNull { (k, _) -> keys.any { it in k.lowercase() } }?.value
+            fun num(s: String?) = s?.let { Regex(NUM).find(it)?.groupValues?.get(1)?.replace(',', '.')?.toDoubleOrNull() }
+            val energy = value("энерг", "калор")
+            val kcal = energy?.let { e ->
+                Regex("$NUM\\s*ккал", RegexOption.IGNORE_CASE).find(e)?.groupValues?.get(1)?.replace(',', '.')?.toDoubleOrNull()
+                    ?: Regex("$NUM\\s*кдж", RegexOption.IGNORE_CASE).find(e)?.groupValues?.get(1)?.replace(',', '.')?.toDoubleOrNull()?.div(4.184)
+            }
+            val m = WebFood.labelMacro(kcal, num(value("белк")), num(value("жир")), num(value("углев"))) ?: return null
+            return m.copy(fib = num(value("клетч", "пищевые волокна")) ?: 0.0)
+        }
 
         /**
          * КБЖУ из текста блока «На 100 грамм». Порядок на сайте может быть «9 Белки» или «Белки 9» —
@@ -80,36 +96,10 @@ class Edostavka(private val fetch: (String) -> String? = ::httpGet, private val 
             return when (m.groupValues[2].lowercase()) { "кг", "л" -> v * 1000; else -> v }
         }
 
-        private val STOP = setOf("г", "гр", "мл", "шт", "и", "с", "со", "вкус", "на", "из", "в", "без", "кг", "л", "только", "ничего", "немного", "порция")
-
         /** Запрос без количеств: «2 теос про клубника 330г» → «теос про клубника». */
         fun cleanQuery(q: String): String = q.lowercase().replace('ё', 'е')
             .replace(Regex("\\d+(?:[.,]\\d+)?\\s*(?:г|гр|грамм\\w*|мл|шт\\.?|x|х|кг|л)?(?=\\s|$)"), " ")
             .replace(Regex("[^\\p{L}\\p{N} ]"), " ").replace(Regex("\\s+"), " ").trim()
-
-        private val TR = mapOf('а' to "a", 'б' to "b", 'в' to "v", 'г' to "g", 'д' to "d", 'е' to "e", 'ж' to "zh", 'з' to "z",
-            'и' to "i", 'й' to "i", 'к' to "k", 'л' to "l", 'м' to "m", 'н' to "n", 'о' to "o", 'п' to "p", 'р' to "r", 'с' to "s",
-            'т' to "t", 'у' to "u", 'ф' to "f", 'х' to "h", 'ц' to "c", 'ч' to "ch", 'ш' to "sh", 'щ' to "sch", 'ы' to "y",
-            'э' to "e", 'ю' to "yu", 'я' to "ya", 'ь' to "", 'ъ' to "")
-
-        private fun translit(w: String) = w.map { TR[it] ?: it.toString() }.joinToString("")
-
-        private fun words(q: String) = cleanQuery(q).split(" ").filter { it.length >= 2 && it !in STOP }
-
-        /** Слово из запроса есть в названии: по-русски, латиницей (теос → teos) или по основе (клубника → клубн…). */
-        private fun hit(word: String, title: String): Boolean {
-            val t = title.lowercase().replace('ё', 'е')
-            val stem = if (word.length > 5) word.take(word.length - 2) else word
-            return stem in t || translit(word) in t || translit(stem) in t
-        }
-
-        fun score(q: String, title: String): Int = words(q).count { hit(it, title) }
-
-        /** Все значимые слова запроса есть в названии товара — иначе это не тот продукт. */
-        fun matches(q: String, title: String): Boolean {
-            val w = words(q)
-            return w.isNotEmpty() && title.isNotBlank() && w.all { hit(it, title) }
-        }
 
         private fun decode(s: String) = s.replace("&nbsp;", " ").replace("&quot;", "\"").replace("&amp;", "&")
             .replace("&#39;", "'").replace("&lt;", "<").replace("&gt;", ">").replace(Regex("&#(\\d+);")) { it.groupValues[1].toInt().toChar().toString() }

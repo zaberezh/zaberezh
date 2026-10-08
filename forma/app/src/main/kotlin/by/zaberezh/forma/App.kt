@@ -19,6 +19,7 @@ class App : Application() {
         super.onCreate()
         by.zaberezh.forma.sys.CrashLog.install(this)
         Forma.app = applicationContext
+        by.zaberezh.forma.sys.EdoBrowser.init(this)
         Forma.store = SqlStore(this)
         migrateSettings(Forma.store)
         Secrets.migrate(this, Forma.store)   // ключ Claude — из базы в сейф Keystore
