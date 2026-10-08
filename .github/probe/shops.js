@@ -1,45 +1,37 @@
 const { chromium } = require('playwright');
-const QS = ['Печенье Lotte Choco Pie с ароматом банана', 'choco pie', 'чоко пай', 'кефир детский депи', 'кефир депи'];
+const fs = require('fs');
+const LIB = fs.readFileSync(__dirname + '/edostavka.js', 'utf8');
+const QS = ['печенье lotte choco pie банана', 'lotte choco pie банана', 'lotte choco pie', 'choco pie', 'чокопай', 'кефир детский депи', 'кефир депи', 'депи', 'кефир детский', 'сыр гауда'];
 (async () => {
+  for (const q of ['кефир депи', 'депи кефир', 'lotte choco pie']) {
+    const r = await fetch('https://dev.bazar-store.by/v2/products/search?query=' + encodeURIComponent(q)).then(r => r.json()).catch(e => ({ err: String(e) }));
+    console.log('SOSEDI', q, '→', (r.data || []).length, JSON.stringify((r.data || []).slice(0, 6).map(x => x.name)));
+  }
   const b = await chromium.launch();
   const p = await b.newPage({ locale: 'ru-RU' });
+  const t0 = Date.now();
   await p.goto('https://edostavka.by/', { waitUntil: 'domcontentloaded', timeout: 60000 }).catch(e => console.log('goto', e.message));
   await p.waitForFunction(() => !!window.__NEXT_DATA__, null, { timeout: 30000 }).catch(e => console.log('no next data', e.message));
-  const JS = async (q) => {
-    const bid = window.__NEXT_DATA__.buildId;
-    const r = await fetch(`/_next/data/${bid}/search.json?query=` + encodeURIComponent(q), { credentials: 'include', headers: { 'x-nextjs-data': '1' } });
-    const txt = await r.text();
-    let j; try { j = JSON.parse(txt); } catch (e) { return { status: r.status, err: 'not json', head: txt.slice(0, 200) }; }
-    const found = [];
-    const walk = (o, path) => {
-      if (!o || typeof o !== 'object') return;
-      if (o.productId && o.productName) { found.push({ path, id: o.productId, name: o.productName }); return; }
-      for (const k of Object.keys(o)) walk(o[k], path + '.' + k);
-    };
-    walk(j, '');
-    const keys = Object.keys((j.pageProps) || {});
-    return { status: r.status, len: txt.length, pagePropsKeys: keys, n: found.length, paths: [...new Set(found.map(f => f.path.replace(/\.\d+$/, '')))].slice(0, 5), items: found.slice(0, 12).map(f => f.id + ' ' + f.name) };
-  };
+  console.log('READY', Date.now() - t0, 'ms');
   for (const q of QS) {
-    const out = await p.evaluate(JS, q).catch(e => ({ err: String(e) }));
-    console.log('SEARCHJSON', q, JSON.stringify(out));
+    const s = Date.now();
+    const out = await p.evaluate(`(${LIB}).search(${JSON.stringify(q)})`).catch(e => ({ err: String(e) }));
+    console.log('EDO', q, (Date.now() - s) + 'ms', (out.items || []).length, JSON.stringify((out.items || []).slice(0, 6)), out.err || '');
   }
-  // структура данных товара
-  const prod = await p.evaluate(async () => {
-    const bid = window.__NEXT_DATA__.buildId;
-    const d = await fetch(`/_next/data/${bid}/product/1922907.json`, { credentials: 'include', headers: { 'x-nextjs-data': '1' } }).then(r => r.json());
-    const hits = [];
-    const walk = (o, path) => {
-      if (!o || typeof o !== 'object') return;
-      for (const k of Object.keys(o)) {
-        const v = o[k];
-        if (/(prot|fat|carb|kcal|calor|energ|nutri|белк|жир|углев)/i.test(k) || (typeof v === 'string' && /Белки|ккал/.test(v) && v.length < 300)) hits.push(path + '.' + k + ' = ' + JSON.stringify(v).slice(0, 200));
-        walk(v, path + '.' + k);
-      }
-    };
-    walk(d.pageProps || d, '');
-    return hits.slice(0, 40);
-  }).catch(e => ['ERR ' + e]);
-  console.log('PRODUCTJSON', JSON.stringify(prod, null, 1));
+  for (const id of ['1922907', '2287615']) {
+    const out = await p.evaluate(`(${LIB}).product(${JSON.stringify(id)})`).catch(e => ({ err: String(e) }));
+    console.log('PRODUCT', JSON.stringify(out));
+  }
+  // старый buildId — скрипт должен сам взять новый
+  const stale = await p.evaluate(`window.__grindBuild='old-build-x'; (${LIB}).search('сыр гауда')`).catch(e => ({ err: String(e) }));
+  console.log('STALE BUILD', (stale.items || []).length, stale.err || '');
+  // listing: какие поля есть у товара
+  const keys = await p.evaluate(async () => {
+    const b = window.__NEXT_DATA__.buildId;
+    const j = await fetch('/_next/data/' + b + '/search.json?query=' + encodeURIComponent('сыр гауда'), { headers: { 'x-nextjs-data': '1' } }).then(r => r.json());
+    const x = j.pageProps.listing.products[0];
+    return { keys: Object.keys(x), listingKeys: Object.keys(j.pageProps.listing), sample: JSON.stringify(x).slice(0, 600) };
+  }).catch(e => ({ err: String(e) }));
+  console.log('LISTING', JSON.stringify(keys));
   await b.close();
 })();
