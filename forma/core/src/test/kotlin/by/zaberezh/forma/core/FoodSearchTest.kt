@@ -158,22 +158,23 @@ class FoodSearchTest {
         // ответы их API — как пришли с сайта (кефир: калории в кДж)
         val search = """{"took":9,"data":[{"id":300376668,"name":"4810319008408 молоко детское депи 3.2% 250мл","description":""},
             {"id":1318,"name":"4810268020827 кефир 1,5% 0,95л","description":""}]}"""
-        val card = """{"id":1318,"name":"Кефир 1,5% 0,95л","calorie":"174.5","fat":"1.5","protein":"3","carbohydrate":"4"}"""
-        val web = WebFood(fetch = { url -> when { "/v2/products/search" in url -> search; url.endsWith("/products/1318/10") -> card; else -> null } })
-        val f = web.lookup("кефир")
-        assertEquals("sosedi-dostavka.by · кефир 1,5% 0,95л", f?.from)
+        val card = """{"id":1318,"slug":"kefir-15-savushkin","name":"Кефир 1,5% 0,95л","calorie":"174.5","fat":"1.5","protein":"3","carbohydrate":"4","weight":"0.95"}"""
+        val shop = by.zaberezh.forma.core.food.Sosedi(fetch = { url -> when { "/v2/products/search" in url -> search; url.endsWith("/products/1318/10") -> card; else -> null } })
+        val f = by.zaberezh.forma.core.food.ShopFinder(listOf(shop)).find("кефир")
+        assertEquals("Кефир 1,5% 0,95л", f?.name)
         assertEquals(41.7, kotlin.math.round(f!!.per100.kcal * 10) / 10)          // 174.5 кДж → 41.7 ккал
         assertEquals(3.0, f.per100.p)
-        assertEquals(null, web.sosedi("кефир депи"))                              // «молоко депи» — не кефир
+        assertEquals(100.0, f.grams)                                              // литровая бутылка — не порция
+        assertTrue(f.source.startsWith("sosedi-dostavka.by"), f.source)
         assertEquals(408.5, WebFood.labelMacro(408.5, 8.9, 28.1, 30.0)?.kcal)    // уже ккал — как есть
         assertEquals(240.0, WebFood.labelMacro(240.0, 18.3, 18.3, null)?.kcal)    // моцарелла без углеводов — сходится
         assertEquals(null, WebFood.labelMacro(70.0, 16.0, null, 1.2))            // творог 9% без жиров — пропуск
         assertEquals(null, WebFood.labelMacro(null, null, null, null))
 
         val pasta = """{"data":[{"id":1,"name":"32163 макароны с ветчиной 300г"},{"id":2,"name":"макароны спагетти 450г"}]}"""
-        val plain = WebFood(fetch = { url -> when { "/v2/products/search" in url -> pasta
+        val plain = by.zaberezh.forma.core.food.Sosedi(fetch = { url -> when { "/v2/products/search" in url -> pasta
             url.endsWith("/products/2/10") -> """{"calorie":"350","protein":"12","fat":"1.5","carbohydrate":"71"}"""
             url.endsWith("/products/1/10") -> """{"calorie":"186","protein":"17.4","fat":"10.7","carbohydrate":"4.9"}"""; else -> null } })
-        assertEquals(350.0, plain.sosedi("макароны")?.per100?.kcal)              // ближе к запросу, а не готовое блюдо
+        assertEquals(350.0, by.zaberezh.forma.core.food.ShopFinder(listOf(plain)).find("макароны")?.per100?.kcal)  // продукт, а не готовое блюдо
     }
 }
