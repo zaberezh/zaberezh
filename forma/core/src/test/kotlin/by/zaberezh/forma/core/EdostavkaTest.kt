@@ -73,6 +73,8 @@ class EdostavkaTest {
         assertNull(by.zaberezh.forma.core.food.condimentPortion("сырники"))
         assertNull(by.zaberezh.forma.core.food.condimentPortion("теос про клубника"))
         assertEquals(20.0, finder().find("соус барбекю")?.grams)                   // порция, а не бутылка 230 г
+        assertNull(by.zaberezh.forma.core.food.condimentPortion("чипсы lays сметана и лук"))   // сметана — вкус, а не добавка
+        assertEquals(15.0, by.zaberezh.forma.core.food.condimentPortion("Натуральный мед, 250 г"))
     }
 
     @Test fun labelFirstOrder() {
@@ -108,6 +110,9 @@ class EdostavkaTest {
         assertFalse(ShopMatch.fit("кефир детский депи", "молоко детское депи 3.2% 250мл").ok)   // не кефир
         assertTrue(ShopMatch.fit("чоко пай", "изделие мучное кондитерское в глазури чоко пай 6 шт*30 г").ok)
         assertTrue(ShopMatch.fit("чокопай", "изделие мучное кондитерское в глазури чоко пай 6 шт*30 г").ok)
+        // жирность — тоже признак: «творог савушкин 5%» — не 2%
+        assertTrue(ShopMatch.score("творог савушкин 5%", "Творог Савушкин классический, 5%, 300 г") > ShopMatch.score("творог савушкин 5%", "творог савушкин 2% 180г"))
+        assertFalse(ShopMatch.fit("снежок савушкин", "напиток дарида снежок газированный 0.75л").ok)   // другой «снежок»
     }
 
     @Test fun shorterQueriesWhenTheLongOneFindsNothing() {
