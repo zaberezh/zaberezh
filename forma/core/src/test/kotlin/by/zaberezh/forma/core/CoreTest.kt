@@ -187,7 +187,9 @@ class CoreTest {
         val legs = setOf("quads", "hams", "glutes", "calves")
         fun mains(pl: by.zaberezh.forma.core.gym.DayPlan) = pl.items.map { p.ex(it.ex)!!.muscles.maxBy { m -> m.value }.key }.toSet()
         assertTrue(mains(plans[0]).none { it in legs }, "верх без ног: ${plans[0]}")
-        assertTrue(mains(plans[1]).any { it in legs } && mains(plans[1]).none { it in setOf("chest", "back", "side_delts") }, "низ: ${plans[1]}")
+        assertTrue(mains(plans[1]).any { it in legs } && mains(plans[1]).none { it in setOf("chest", "back") }, "низ: ${plans[1]}")
+        // руки — в каждой тренировке, и в «Низ» тоже: трицепс не раз в неделю
+        plans.forEach { pl -> assertTrue("triceps" in mains(pl) && "biceps" in mains(pl), "руки в каждой тренировке: $pl") }
         // сделанная тренировка «Верх» → следующая по очереди «Низ», даже через пропуск
         GymModule.savePlan(s, plans[0])
         WORKOUT.save(s, Workout(mon.toString(), mon.startMs(), sets = listOf(SetLog("bench", 60.0, 8))), ts = mon.startMs() + 3600_000)
@@ -266,12 +268,14 @@ class CoreTest {
         // вчера грудь убита -> сегодня грудь почти не берётся
         WORKOUT.save(s, Workout(mon.minusDays(1).toString(), mon.minusDays(1).startMs(),
             sets = List(4) { SetLog("bench", 60.0, 8) } + List(4) { SetLog("incline_db", 24.0, 10) }), ts = mon.minusDays(1).startMs() + 3600_000)
-        val after = Planner.planMuscles(p, GymModule.planFor(Ctx(s, mon), mon))
+        val after = Planner.planMuscles(p, GymModule.planFor(Ctx(s, mon), mon, day = "upper"))
         assertTrue((after["chest"] ?: 0.0) < (m["chest"] ?: 0.0), "chest $after vs $m")
 
-        // фокус «руки» — больше бицепса/трицепса
-        val arms = Planner.planMuscles(p, GymModule.planFor(ctx, mon, focus = "arms"))
-        assertTrue((arms["biceps"] ?: 0.0) + (arms["triceps"] ?: 0.0) > (m["biceps"] ?: 0.0) + (m["triceps"] ?: 0.0), "$arms vs $m")
+        // фокус «руки» — больше прямой работы на бицепс и трицепс, чем в тот же день без акцента
+        fun armsOf(pl: by.zaberezh.forma.core.gym.DayPlan) = Planner.planCredit(p, pl).let { (it["biceps"] ?: 0.0) + (it["triceps"] ?: 0.0) }
+        val plain = GymModule.planFor(ctx, mon, day = "upper")
+        val arms = GymModule.planFor(ctx, mon, focus = "arms", day = "upper")
+        assertTrue(armsOf(arms) > armsOf(plain), "${arms.items} vs ${plain.items}")
 
         // будущие дни недели не копируют сегодняшний: симуляция учитывает запланированное
         val wed = GymModule.planFor(Ctx(s, mon), mon.plusDays(2))

@@ -135,9 +135,10 @@ object GymModule : Module {
         val log = Planner.muscleLog(p, sessions(s)).toMutableList()
         val used = lastUsed(s).toMutableMap()
         val trained = trainedDays(ctx, ctx.today.minusDays(7), ctx.today)
-        week(ctx).plan.filter { it >= ctx.today && it < date && it !in trained }.forEach { d ->
+        val weekPlan = week(ctx).plan
+        weekPlan.filter { it >= ctx.today && it < date && it !in trained }.forEach { d ->
             val pl = planFor(ctx, d)
-            log += d to Planner.planMuscles(p, pl)
+            log += d to Planner.planCredit(p, pl)
             pl.items.forEach { used[it.ex] = d }
         }
         val days = split(ctx)
@@ -148,7 +149,10 @@ object GymModule : Module {
         val type = days.firstOrNull { it.id == day }
             ?: (storedPlan(s, date)?.day?.let { id -> days.firstOrNull { it.id == id } } ?: dayType(ctx, date)).takeIf { overlap(it) == best }
             ?: days.first { overlap(it) == best }
-        val plan = Planner.build(p, date, log, used, ctx.settings.sessionsPerWeek, focus, type, days, Planner.budget(ctx.settings.sessionMin))
+        // тренировки этой недели после этой даты — по ним делится остаток недельного объёма (другая неделя — по среднему)
+        val ahead = if (date.with(DayOfWeek.MONDAY) != ctx.today.with(DayOfWeek.MONDAY)) null
+            else weekPlan.filter { it > date && it >= ctx.today }.map { dayType(ctx, it) }
+        val plan = Planner.build(p, date, log, used, ctx.settings.sessionsPerWeek, focus, type, days, Planner.budget(ctx.settings.sessionMin), ahead)
         return plan.copy(items = Planner.arrange(p, plan.items, ctx.settings.supersets, focus))
     }
 
