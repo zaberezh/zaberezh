@@ -202,36 +202,51 @@ class ShopFinder(private val shops: List<Shop>, private val log: (String) -> Uni
         return out.take(4)
     }
 
-    /** Все товары из всех магазинов, похожие на запрос, — лучшие первыми. */
-    fun candidates(part: String): List<Hit> {
+    /** Все товары из всех магазинов, похожие на запрос, — лучшие первыми. all — пройти все варианты запроса. */
+    fun candidates(part: String, all: Boolean = false): List<Hit> {
         val vs = variants(part)
         if (vs.isEmpty() || shops.isEmpty()) return emptyList()
-        val futures = shops.map { shop -> POOL.submit(Callable { searchShop(shop, part, vs) }) }
+        val futures = shops.map { shop -> POOL.submit(Callable { searchShop(shop, part, vs, all) }) }
         val all = futures.flatMap { f -> runCatching { f.get(30, TimeUnit.SECONDS) }.getOrElse { log("магазин: ${it.message}"); emptyList() } }
         return all.sortedWith(compareByDescending<Hit> { it.fit.score }.thenBy { it.fit.extra }.thenBy { it.rank }.thenBy { shops.indexOf(it.shop) })
             .distinctBy { it.shop.title + "/" + it.item.id }
     }
 
-    private fun searchShop(shop: Shop, query: String, vs: List<String>): List<Hit> {
+    private fun searchShop(shop: Shop, query: String, vs: List<String>, all: Boolean): List<Hit> {
         val out = mutableListOf<Hit>()
         vs.forEachIndexed { vi, q ->
             val items = runCatching { shop.search(q) }.onFailure { log("${shop.title}: ${it.message}") }.getOrDefault(emptyList())
             items.forEachIndexed { i, it -> out += Hit(shop, it, ShopMatch.fit(query, it.name), vi * 100 + i) }
             // похожее уже есть — короче не ищем: меньше запросов к магазину (у «Соседей» частые запросы тормозят)
-            if (out.any { it.fit.ok }) return out
+            if (!all && out.any { it.fit.ok }) return out
         }
         return out
     }
 
-    /** Лучший товар с КБЖУ для одной позиции; null — похожего нет. */
+    /**
+     * Лучший товар с КБЖУ для одной позиции; null — похожего нет.
+     * Если у найденного товара в карточке нет цифр (у «Соседей» бывает) — тот же продукт другого бренда:
+     * «Lotte Choco Pie банан» → «Чоко Пай» (с пометкой «похожий товар», уверенность ниже).
+     */
     fun find(part: String, hits: List<Hit> = candidates(part)): FoodItem? {
-        for (h in hits.filter { it.fit.ok }.take(4)) {
+        val tried = mutableSetOf<String>()
+        take(part, hits, tried)?.let { return it }
+        val latin = ShopMatch.queryWords(Edostavka.cleanQuery(part)).filter { w -> w.none { it in 'а'..'я' } }
+        if (latin.size < 2) return null
+        val core = (if (latin.size >= 3) latin.drop(1) else latin).joinToString(" ")   // без бренда: lotte choco pie → choco pie
+        return take(part, candidates(core, all = true), tried, core)?.let { it.copy(source = it.source.substringBefore(" ·") + " · похожий товар" +
+            it.source.substringAfter(" ·", "").let { n -> if (n.isEmpty()) "" else " ·$n" }, conf = "medium") }
+    }
+
+    private fun take(part: String, hits: List<Hit>, tried: MutableSet<String>, label: String = part): FoodItem? {
+        for (h in hits.filter { it.fit.ok && tried.add(it.shop.title + "/" + it.item.id) }.take(4)) {
             val full = runCatching { h.shop.details(h.item) }.onFailure { log("${h.shop.title}: ${it.message}") }.getOrNull() ?: continue
             val m = full.per100 ?: continue
             val (grams, note) = gramsFor(part, full)
-            log("магазин: «$part» → ${full.shop} «${full.name}» (совпадение ${(h.fit.score * 100).toInt()}%)")
+            log("магазин: «$label» → ${full.shop} «${full.name}» (совпадение ${(h.fit.score * 100).toInt()}%)")
             return FoodItem(full.name, grams, m, full.shop + (note?.let { " · $it" } ?: ""), "high")
         }
+        log("магазин: «$label» — у похожих товаров нет КБЖУ в карточке")
         return null
     }
 

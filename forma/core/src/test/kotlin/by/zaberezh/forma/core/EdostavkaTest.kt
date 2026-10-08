@@ -159,6 +159,24 @@ class EdostavkaTest {
         assertEquals(60.0, assertNotNull(f.find("2 чоко пай")).grams)                // две штуки по 30 г
     }
 
+    @Test fun brokenCardFallsBackToTheSameProductOfAnotherBrand() {
+        // у «Соседей» карточка Lotte Choco Pie банан с испорченными цифрами — берём «Чоко Пай»
+        val broken: (String) -> String? = { url ->
+            when {
+                "/v2/products/search" in url && java.net.URLDecoder.decode(url.substringAfter("query="), "UTF-8").startsWith("чоко") -> chocoPieOnly
+                "/v2/products/search" in url -> """{"data":[{"id":300375117,"name":"4607176440935 печенье лотте чокопай глазированное банан 336 г "}]}"""
+                url.endsWith("/products/300375117/10") -> """{"name":"Печенье Лотте Чокопай глазированное банан 336 г","calorie":"0.34","protein":"23.5","fat":"52","carbohydrate":""}"""
+                url.endsWith("/products/300382419/10") -> """{"name":"Изделие мучное кондитерское в глазури Чоко Пай 6 шт*30 г","calorie":"440","protein":"4","fat":"18","carbohydrate":"66"}"""
+                else -> null
+            }
+        }
+        val it = assertNotNull(finder(sosedi = broken).find("Печенье Lotte Choco Pie с ароматом банана"))
+        assertEquals("Изделие мучное кондитерское в глазури Чоко Пай 6 шт*30 г", it.name)
+        assertEquals(30.0, it.grams); assertEquals("medium", it.conf)
+        assertTrue(it.source.startsWith("sosedi-dostavka.by · похожий товар"), it.source)
+        assertNull(ShopFinder(listOf(Edostavka(null), Sosedi(broken))).find("кефир детский депи"))   // без латиницы — не подменяем
+    }
+
     @Test fun bothShopsCloserNameWins() {
         // edostavka: «Кефир детский Беллакт…», «Соседи»: «кефир детский 3.2%» (тот самый Депи) — меньше лишних слов
         val it = assertNotNull(finder(sosedi = ::sosedi).find("кефир детский депи"))
