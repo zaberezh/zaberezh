@@ -168,7 +168,8 @@ class FoodSearchTest {
         assertTrue(f.source.startsWith("sosedi-dostavka.by"), f.source)
         assertEquals(408.5, WebFood.labelMacro(408.5, 8.9, 28.1, 30.0)?.kcal)    // уже ккал — как есть
         assertEquals(240.0, WebFood.labelMacro(240.0, 18.3, 18.3, null)?.kcal)    // моцарелла без углеводов — сходится
-        assertEquals(null, WebFood.labelMacro(70.0, 16.0, null, 1.2))            // творог 9% без жиров — пропуск
+        assertEquals(null, WebFood.labelMacro(70.0, 16.0, null, 1.2, "творог 9% 180г"))   // творог 9% без жиров — пропуск
+        assertEquals(37.0, WebFood.labelMacro(37.0, 0.2, null, 9.0, "квас лидский хлебный 1.5л")?.kcal)  // у кваса жиров и нет
         assertEquals(null, WebFood.labelMacro(null, null, null, null))
 
         val pasta = """{"data":[{"id":1,"name":"32163 макароны с ветчиной 300г"},{"id":2,"name":"макароны спагетти 450г"}]}"""

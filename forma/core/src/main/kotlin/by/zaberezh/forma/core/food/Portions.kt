@@ -16,7 +16,9 @@ private val CONDIMENTS = listOf(
 fun condimentPortion(name: String): Double? {
     val n = name.lowercase().replace('ё', 'е')
     if (Regex("сырок|сырник|сырники|творожн").containsMatchIn(n)) return null // это отдельные блюда, не добавка
-    return CONDIMENTS.firstOrNull { n.contains(it.first.replace('ё', 'е')) }?.second
+    // добавка — это само блюдо («соус барбекю», «натуральный мед»), а не вкус («чипсы сметана и лук»)
+    val head = Regex("\\p{L}+").findAll(n).take(2).map { it.value }.toList()
+    return CONDIMENTS.firstOrNull { (stem, _) -> head.any { it.startsWith(stem.replace('ё', 'е')) } }?.second
 }
 
 /**
