@@ -121,6 +121,14 @@ class EdostavkaTest {
         assertEquals(listOf("кефир детский депи", "детский депи", "кефир детский"), finder().variants("кефир детский депи 200г"))
     }
 
+    @Test fun packOfCookiesIsNotOnePortion() {
+        fun g(name: String, pack: Double) = ShopFinder.gramsFor("что-то", by.zaberezh.forma.core.food.ShopItem("s", "1", name, "", packGrams = pack)).first
+        assertEquals(100.0, g("Печенье Лотте Чокопай Глазированное Клубника 168 г", 168.0))
+        assertEquals(45.0, g("Сырок глазированный Брест-Литовск ваниль 45 г", 45.0))
+        assertEquals(140.0, g("Чипсы Lay's сметана и лук, 140 г", 140.0))
+        assertEquals(330.0, g("Молочный коктейль Teos Pro, 330 г", 330.0))
+    }
+
     @Test fun pieceWeightFromName() {
         assertEquals(30.0, pieceGrams("изделие мучное кондитерское в глазури чоко пай 6 шт*30 г"))
         assertEquals(28.0, pieceGrams("Печенье Lotte Choco Pie, 4 шт. по 28 г"))
