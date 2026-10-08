@@ -72,8 +72,15 @@ fun FoodScreen() {
         }
         item {
             Block("Добавить") {
+                val kinds = by.zaberezh.forma.core.food.FoodKind.entries
+                var kind by FoodSearch.kind
+                Segmented(listOf("Авто", "Домашняя", "Из магазина"), kinds.indexOf(kind), { kind = kinds[it] })
                 Field("Что съел", text, { text = it }, number = false, lines = 2)
-                Muted("Пример: «шаурма большая, Шаурма Шеф на Немиге; кола 0.5» или «гречка 200г, 2 яйца»")
+                Muted(when (kind) {
+                    by.zaberezh.forma.core.food.FoodKind.HOME -> "Домашняя: в магазинах не ищу — таблица блюд, интернет, Claude. Пример: «борщ 300г, котлета»"
+                    by.zaberezh.forma.core.food.FoodKind.SHOP -> "Из магазина: сначала edostavka и «Соседи», товар по названию. Пример: «кефир Савушкин 2,5%», «сырок Брест-Литовск»"
+                    else -> "Пример: «шаурма большая, Шаурма Шеф на Немиге; кола 0.5» или «гречка 200г, 2 яйца»"
+                })
                 Line {
                     Primary(if (busy) "Ищу…" else "Посчитать КБЖУ", { FoodSearch.resolve(ctx, c) }, Modifier.weight(1f), enabled = !busy)
                     if (busy) CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp)
