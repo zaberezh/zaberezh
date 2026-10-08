@@ -343,7 +343,10 @@ private fun WorkoutScreen(ctx: Ctx, id: String) {
     fun addToPlan(exId: String) {
         val cur = GymModule.storedPlan(s, date) ?: plan
         val sets = GymModule.program(s).ex(exId)?.sets ?: 3
-        if (cur.items.none { it.ex == exId }) GymModule.savePlan(s, cur.copy(items = cur.items + PlanItem(exId, sets), source = "edited"))
+        if (cur.items.any { it.ex == exId }) return
+        // на своё место по группе мышц, а не в конец
+        val items = by.zaberezh.forma.core.gym.Planner.insert(GymModule.program(s), cur.items, PlanItem(exId, sets), ctx.settings.supersets, cur.focus)
+        GymModule.savePlan(s, cur.copy(items = items, source = "edited"))
     }
 
     Screen {
@@ -420,7 +423,17 @@ private fun ExerciseCard(
     var n by remember(ex.id, done.size) { mutableStateOf(ex.sets.toString()) }
     var askRemove by remember { mutableStateOf(false) }
     val complete = done.size >= ex.sets
+    // все подходы сделаны — карточка сворачивается; «Развернуть» возвращает обычный вид (отменить, добавить подход…)
+    var open by remember(ex.id, complete) { mutableStateOf(!complete) }
     Block(ex.name, trailing = { Pill("${done.size}/${ex.sets}", if (complete) C.good else C.muted) }) {
+        if (!open) {
+            Buttons { done.forEach { Pill("${it.w.r1()} × ${it.r}", C.good) } }
+            Line {
+                Text("Готово", Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium, color = C.good)
+                Flat("Развернуть", { open = true }, C.muted)
+            }
+            return@Block
+        }
         if (superset != null) Text(superset, style = MaterialTheme.typography.bodySmall, color = C.accent)
         Stat("Цель", t?.weight?.let { "${it.r1()} кг × ${t.reps.joinToString(", ")}" } ?: "подобрать вес")
         Muted(listOfNotNull("${ex.repMin}–${ex.repMax} повт.", "в запасе ${ex.rir}",
@@ -453,8 +466,11 @@ private fun ExerciseCard(
                 if (r != null && r > 0) onAdd(List(k) { SetLog(ex.id, wt.num() ?: 0.0, r) })
             }, Modifier.fillMaxWidth())
         } else Flat("Изменить", { onUndo(true) }, C.muted)
-        Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterEnd) {
-            Flat("Убрать из тренировки", { if (done.isEmpty()) onRemove() else askRemove = true }, C.muted)
+        Line {
+            if (complete) Flat("Свернуть", { open = false }, C.muted)
+            Box(Modifier.weight(1f), contentAlignment = Alignment.CenterEnd) {
+                Flat("Убрать из тренировки", { if (done.isEmpty()) onRemove() else askRemove = true }, C.muted)
+            }
         }
     }
     if (askRemove) AlertDialog(

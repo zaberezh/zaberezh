@@ -224,6 +224,19 @@ object Planner {
      *   на спину вывел его вперёд — упражнения на предплечья переносятся в самый конец.
      * - Предутомление (изоляция перед базой) пользы не даёт (Trindade 2019).
      */
+    /**
+     * Добавленное на тренировке упражнение — на своё место по группе мышц (порядок как у [arrange]):
+     * сразу после того, за кем оно шло бы в упорядоченном плане. Остальные не двигаются — порядок дня не ломается.
+     */
+    fun insert(p: Program, items: List<PlanItem>, item: PlanItem, supersets: Boolean, focus: String? = null): List<PlanItem> {
+        val arranged = arrange(p, items + item, supersets, focus)
+        val i = arranged.indexOfFirst { it.ex == item.ex }
+        if (i < 0) return items + item
+        val prev = arranged.getOrNull(i - 1)?.ex
+        val at = if (prev == null) 0 else items.indexOfFirst { it.ex == prev } + 1
+        return items.toMutableList().apply { add(at.coerceIn(0, size), item) }
+    }
+
     fun arrange(p: Program, items: List<PlanItem>, supersets: Boolean, focus: String? = null): List<PlanItem> {
         val known = items.filter { p.ex(it.ex) != null }
         fun ex(i: PlanItem) = p.ex(i.ex)!!
