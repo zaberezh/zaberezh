@@ -24,6 +24,7 @@
     if (!r.ok) throw new Error('HTTP ' + r.status);
     return r.json();
   },
+  /* Выдача поиска; КБЖУ в ней обычно нет (customPropertyGroup пустой) — их даёт карточка товара. */
   async search(q) {
     const j = await this.data('search.json?query=' + encodeURIComponent(q));
     const l = (j.pageProps && j.pageProps.listing && j.pageProps.listing.products) || [];

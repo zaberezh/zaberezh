@@ -43,11 +43,9 @@ object ShopMatch {
         "съел", "съела", "выпил", "выпила", "немного", "один", "одна", "одно", "одну", "два", "две", "три", "половина", "пол",
     )
     private val JOIN = setOf("с", "со")
-    const val ACCEPT = 0.6
+    const val ACCEPT = 0.65
     /** Без первого слова запроса — только почти полное совпадение остального (Пирожное Lotte Choco Pie для «печенье Lotte Choco Pie»). */
     const val ACCEPT_WITHOUT_FIRST = 0.7
-    /** Настолько похоже, что короче можно не искать. */
-    const val STRONG = 0.75
 
     fun words(s: String): List<String> = Regex("\\p{L}+").findAll(s.lowercase().replace('ё', 'е')).map { it.value }.toList()
     fun queryWords(s: String): List<String> = words(s).filter { it !in FILLER }
@@ -99,12 +97,17 @@ object ShopMatch {
     /** Насколько товар похож на запрос: score 0…1, первое слово нашлось, лишних слов в названии. */
     data class Fit(val score: Double, val first: Boolean, val extra: Int) {
         val ok get() = score >= ACCEPT && (first || score >= ACCEPT_WITHOUT_FIRST)
-        val strong get() = ok && score >= STRONG
     }
+
+    /** Жирность и подобное: «5%», «3,2 %». */
+    private fun percents(s: String) = Regex("(\\d+(?:[.,]\\d+)?)\\s*%").findAll(s).mapNotNull { it.groupValues[1].replace(',', '.').toDoubleOrNull() }.toSet()
 
     fun fit(query: String, title: String): Fit {
         val q = queryWords(query)
         if (q.isEmpty()) return Fit(0.0, false, 0)
+        // «творог 5%» — это не «творог 2%»: жирность из запроса — ещё одно «слово»
+        val pq = percents(query)
+        val pctHit = pq.isNotEmpty() && percents(title).any { it in pq }
         val t = words(title).filter { it !in FILLER }
         val units = t + t.zipWithNext { a, b -> a + b }       // «чоко пай» в названии ~ «чокопай» в запросе
         val hit = BooleanArray(q.size) { i -> units.any { same(q[i], it) } }
@@ -114,12 +117,13 @@ object ShopMatch {
             if (units.any { it.length >= joined.length - 2 && same(joined, it) }) { hit[i] = true; hit[i + 1] = true }
         }
         val w = DoubleArray(q.size) { if (it == 0) 1.5 else 1.0 }
-        val score = q.indices.sumOf { if (hit[it]) w[it] else 0.0 } / w.sum()
+        val pctW = if (pq.isEmpty()) 0.0 else 1.0
+        val score = (q.indices.sumOf { if (hit[it]) w[it] else 0.0 } + if (pctHit) pctW else 0.0) / (w.sum() + pctW)
         val joined = q.zipWithNext { a, b -> a + b }.filter { j -> t.any { it.length >= j.length - 2 } }
         val asked = words(query)
         // лишнее в названии: чужие слова, а «с ветчиной», «с соусом» — уже блюдо, а не сам продукт
         val extra = t.count { tw -> tw.length >= 3 && q.none { same(it, tw) } && joined.none { same(it, tw) } } +
-            words(title).count { it in JOIN && it !in asked } * 2
+            words(title).count { it in JOIN && it !in asked }
         return Fit(score, hit[0], extra)
     }
 
@@ -161,8 +165,8 @@ class Sosedi(private val fetch: (String) -> String?, private val log: (String) -
     override fun details(item: ShopItem): ShopItem? {
         val o = Json.parseToJsonElement(fetch("$API/products/${item.id}/$DARKSTORE") ?: return null) as? JsonObject ?: return null
         fun num(k: String) = o.str(k)?.replace(',', '.')?.toDoubleOrNull()
-        val m = WebFood.labelMacro(num("calorie"), num("protein"), num("fat"), num("carbohydrate")) ?: return null
         val name = o.str("name")?.trim()?.takeIf { it.isNotEmpty() } ?: item.name
+        val m = WebFood.labelMacro(num("calorie"), num("protein"), num("fat"), num("carbohydrate"), name) ?: return null
         // weight у них в кг или л: «0.95»
         val pack = Edostavka.packGrams(name) ?: item.packGrams ?: num("weight")?.takeIf { it in 0.005..10.0 }?.times(1000)
         return item.copy(name = name, per100 = m, url = o.str("slug")?.let { "$SITE/products/$it" } ?: item.url,
@@ -202,8 +206,7 @@ class ShopFinder(private val shops: List<Shop>, private val log: (String) -> Uni
     fun candidates(part: String): List<Hit> {
         val vs = variants(part)
         if (vs.isEmpty() || shops.isEmpty()) return emptyList()
-        val query = vs.first()
-        val futures = shops.map { shop -> POOL.submit(Callable { searchShop(shop, query, vs) }) }
+        val futures = shops.map { shop -> POOL.submit(Callable { searchShop(shop, part, vs) }) }
         val all = futures.flatMap { f -> runCatching { f.get(30, TimeUnit.SECONDS) }.getOrElse { log("магазин: ${it.message}"); emptyList() } }
         return all.sortedWith(compareByDescending<Hit> { it.fit.score }.thenBy { it.fit.extra }.thenBy { it.rank }.thenBy { shops.indexOf(it.shop) })
             .distinctBy { it.shop.title + "/" + it.item.id }
@@ -214,7 +217,8 @@ class ShopFinder(private val shops: List<Shop>, private val log: (String) -> Uni
         vs.forEachIndexed { vi, q ->
             val items = runCatching { shop.search(q) }.onFailure { log("${shop.title}: ${it.message}") }.getOrDefault(emptyList())
             items.forEachIndexed { i, it -> out += Hit(shop, it, ShopMatch.fit(query, it.name), vi * 100 + i) }
-            if (out.any { it.fit.strong }) return out          // нашли уверенно — короче не ищем
+            // похожее уже есть — короче не ищем: меньше запросов к магазину (у «Соседей» частые запросы тормозят)
+            if (out.any { it.fit.ok }) return out
         }
         return out
     }

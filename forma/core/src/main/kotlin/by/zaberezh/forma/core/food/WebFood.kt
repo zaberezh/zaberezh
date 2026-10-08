@@ -102,12 +102,13 @@ class WebFood(private val fetch: (String) -> String? = Edostavka::httpGet, priva
         /**
          * КБЖУ с этикетки магазина. В поле калорий бывают и ккал, и кДж (кефир 1,5%: 174.5 — это кДж):
          * верим тому варианту, что сходится с 4·Б + 9·Ж + 4·У; не сходится ни один — считаем по БЖУ.
-         * Пустые белки или углеводы (бывает у части товаров) считаются нулём, только если калории с этим сходятся;
-         * без жиров товар не берём: у творога 9% с пустым полем жиров «сходятся» и неверные 70 ккал.
+         * Пустое поле (бывает у части товаров) считается нулём, только если калории с этим сходятся.
+         * Пустые жиры при жирности в названии — не ноль, а незаполненная карточка: у «творога 9%» без жиров
+         * «сходятся» неверные 70 ккал, а у кваса жиров и правда нет.
          */
-        fun labelMacro(cal: Double?, p: Double?, f: Double?, c: Double?): Macro? {
-            if (f == null) return null
-            val full = p != null && c != null
+        fun labelMacro(cal: Double?, p: Double?, f: Double?, c: Double?, name: String = ""): Macro? {
+            if (f == null && Regex("(\\d+(?:[.,]\\d+)?)\\s*%").findAll(name).any { (it.groupValues[1].replace(',', '.').toDoubleOrNull() ?: 0.0) > 0.4 }) return null
+            val full = p != null && f != null && c != null
             val pp = p ?: 0.0; val ff = f ?: 0.0; val cc = c ?: 0.0
             val calc = pp * 4 + ff * 9 + cc * 4
             val kcal = listOfNotNull(cal, cal?.div(4.184)).firstOrNull { it > 0 && kotlin.math.abs(it - calc) <= 0.25 * it }

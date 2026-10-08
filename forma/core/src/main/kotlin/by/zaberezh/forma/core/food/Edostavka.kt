@@ -16,7 +16,7 @@ fun interface PageRunner { fun run(script: String): String? }
 /**
  * edostavka.by: точные КБЖУ магазинных товаров. Сайт пускает только настоящий браузер (перед ним проверка, которую
  * простой запрос не проходит), поэтому поиск идёт со страницы самого сайта в браузере телефона ([PageRunner]) —
- * теми же запросами, что делает сайт, когда ищешь в нём руками. КБЖУ приходят прямо в выдаче поиска.
+ * теми же запросами, что делает сайт, когда ищешь в нём руками. КБЖУ — из карточки товара (в выдаче их обычно нет).
  */
 class Edostavka(private val page: PageRunner?, private val log: (String) -> Unit = {}) : Shop {
     override val title = "edostavka.by"
@@ -54,11 +54,11 @@ class Edostavka(private val page: PageRunner?, private val log: (String) -> Unit
             // в названии не всегда есть масса («Сыр Гауда Премиум 45%,») — тогда её даёт packagingInfo («200 г»)
             val name = if (pack.isNotEmpty() && packGrams(raw) == null && packGrams(pack) != null) "$raw, $pack" else raw
             val props = (o["props"] as? JsonObject)?.mapValues { (_, v) -> (v as? JsonPrimitive)?.content.orEmpty() }.orEmpty()
-            return ShopItem("edostavka.by", id, name, "https://edostavka.by/product/$id", macroOf(props), packGrams(name), pieceGrams(name))
+            return ShopItem("edostavka.by", id, name, "https://edostavka.by/product/$id", macroOf(props, name), packGrams(name), pieceGrams(name))
         }
 
         /** КБЖУ из свойств товара: «Белки 3», «Жиры 3.3», «Углеводы 4», «Энергетическая ценность 56,8 ккал/237,4 кДж». */
-        fun macroOf(props: Map<String, String>): Macro? {
+        fun macroOf(props: Map<String, String>, name: String = ""): Macro? {
             fun value(vararg keys: String) = props.entries.firstOrNull { (k, _) -> keys.any { it in k.lowercase() } }?.value
             fun num(s: String?) = s?.let { Regex(NUM).find(it)?.groupValues?.get(1)?.replace(',', '.')?.toDoubleOrNull() }
             val energy = value("энерг", "калор")
@@ -66,7 +66,7 @@ class Edostavka(private val page: PageRunner?, private val log: (String) -> Unit
                 Regex("$NUM\\s*ккал", RegexOption.IGNORE_CASE).find(e)?.groupValues?.get(1)?.replace(',', '.')?.toDoubleOrNull()
                     ?: Regex("$NUM\\s*кдж", RegexOption.IGNORE_CASE).find(e)?.groupValues?.get(1)?.replace(',', '.')?.toDoubleOrNull()?.div(4.184)
             }
-            val m = WebFood.labelMacro(kcal, num(value("белк")), num(value("жир")), num(value("углев"))) ?: return null
+            val m = WebFood.labelMacro(kcal, num(value("белк")), num(value("жир")), num(value("углев")), name) ?: return null
             return m.copy(fib = num(value("клетч", "пищевые волокна")) ?: 0.0)
         }
 
