@@ -32,8 +32,9 @@ class LiveShopsTest {
         }
         val rec = (File(dir, "edo.json").takeIf { it.exists() }?.readText()?.let { Json.parseToJsonElement(it) as JsonObject }) ?: JsonObject(emptyMap())
         val page = PageRunner { js ->
-            val arg = js.substringAfterLast(").search(", "").substringBeforeLast(")")
-            if (arg.isEmpty()) null else rec[Json.parseToJsonElement(arg).jsonPrimitive.content]?.jsonPrimitive?.content
+            val kind = if (").search(" in js) "search" else "product"
+            val arg = js.substringAfterLast(").$kind(", "").substringBeforeLast(")")
+            if (arg.isEmpty()) null else rec["$kind:" + Json.parseToJsonElement(arg).jsonPrimitive.content]?.jsonPrimitive?.content
         }
         val logs = mutableListOf<String>()
         val finder = ShopFinder(listOf(Edostavka(page) { logs += it }, Sosedi(Edostavka::httpGet) { logs += it }))
