@@ -171,6 +171,8 @@ class FoodSearchTest {
         assertEquals(null, WebFood.labelMacro(70.0, 16.0, null, 1.2, "творог 9% 180г"))   // творог 9% без жиров — пропуск
         assertEquals(37.0, WebFood.labelMacro(37.0, 0.2, null, 9.0, "квас лидский хлебный 1.5л")?.kcal)  // у кваса жиров и нет
         assertEquals(null, WebFood.labelMacro(null, null, null, null))
+        assertEquals(null, WebFood.labelMacro(0.34, 5.2, 0.45, 23.5))           // калории не сходятся с БЖУ — карточка с ошибкой
+        assertEquals(118.85, WebFood.labelMacro(null, 5.2, 0.45, 23.5)?.kcal ?: 0.0, 0.01)   // калорий нет — по БЖУ
 
         val pasta = """{"data":[{"id":1,"name":"32163 макароны с ветчиной 300г"},{"id":2,"name":"макароны спагетти 450г"}]}"""
         val plain = by.zaberezh.forma.core.food.Sosedi(fetch = { url -> when { "/v2/products/search" in url -> pasta
