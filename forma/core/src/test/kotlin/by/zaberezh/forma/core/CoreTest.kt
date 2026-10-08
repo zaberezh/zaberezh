@@ -167,6 +167,16 @@ class CoreTest {
         assertEquals(c.first { it.ex == "curl" }.pair, c.first { it.ex == "pushdown" }.pair)
     }
 
+    @Test fun addedExerciseGoesToItsMuscleGroup() {
+        val p = PROGRAM.get(store())
+        val day = listOf("bench", "lat_pulldown", "hanging_raise").filter { p.ex(it) != null }.map { PlanItem(it, 3) }
+        assertEquals(3, day.size)
+        // разгибания на трицепс — после жима, перед тягами, а не после пресса
+        assertEquals(listOf("bench", "pushdown", "lat_pulldown", "hanging_raise"), Planner.insert(p, day, PlanItem("pushdown", 3), false).map { it.ex })
+        // присед — в самое начало
+        assertEquals("squat", Planner.insert(p, day, PlanItem("squat", 3), false).first().ex)
+    }
+
     @Test fun splitDaysRotateAndStayInTheirZone() {
         val s = store()
         val p = PROGRAM.get(s)
