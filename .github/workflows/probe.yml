@@ -10,6 +10,6 @@ jobs:
       - uses: actions/checkout@v4
       - run: |
           bash .github/probe/edo.sh || true
-          npm i playwright@1.47.2 >/dev/null 2>&1
-          npx playwright install --with-deps chromium >/dev/null 2>&1
-          timeout 240 node .github/probe/edo.js || true
+
+
+
