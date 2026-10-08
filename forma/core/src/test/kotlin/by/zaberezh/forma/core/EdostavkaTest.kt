@@ -201,4 +201,16 @@ class EdostavkaTest {
         // без браузера — до Соседей; там нет — ни к чему не притягивает
         assertEquals(listOf("теос про клубника"), FoodPipeline(MemoryStore(), fetch = { null }).run("теос про клубника").missing)
     }
+
+    @Test fun homeOrShopChoice() {
+        var shopCalls = 0
+        val fetch: (String) -> String? = { url -> if ("bazar-store" in url) shopCalls++; sosedi(url) }
+        // домашняя — магазины не трогаем, «кефир детский» берётся из таблицы/интернета
+        FoodPipeline(MemoryStore(), fetch = fetch, kind = by.zaberezh.forma.core.food.FoodKind.HOME).run("кефир детский депи")
+        assertEquals(0, shopCalls)
+        // из магазина — сначала магазин, даже для общего слова, которое есть в таблице
+        val r = FoodPipeline(MemoryStore(), fetch = fetch, kind = by.zaberezh.forma.core.food.FoodKind.SHOP).run("кефир детский депи")
+        assertEquals("Кефир детский 3.2% 0.25л", r.items.single().name)
+        assertTrue(shopCalls > 0)
+    }
 }

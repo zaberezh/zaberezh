@@ -250,11 +250,12 @@ class ShopFinder(private val shops: List<Shop>, private val log: (String) -> Uni
         return null
     }
 
-    fun resolve(parts: List<String>): ShopResult {
+    /** all — искать и общие слова («кефир», «творог»): человек сказал, что это из магазина. */
+    fun resolve(parts: List<String>, all: Boolean = false): ShopResult {
         val items = mutableListOf<FoodItem>(); val left = mutableListOf<String>(); val hints = mutableListOf<ShopPage>()
         for (part in parts) {
             val words = Edostavka.cleanQuery(part).split(" ").filter { it.length >= 3 }
-            if (words.isEmpty() || words.all { it in GENERIC }) { left += part; continue }
+            if (words.isEmpty() || (!all && words.all { it in GENERIC })) { left += part; continue }
             val hits = candidates(part)
             val found = find(part, hits)
             if (found != null) { items += found; continue }

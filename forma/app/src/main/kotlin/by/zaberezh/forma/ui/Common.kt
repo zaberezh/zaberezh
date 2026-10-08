@@ -263,6 +263,20 @@ fun Progress(label: String, cur: Double, target: Int, unit: String = "") {
 // ---------- кнопки ----------
 private val BtnPad = PaddingValues(horizontal = 14.dp, vertical = 8.dp)
 
+/** Переключатель из нескольких вариантов в одну строку (как вкладки). */
+@Composable
+fun Segmented(options: List<String>, selected: Int, onSelect: (Int) -> Unit, modifier: Modifier = Modifier) =
+    Row(modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(C.cardHi).padding(3.dp)) {
+        options.forEachIndexed { i, name ->
+            Box(Modifier.weight(1f).clip(RoundedCornerShape(10.dp)).background(if (selected == i) C.accent.copy(alpha = 0.18f) else C.cardHi)
+                .clickable { onSelect(i) }.padding(vertical = 8.dp), contentAlignment = Alignment.Center) {
+                Text(name, style = MaterialTheme.typography.labelLarge, color = if (selected == i) C.accent else C.muted,
+                    fontWeight = if (selected == i) androidx.compose.ui.text.font.FontWeight.SemiBold else androidx.compose.ui.text.font.FontWeight.Normal,
+                    maxLines = 1)
+            }
+        }
+    }
+
 @Composable
 fun Primary(text: String, onClick: () -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true) =
     Button(onClick, modifier.height(44.dp), enabled = enabled, shape = RoundedCornerShape(12.dp), contentPadding = BtnPad) { Text(text, maxLines = 1) }
