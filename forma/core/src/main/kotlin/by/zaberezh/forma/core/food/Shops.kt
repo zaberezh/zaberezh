@@ -207,8 +207,8 @@ class ShopFinder(private val shops: List<Shop>, private val log: (String) -> Uni
         val vs = variants(part)
         if (vs.isEmpty() || shops.isEmpty()) return emptyList()
         val futures = shops.map { shop -> POOL.submit(Callable { searchShop(shop, part, vs, all) }) }
-        val all = futures.flatMap { f -> runCatching { f.get(30, TimeUnit.SECONDS) }.getOrElse { log("магазин: ${it.message}"); emptyList() } }
-        return all.sortedWith(compareByDescending<Hit> { it.fit.score }.thenBy { it.fit.extra }.thenBy { it.rank }.thenBy { shops.indexOf(it.shop) })
+        val hits = futures.flatMap { f -> runCatching { f.get(30, TimeUnit.SECONDS) }.getOrElse { log("магазин: ${it.message}"); emptyList() } }
+        return hits.sortedWith(compareByDescending<Hit> { it.fit.score }.thenBy { it.fit.extra }.thenBy { it.rank }.thenBy { shops.indexOf(it.shop) })
             .distinctBy { it.shop.title + "/" + it.item.id }
     }
 
@@ -277,7 +277,9 @@ class ShopFinder(private val shops: List<Shop>, private val log: (String) -> Uni
             WebFood.gramsOf(part)?.takeIf { it > 0 }?.let { return it to null }
             val name = item.name.lowercase()
             val drink = Regex("\\d\\s*(?:мл|л)(?![а-я])").containsMatchIn(name) || DRINK.containsMatchIn(name)
-            val pack = item.packGrams?.takeIf { it <= if (drink) 500.0 else 250.0 }   // маленькая упаковка = одна порция
+            // маленькая упаковка = одна порция; печенье, вафли, конфеты в пачке — штуками, пачка целиком только крошечная
+            val limit = when { drink -> 500.0; PIECES.containsMatchIn(name) -> 60.0; else -> 250.0 }
+            val pack = item.packGrams?.takeIf { it <= limit }
             val unit = item.pieceGrams ?: pack
             val count = COUNT.find(part.lowercase())?.groupValues?.get(1)?.replace(',', '.')?.toDoubleOrNull()
             if (count != null) return if (unit != null) unit * count to null else 100.0 * count to "вес штуки не указан — стоит 100 г, поправь"
@@ -287,6 +289,7 @@ class ShopFinder(private val shops: List<Shop>, private val log: (String) -> Uni
             return 100.0 to "вес не указан — стоит 100 г, поправь"
         }
 
+        private val PIECES = Regex("печень|пирожн|чокопай|чоко па|вафл|конфет|пряник|сушк|сухар|крекер|зефир|мармелад|драже|хлопь|мюсли|орех|семечк")
         private val DRINK = Regex("напит|коктейл|кефир|молоко|йогурт питьев|ряженк|айран|тан\\b|сок\\b|нектар|морс|вода|лимонад|квас|чай|кофе|энергетик|кола|пепси|спрайт|фанта")
 
         private val POOL = Executors.newCachedThreadPool { r -> Thread(r, "shops").apply { isDaemon = true } }
