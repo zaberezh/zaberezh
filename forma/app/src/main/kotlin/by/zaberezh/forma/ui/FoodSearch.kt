@@ -44,7 +44,8 @@ object FoodSearch {
                             Claude(apiKey, st.model, st.apiUrl).also { x -> ai = x }.foods(rest, hints)
                         },
                         stage = { msg -> scope.launch { info.value = msg } },
-                        log = { Claude.debug("поиск: $it") })
+                        log = { Claude.debug("поиск: $it") },
+                        edostavka = by.zaberezh.forma.sys.EdoBrowser)
                     val res = pipeline.run(q)
                     how = res.how
                     res.error?.let { if (res.items.isEmpty()) throw it }

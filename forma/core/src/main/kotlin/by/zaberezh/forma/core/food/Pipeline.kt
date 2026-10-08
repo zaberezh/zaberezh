@@ -8,7 +8,7 @@ data class FoodResult(val items: List<FoodItem>, val how: String, val missing: L
 /**
  * Поиск КБЖУ по шагам — от мгновенного и точного к медленному:
  * 1) меню заведений (KFC, Кинза) → 2) своя библиотека → 3) таблица частых продуктов (банан, гречка, яйца…) — всё офлайн;
- * 4) edostavka.by (магазинные товары, точные цифры) → 5) интернет без ИИ (поисковик + сайты калорийности);
+ * 4) магазины — edostavka.by и «Соседи» сразу (товары с этикетки, точные цифры) → 5) интернет без ИИ (поисковик + сайты калорийности);
  * 6) Claude — только то, что не нашлось нигде.
  * Сетевые шаги делят общий бюджет времени, поэтому поиск не «висит».
  */
@@ -32,10 +32,13 @@ class FoodPipeline(
     private val log: (String) -> Unit = {},
     netBudgetMs: Long = 25_000,
     private val clock: () -> Long = System::currentTimeMillis,
+    /** Браузер со страницей edostavka.by (на телефоне — невидимый WebView); null — edostavka пропускается. */
+    edostavka: PageRunner? = null,
 ) {
     private val deadline = clock() + netBudgetMs
     private val timed: (String) -> String? = { url -> if (clock() > deadline) null.also { log("время вышло: $url") } else fetch(url) }
-    private val shop = Edostavka(timed, log)
+    private val page = edostavka?.let { p -> PageRunner { js -> if (clock() > deadline) null.also { log("время вышло: edostavka") } else p.run(js) } }
+    private val shops = ShopFinder(listOf(Edostavka(page, log), Sosedi(timed, log)), log)
     private val web = WebFood(timed, log)
 
     fun run(text: String): FoodResult {
@@ -65,11 +68,14 @@ class FoodPipeline(
 
         var hints = emptyList<ShopPage>()
         if (rest.isNotEmpty()) {
-            stage("ищу на edostavka.by…")
+            stage("ищу в магазинах (edostavka, Соседи)…")
             // сбой магазина (сеть, разметка сайта) не должен терять то, что уже нашлось в таблице
-            runCatching { shopResolve(rest.joinToString(", "), shop) }
-                .onSuccess { r -> add("edostavka.by", r.items); rest = r.unresolved; hints = r.hints }
-                .onFailure { log("edostavka: ${it.message}") }
+            runCatching { shops.resolve(rest) }
+                .onSuccess { r ->
+                    r.items.groupBy { it.source.substringBefore(" ·") }.forEach { (shop, l) -> add(shop, l) }
+                    rest = r.unresolved; hints = r.hints
+                }
+                .onFailure { log("магазины: ${it.message}") }
         }
 
         if (rest.isNotEmpty()) {
