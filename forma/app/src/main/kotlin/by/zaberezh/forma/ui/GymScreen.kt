@@ -1,0 +1,484 @@
+@file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+
+package by.zaberezh.forma.ui
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.unit.dp
+import by.zaberezh.forma.core.Ctx
+import by.zaberezh.forma.core.ai.Claude
+import by.zaberezh.forma.core.gym.DayPlan
+import by.zaberezh.forma.core.gym.Exercise
+import by.zaberezh.forma.core.gym.FOCUS
+import by.zaberezh.forma.core.gym.GymModule
+import by.zaberezh.forma.core.gym.PROGRAM
+import by.zaberezh.forma.core.gym.PlanItem
+import by.zaberezh.forma.core.gym.Planner
+import by.zaberezh.forma.core.gym.Program
+import by.zaberezh.forma.core.gym.SetLog
+import by.zaberezh.forma.core.gym.Target
+import by.zaberezh.forma.core.gym.WORKOUT
+import by.zaberezh.forma.core.gym.Workout
+import by.zaberezh.forma.core.gym.aiPlanPrompt
+import by.zaberezh.forma.core.gym.nextTarget
+import by.zaberezh.forma.core.gym.parseProgram
+import by.zaberezh.forma.core.r1
+import by.zaberezh.forma.core.store.JSON
+import by.zaberezh.forma.core.store.ZONE
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.time.DayOfWeek
+import java.time.LocalDate
+import java.time.format.DateTimeFormatter
+import java.time.format.TextStyle
+
+const val ACTIVE = "gym.active"
+
+private const val SUPERSET_HOW = "A1/A2 — суперсет: подход первого → 60–90 с → подход второго → 60–90 с → снова первое. " +
+    "У каждой мышцы выходит 2,5–3 мин отдыха, рост тот же, тренировка на 30–40% короче. Выключить — в настройках."
+
+/** Метки A1, A2, B1… по парам плана. */
+fun pairLabels(items: List<PlanItem>): Map<String, String> {
+    val n = HashMap<String, Int>()
+    return items.mapNotNull { i -> i.pair?.let { l -> val k = (n[l] ?: 0) + 1; n[l] = k; i.ex to "$l$k" } }.toMap()
+}
+private val DM = DateTimeFormatter.ofPattern("d MMM", RU)
+private val DAY = DateTimeFormatter.ofPattern("EEEE, d MMMM", RU)
+
+@Composable
+fun GymScreen() {
+    val ctx = rememberCtx()
+    val active = ctx.store.kvGet(ACTIVE)
+    if (active != null && ctx.store.get(active) != null) WorkoutScreen(ctx, active) else GymHome(ctx)
+}
+
+/** Начать тренировку сегодня: план дня фиксируется, дальше меняется только руками. */
+fun startWorkout(ctx: Ctx) {
+    val s = ctx.store
+    if (GymModule.storedPlan(s, ctx.today) == null) GymModule.savePlan(s, GymModule.planFor(ctx, ctx.today))
+    val now = System.currentTimeMillis()
+    val e = WORKOUT.save(s, Workout(ctx.today.toString(), now), ts = now)
+    s.kvPut(ACTIVE, e.id)
+}
+
+@Composable
+private fun GymHome(ctx: Ctx) {
+    var sel by remember { mutableStateOf(ctx.today) }
+    var tab by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(0) }
+    val s = ctx.store
+    Screen {
+        // разделы вкладки: план недели и дня / база упражнений / история — не всё одной простынёй
+        item {
+            Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(C.card).padding(3.dp)) {
+                listOf("План", "Упражнения", "История").forEachIndexed { i, name ->
+                    Box(Modifier.weight(1f).clip(RoundedCornerShape(10.dp)).background(if (tab == i) C.accent.copy(alpha = 0.18f) else C.card)
+                        .clickable { tab = i }.padding(vertical = 10.dp), contentAlignment = Alignment.Center) {
+                        Text(name, style = MaterialTheme.typography.labelLarge, color = if (tab == i) C.accent else C.muted,
+                            fontWeight = if (tab == i) FontWeight.SemiBold else FontWeight.Normal)
+                    }
+                }
+            }
+        }
+        if (tab == 0) {
+            item { WeekCalendar(ctx, sel) { sel = it } }
+            item { DayPlanBlock(ctx, sel) }
+        }
+        if (tab == 1) {
+            item { ExerciseBase(ctx) }
+            item { BackupBlock(GymModule.program(s), ctx) }
+        }
+        if (tab == 2) item { GymYears(ctx) }
+        if (tab == 2) item {
+            val list = GymModule.workouts(s).takeLast(20).reversed()
+            Block("История тренировок") {
+                if (list.isEmpty()) Muted("Пока пусто")
+                list.forEach { (e, w) ->
+                    val min = w.end?.let { (it - w.start) / 60_000 }
+                    Line {
+                        Column(Modifier.weight(1f)) {
+                            Text(DAY.format(e.day), style = MaterialTheme.typography.bodyLarge)
+                            Muted("подходов ${w.sets.size}" + (min?.let { " · $it мин" } ?: ""))
+                        }
+                        DeleteButton("тренировку") { s.delete(e.id) }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** Календарь недели: ✓ — сделано, «зал» — по плану; нажми на день — его план ниже. */
+@Composable
+private fun WeekCalendar(ctx: Ctx, sel: LocalDate, onSelect: (LocalDate) -> Unit) {
+    val mon = ctx.today.with(DayOfWeek.MONDAY)
+    val wk = GymModule.week(ctx)
+    val trained = GymModule.trainedDays(ctx, mon, mon.plusDays(6))
+    val target = ctx.settings.sessionsPerWeek
+    Block("Неделя", trailing = { Pill("${wk.done} / $target", if (wk.done >= target) C.good else C.accent) }) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            (0L..6L).map { mon.plusDays(it) }.forEach { d ->
+                val done = d in trained
+                val gym = d in wk.plan
+                Column(
+                    Modifier.weight(1f).clip(RoundedCornerShape(10.dp))
+                        .background(if (d == sel) C.accent.copy(alpha = 0.14f) else C.bg)
+                        .then(if (d == sel) Modifier.border(1.dp, C.accent, RoundedCornerShape(10.dp)) else Modifier)
+                        .clickable { onSelect(d) }.padding(vertical = 6.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(2.dp),
+                ) {
+                    Text(d.dayOfWeek.getDisplayName(TextStyle.SHORT, RU), style = MaterialTheme.typography.labelSmall,
+                        color = if (d == ctx.today) C.accent else C.muted)
+                    Text("${d.dayOfMonth}", style = MaterialTheme.typography.titleMedium)
+                    Text(when { done -> "✓"; gym -> "зал"; else -> "·" }, style = MaterialTheme.typography.labelSmall,
+                        color = when { done -> C.good; gym -> C.accent; else -> C.muted })
+                }
+            }
+        }
+        Muted("Нажми на день — ниже его план. Там же можно сделать день днём зала или отдыха.")
+        if (GymModule.threeInRow(ctx)) Text("* 3 дня подряд — не лучшая идея: мышцы не успевают восстановиться, особенно при недосыпе.",
+            style = MaterialTheme.typography.bodySmall, color = C.warn)
+    }
+}
+
+/** План выбранного дня: готов по умолчанию; можно убрать/добавить упражнение, выбрать акцент, пересобрать. */
+@Composable
+private fun DayPlanBlock(ctx: Ctx, date: LocalDate) {
+    val s = ctx.store
+    val scope = rememberCoroutineScope()
+    val p = GymModule.program(s)
+    val wk = GymModule.week(ctx)
+    val trained = GymModule.trainedDays(ctx, date, date)
+    val isGym = date in wk.plan
+    var adding by remember(date) { mutableStateOf(false) }
+    var busy by remember { mutableStateOf(false) }
+    var info by remember(date) { mutableStateOf<String?>(null) }
+    var err by remember(date) { mutableStateOf<String?>(null) }
+    val title = if (date == ctx.today) "Сегодня" else DAY.format(date).replaceFirstChar { it.uppercase() }
+
+    Block(title, trailing = {
+        when {
+            date in trained -> Pill("сделано", C.good)
+            isGym -> Pill("зал", C.accent)
+            else -> Pill("отдых", C.muted)
+        }
+    }) {
+        // прошедшие/выполненные дни — что было сделано
+        if (date < ctx.today || date in trained) {
+            val done = GymModule.sessions(s).filter { it.first == date }.flatMap { it.second }
+            if (done.isEmpty()) Muted("Тренировки не было")
+            done.groupBy { it.ex }.forEach { (id, l) -> Stat(p.ex(id)?.name ?: id, l.joinToString("  ") { "${it.w.r1()}×${it.r}" }) }
+            if (date < ctx.today || date in trained) return@Block
+        }
+        if (!isGym && date != ctx.today) {
+            Muted("День отдыха.")
+            Secondary("Сделать днём зала", { err = GymModule.toggleDay(ctx, date) }, Modifier.fillMaxWidth())
+            Err(err)
+            return@Block
+        }
+        if (!isGym) Muted("По плану сегодня отдых, но потренироваться можно.")
+        // переключатель дня — сразу под заголовком, а не в самом низу плана
+        Secondary(if (isGym) "Сделать днём отдыха" else "Сделать днём зала", { err = GymModule.toggleDay(ctx, date) }, Modifier.fillMaxWidth())
+
+        val plan = GymModule.planFor(ctx, date)
+        fun save(pl: DayPlan) = GymModule.savePlan(s, pl.copy(source = if (pl.source == "claude") "claude" else "edited"))
+
+        val days = GymModule.split(ctx)
+        if (days.size > 1) {
+            Text("День", style = MaterialTheme.typography.labelLarge, color = C.muted)
+            Buttons {
+                days.forEach { d ->
+                    FilterChip(selected = plan.day == d.id, onClick = { if (plan.day != d.id) save(GymModule.planFor(ctx, date, plan.focus, d.id)) },
+                        label = { Text(d.title) })
+                }
+            }
+        }
+        Text("Акцент (по желанию)", style = MaterialTheme.typography.labelLarge, color = C.muted)
+        Buttons {
+            FilterChip(selected = plan.focus == null, onClick = { GymModule.resetPlan(s, date) }, label = { Text("Авто") })
+            FOCUS.forEach { (key, v) ->
+                FilterChip(selected = plan.focus == key, onClick = { save(GymModule.planFor(ctx, date, key, plan.day)) }, label = { Text(v.first) })
+            }
+        }
+        val summary = Planner.summary(p, plan)
+        if (summary.isNotEmpty()) Stat("Главное", summary)
+        if (plan.note.isNotBlank()) Muted(plan.note)
+        if (plan.source != "auto") Muted(if (plan.source == "claude") "Составлено Claude · «Авто» вернёт автоплан" else "Изменено вручную · «Авто» вернёт автоплан")
+
+        val targets = GymModule.targets(s, plan)
+        val labels = pairLabels(plan.items)
+        if (plan.items.isEmpty()) Muted("База упражнений пуста — добавь упражнения ниже, и план соберётся сам.")
+        if (plan.items.any { it.pair != null }) Muted(SUPERSET_HOW)
+        plan.items.forEachIndexed { i, item ->
+            val ex = p.ex(item.ex) ?: return@forEachIndexed
+            val t = targets.firstOrNull { it.ex.id == item.ex }
+            if (i > 0) HorizontalDivider(color = C.line)
+            Line {
+                labels[item.ex]?.let { Pill(it, C.accent) }
+                Column(Modifier.weight(1f)) {
+                    Text(ex.name, style = MaterialTheme.typography.bodyLarge)
+                    Muted("${item.sets} подх. · " + (t?.weight?.let { "${it.r1()} кг × ${t.reps.joinToString(",")}" } ?: "подбор веса"))
+                }
+                Flat("−", { save(plan.copy(items = plan.items.map { if (it.ex == item.ex) it.copy(sets = (it.sets - 1).coerceAtLeast(1)) else it })) }, C.muted)
+                Flat("+", { save(plan.copy(items = plan.items.map { if (it.ex == item.ex) it.copy(sets = (it.sets + 1).coerceAtMost(6)) else it })) }, C.muted)
+                Flat("✕", { save(plan.copy(items = plan.items.filter { it.ex != item.ex })) }, C.bad)
+            }
+        }
+        if (adding) {
+            val rest = p.exercises.filter { e -> plan.items.none { it.ex == e.id } }
+            if (rest.isEmpty()) Muted("Все упражнения из базы уже в плане")
+            rest.forEach { e ->
+                Text("+ ${e.name}", Modifier.fillMaxWidth().clickable {
+                    save(plan.copy(items = plan.items + PlanItem(e.id, e.sets))); adding = false
+                }.padding(vertical = 8.dp), color = C.accent)
+            }
+            Flat("Закрыть", { adding = false }, C.muted)
+        }
+        Buttons {
+            if (!adding && p.exercises.isNotEmpty()) Secondary("+ Упражнение", { adding = true })
+            Flat("Пересобрать", { GymModule.resetPlan(s, date) })
+            Flat(if (busy) "Claude думает…" else "Через Claude", {
+                val st = ctx.settings
+                val apiKey = by.zaberezh.forma.sys.Secrets.claudeKey()
+                if (apiKey.isBlank()) { err = "API-ключ не задан (Настройки → Claude)"; return@Flat }
+                if (busy || p.exercises.isEmpty()) return@Flat
+                busy = true; err = null; info = null
+                scope.launch {
+                    val ai = Claude(apiKey, st.model, st.apiUrl)
+                    val r = withContext(Dispatchers.IO) { runCatching { ai.planDay(METHOD, aiPlanPrompt(ctx, date, plan.focus)) } }
+                    busy = false
+                    r.onSuccess { (items, note) ->
+                        val valid = items.filter { p.ex(it.first) != null }.distinctBy { it.first }.map { PlanItem(it.first, it.second) }
+                        if (valid.isEmpty()) err = "Claude вернул пустой план"
+                        else GymModule.savePlan(s, DayPlan(date.toString(), valid, plan.focus, "claude", note, plan.day))
+                        info = "Claude: ~${ai.used} токенов"
+                    }.onFailure { err = Claude.explain(it) + " (~${ai.used} токенов)" }
+                }
+            })
+            if (busy) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+        }
+        if (date == ctx.today && plan.items.isNotEmpty()) Primary("Начать тренировку", { startWorkout(ctx) }, Modifier.fillMaxWidth())
+        Note(info); Err(err)
+    }
+}
+
+@Composable
+private fun BackupBlock(p: Program, ctx: Ctx) {
+    val c = LocalContext.current
+    var edit by remember { mutableStateOf(false) }
+    Block("Резервная копия базы") {
+        if (!edit) Flat("Экспорт / импорт JSON", { edit = true }, C.muted)
+        else {
+            var text by remember { mutableStateOf(JSON.encodeToString(Program.serializer(), p)) }
+            var err by remember { mutableStateOf<String?>(null) }
+            Field("База (JSON)", text, { text = it }, number = false, lines = 6)
+            Err(err)
+            Buttons {
+                Primary("Применить", { runCatching { parseProgram(text) }.onSuccess { PROGRAM.set(ctx.store, it); edit = false }.onFailure { err = it.message } })
+                Secondary("Копировать", { c.copy(text) })
+                Flat("Закрыть", { edit = false }, C.muted)
+            }
+        }
+    }
+}
+
+@Composable
+private fun WorkoutScreen(ctx: Ctx, id: String) {
+    val s = ctx.store
+    val e = s.get(id) ?: return
+    val w = WORKOUT.decode(e)
+    val p = GymModule.program(s)
+    val date = runCatching { LocalDate.parse(w.day) }.getOrElse { e.day }
+    val plan = GymModule.storedPlan(s, date) ?: GymModule.planFor(ctx, date)
+    val setsPlanned = plan.items.associate { it.ex to it.sets }
+    val ids = (plan.items.map { it.ex } + w.sets.map { it.ex }).distinct()
+    val targets = remember(e.ts, ids, setsPlanned) {
+        ids.mapNotNull(p::ex).associate { ex ->
+            val x = ex.copy(sets = setsPlanned[ex.id] ?: ex.sets)
+            ex.id to (x to nextTarget(x, GymModule.history(s, ex.id, e.ts).map { it.second }))
+        }
+    }
+    var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    var pick by remember { mutableStateOf(false) }
+    var creating by remember { mutableStateOf(false) }
+    var cancel by remember { mutableStateOf(false) }
+    val view = LocalView.current
+    DisposableEffect(Unit) { view.keepScreenOn = true; onDispose { view.keepScreenOn = false } }
+    LaunchedEffect(Unit) { while (true) { now = System.currentTimeMillis(); delay(30_000) } }   // минуты тренировки
+
+    fun save(nw: Workout) = WORKOUT.save(s, nw, ts = e.ts, id = id)
+    fun addToPlan(exId: String) {
+        val cur = GymModule.storedPlan(s, date) ?: plan
+        val sets = GymModule.program(s).ex(exId)?.sets ?: 3
+        if (cur.items.any { it.ex == exId }) return
+        // на своё место по группе мышц, а не в конец
+        val items = by.zaberezh.forma.core.gym.Planner.insert(GymModule.program(s), cur.items, PlanItem(exId, sets), ctx.settings.supersets, cur.focus)
+        GymModule.savePlan(s, cur.copy(items = items, source = "edited"))
+    }
+
+    Screen {
+        item {
+            val done = w.sets.size
+            val total = targets.values.sumOf { it.first.sets }
+            Block("Тренировка · ${DM.format(date)}", trailing = { Pill("$done / $total подходов") }) {
+                Column {
+                    Muted("Идёт")
+                    Text("${(now - w.start) / 60_000} мин", style = MaterialTheme.typography.titleLarge)
+                }
+                Line {
+                    Primary("Завершить", { save(w.copy(end = System.currentTimeMillis())); s.kvPut(ACTIVE, null) }, Modifier.weight(1f))
+                    Flat("Отменить", { cancel = true }, C.muted)
+                }
+            }
+        }
+        items(ids, key = { it }) { exId ->
+            val pair = targets[exId] ?: return@items
+            val item = plan.items.firstOrNull { it.ex == exId }
+            val mate = item?.pair?.let { l -> plan.items.firstOrNull { it.pair == l && it.ex != exId } }?.let { p.ex(it.ex)?.name }
+            ExerciseCard(pair.first, pair.second, w.sets.filter { it.ex == exId },
+                superset = mate?.let { "${pairLabels(plan.items)[exId]} · суперсет с «$it»: подход → 60–90 с → подход второго" },
+                eachSet = ctx.settings.logEachSet,
+                onAdd = { sets -> save(w.copy(sets = w.sets + sets)) },
+                onUndo = { all ->
+                    if (all) save(w.copy(sets = w.sets.filter { it.ex != exId }))
+                    else {
+                        val i = w.sets.indexOfLast { it.ex == exId }
+                        if (i >= 0) save(w.copy(sets = w.sets.filterIndexed { j, _ -> j != i }))
+                    }
+                },
+                onRemove = {
+                    // убрать из сегодняшней тренировки: из плана дня и вместе с записанными подходами
+                    val cur = GymModule.storedPlan(s, date) ?: plan
+                    GymModule.savePlan(s, cur.copy(items = cur.items.filter { it.ex != exId }, source = "edited"))
+                    if (w.sets.any { it.ex == exId }) save(w.copy(sets = w.sets.filter { it.ex != exId }))
+                })
+        }
+        item {
+            when {
+                creating -> ExerciseForm(ctx, null, onDone = { creating = false }, onSaved = { addToPlan(it) })
+                !pick -> Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (ids.isEmpty()) Muted("В плане пусто — создай упражнение: название, вес, повторы.")
+                    Secondary("+ Упражнение из базы", { pick = true }, Modifier.fillMaxWidth(), enabled = p.exercises.any { it.id !in ids })
+                    Secondary("+ Новое упражнение в базу", { creating = true }, Modifier.fillMaxWidth())
+                }
+                else -> Block("Добавить из базы") {
+                    p.exercises.filter { it.id !in ids }.forEach { ex ->
+                        Text(ex.name, Modifier.fillMaxWidth().clickable { addToPlan(ex.id); pick = false }.padding(vertical = 8.dp))
+                    }
+                    Flat("Закрыть", { pick = false }, C.muted)
+                }
+            }
+        }
+    }
+    if (cancel) AlertDialog(
+        onDismissRequest = { cancel = false },
+        title = { Text("Отменить тренировку?") },
+        text = { Text("Записанные подходы будут удалены.") },
+        confirmButton = { TextButton({ cancel = false; s.delete(id); s.kvPut(ACTIVE, null) }) { Text("Удалить", color = C.bad) } },
+        dismissButton = { TextButton({ cancel = false }) { Text("Назад") } },
+        containerColor = C.cardHi,
+    )
+}
+
+@Composable
+private fun ExerciseCard(
+    ex: Exercise, t: Target?, done: List<SetLog>, superset: String? = null, eachSet: Boolean = true,
+    onAdd: (List<SetLog>) -> Unit, onUndo: (all: Boolean) -> Unit, onRemove: () -> Unit,
+) {
+    var wt by remember(ex.id, done.size) { mutableStateOf((done.lastOrNull()?.w ?: t?.weight)?.r1() ?: "") }
+    var rp by remember(ex.id, done.size) { mutableStateOf((t?.reps?.getOrNull(done.size) ?: done.lastOrNull()?.r ?: t?.reps?.firstOrNull())?.toString() ?: "") }
+    var n by remember(ex.id, done.size) { mutableStateOf(ex.sets.toString()) }
+    var askRemove by remember { mutableStateOf(false) }
+    val complete = done.size >= ex.sets
+    // все подходы сделаны — карточка сворачивается; «Развернуть» возвращает обычный вид (отменить, добавить подход…)
+    var open by remember(ex.id, complete) { mutableStateOf(!complete) }
+    Block(ex.name, trailing = { Pill("${done.size}/${ex.sets}", if (complete) C.good else C.muted) }) {
+        if (!open) {
+            Buttons { done.forEach { Pill("${it.w.r1()} × ${it.r}", C.good) } }
+            Line {
+                Text("Готово", Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium, color = C.good)
+                Flat("Развернуть", { open = true }, C.muted)
+            }
+            return@Block
+        }
+        if (superset != null) Text(superset, style = MaterialTheme.typography.bodySmall, color = C.accent)
+        Stat("Цель", t?.weight?.let { "${it.r1()} кг × ${t.reps.joinToString(", ")}" } ?: "подобрать вес")
+        Muted(listOfNotNull("${ex.repMin}–${ex.repMax} повт.", "в запасе ${ex.rir}",
+            if (superset != null) "между упражнениями пары 60–90 с" else null, t?.note?.takeIf { it.isNotEmpty() }).joinToString(" · "))
+        if (done.isNotEmpty()) Buttons {
+            done.forEach { Pill("${it.w.r1()} × ${it.r}", C.good) }
+        }
+        val weightLabel = if (ex.bw > 0) "Доп. вес" else "Вес"
+        if (eachSet) {
+            Line {
+                Field(weightLabel, wt, { wt = it }, Modifier.weight(1f), suffix = "кг")
+                Field("Повторы", rp, { rp = it }, Modifier.weight(1f))
+            }
+            Line {
+                Primary("Записать подход", {
+                    val r = rp.num()?.toInt()
+                    if (r != null && r > 0) onAdd(listOf(SetLog(ex.id, wt.num() ?: 0.0, r)))
+                }, Modifier.weight(1f))
+                if (done.isNotEmpty()) Flat("Отменить последний", { onUndo(false) }, C.muted)
+            }
+        } else if (done.isEmpty()) {
+            // один итог на упражнение: «сколько на сколько» и сколько подходов так сделал
+            Line {
+                Field(weightLabel, wt, { wt = it }, Modifier.weight(1.2f), suffix = "кг")
+                Field("Повторы", rp, { rp = it }, Modifier.weight(1f))
+                Field("Подходы", n, { n = it }, Modifier.weight(1f))
+            }
+            Primary("Записать", {
+                val r = rp.num()?.toInt(); val k = n.num()?.toInt()?.coerceIn(1, 10) ?: 1
+                if (r != null && r > 0) onAdd(List(k) { SetLog(ex.id, wt.num() ?: 0.0, r) })
+            }, Modifier.fillMaxWidth())
+        } else Flat("Изменить", { onUndo(true) }, C.muted)
+        Line {
+            if (complete) Flat("Свернуть", { open = false }, C.muted)
+            Box(Modifier.weight(1f), contentAlignment = Alignment.CenterEnd) {
+                Flat("Убрать из тренировки", { if (done.isEmpty()) onRemove() else askRemove = true }, C.muted)
+            }
+        }
+    }
+    if (askRemove) AlertDialog(
+        onDismissRequest = { askRemove = false },
+        title = { Text("Убрать «${ex.name}»?") },
+        text = { Text("Записанные подходы этого упражнения тоже удалятся.") },
+        confirmButton = { TextButton({ askRemove = false; onRemove() }) { Text("Убрать", color = C.bad) } },
+        dismissButton = { TextButton({ askRemove = false }) { Text("Назад") } },
+        containerColor = C.cardHi,
+    )
+}
