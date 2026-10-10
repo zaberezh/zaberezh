@@ -38,7 +38,7 @@ class Menu(
             // «тост с сыром и беконом» — одна позиция; «твистер и кола» — две
             val whole = match(chunk)
             if (whole != null) { items += whole; continue }
-            for (part in chunk.split(Regex("\\s+и\\s+")).map { it.trim() }.filter { it.isNotEmpty() }) {
+            for (part in splitAnd(chunk).map { it.trim() }.filter { it.isNotEmpty() }) {
                 match(part)?.let { items += it } ?: run { if (words(part).any { it !in chain }) rest += part }
             }
         }
