@@ -65,6 +65,7 @@ class FoodPipeline(
             rest = basic.rest
             // «макароны с 2 котлетами», «пюре с котлетой»: не нашлось целиком — пробуем по частям
             rest = rest.filter { part ->
+                if (STUFFED.containsMatchIn(part.trim().lowercase().replace(Regex("^[\\d.,\\s]+"), ""))) return@filter true   // начинку не отрываем
                 val pieces = part.split(WITH).map { it.trim() }.filter { it.isNotEmpty() }
                 if (pieces.size < 2) return@filter true
                 val r = Menus.basic.resolve(pieces.joinToString(", "))
