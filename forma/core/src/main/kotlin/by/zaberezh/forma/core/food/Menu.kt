@@ -22,12 +22,17 @@ class Menu(
     val soft: Set<String> = emptySet(),           // @soft — слова, которые можно не находить в названии (свежий, зелёное…)
     val scale: Map<String, Double> = emptyMap(),  // @scale — размер штуки: большой ×1.3, маленький ×0.7
     val conf: String = "high",
+    val phrases: List<String> = emptyList(),      // @phrase — название сети из нескольких слов («бургер кинг»)
 ) {
+    /** Фразы сети в любом падеже («из бургер кинга»): признак сети, из текста позиции убираются. */
+    private val phraseRx = phrases.map { ph -> Regex(ph.split(' ').joinToString("[\\s-]*") { w -> "$w\\p{L}*" }, RegexOption.IGNORE_CASE) }
 
-    fun resolve(text: String): MenuResult {
+    fun resolve(text0: String): MenuResult {
+        val named = phraseRx.any { it.containsMatchIn(text0) }
+        val text = phraseRx.fold(text0) { t, rx -> t.replace(rx, " ") }
         val chunks = text.split(PARTS).map { it.trim() }.filter { it.isNotEmpty() }
         val all = chunks.flatMap { words(it) }
-        if (!always && all.none { it in chain } && all.none { w -> sig.any { hit(w, it) } }) return MenuResult(emptyList(), chunks)
+        if (!always && !named && all.none { it in chain } && all.none { w -> sig.any { hit(w, it) } }) return MenuResult(emptyList(), text0.split(PARTS).map { it.trim() }.filter { it.isNotEmpty() })
         val items = mutableListOf<FoodItem>(); val rest = mutableListOf<String>()
         for (chunk in chunks) {
             // «тост с сыром и беконом» — одна позиция; «твистер и кола» — две
@@ -118,6 +123,7 @@ class Menu(
             var source = ""; var prefix = ""; val chain = mutableSetOf<String>(); val sig = mutableSetOf<String>()
             var always = false; var conf = "high"; val soft = mutableSetOf<String>(); val scale = mutableMapOf<String, Double>()
             var perPortion = false  // @portion — в строках КБЖУ на порцию, а не на 100 г (как в приложении Mak.by)
+            val phrases = mutableListOf<String>()
             val syn = mutableMapOf<String, List<String>>(); val items = mutableListOf<MenuItem>()
             for (raw in text.lines()) {
                 val line = raw.trim()
@@ -134,6 +140,7 @@ class Menu(
                         "@portion" -> perPortion = true
                         "@conf" -> conf = v
                         "@soft" -> soft += tokens(v)
+                        "@phrase" -> phrases += tokens(v).joinToString(" ")
                         "@scale" -> v.split(Regex("\\s+")).let { (w, x) -> scale[w.lowercase().replace('ё', 'е')] = x.toDouble() }
                     }
                     continue
@@ -148,7 +155,7 @@ class Menu(
                 items += MenuItem(name, d(1), Macro(d(5) * k, d(2) * k, d(3) * k, d(4) * k), words, keys,
                     all.filter { it.second.isEmpty() }.map { it.first }, all.filter { it.second == "%" }.map { it.first })
             }
-            return Menu(source, prefix, chain, sig, syn, items, always, soft, scale, conf)
+            return Menu(source, prefix, chain, sig, syn, items, always, soft, scale, conf, phrases)
         }
 
         fun load(id: String): Menu = parse(Menu::class.java.getResource("/menus/$id.txt")!!.readText())
@@ -157,7 +164,7 @@ class Menu(
 
 /** Все меню сетей. Новая сеть — новый файл в resources/menus и строка здесь. */
 object Menus {
-    val all: List<Menu> by lazy { listOf("kfc", "kinza", "mak").map(Menu::load) }
+    val all: List<Menu> by lazy { listOf("kfc", "kinza", "mak", "bk").map(Menu::load) }
 
     /** Общие продукты (банан, гречка, яйца…) — средние значения из таблиц калорийности и вес штуки. */
     val basic: Menu by lazy { Menu.load("basic").withFiber() }
