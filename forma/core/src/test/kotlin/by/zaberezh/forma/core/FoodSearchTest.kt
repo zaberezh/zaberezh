@@ -37,6 +37,13 @@ class FoodSearchTest {
         assertTrue(abs(kcal - (115.2 + 172.7 + 220)) < 1, "ккал $kcal")
     }
 
+    @Test fun dishWithFillingsStaysOneDish() {
+        assertEquals(listOf("Пирог с мясом и сыром"), basic("пирог с мясом и сыром").map { it.name })
+        assertEquals("Пирожок с капустой", basic("пирожок с капустой").single().name)
+        assertEquals("Пицца с ветчиной и грибами", basic("пицца с ветчиной и грибами").single().name)
+        assertEquals(listOf("Банан", "Яблоко"), basic("банан и яблоко").map { it.name })
+    }
+
     @Test fun brandedAndRestaurantFoodIsNotGuessedFromTable() {
         assertEquals(listOf("теос про клубника"), Menus.basic.resolve("теос про клубника").rest)
         assertEquals(listOf("шаурма большая в Шаурма Шеф"), Menus.basic.resolve("шаурма большая в Шаурма Шеф").rest)

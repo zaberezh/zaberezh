@@ -30,7 +30,26 @@ class LibraryResolver(private val store: Store) : FoodResolver {
     }
 }
 
-fun splitParts(text: String) = text.split(PARTS).flatMap { it.split(Regex("\\s+и\\s+")) }.map { it.trim() }.filter { it.isNotEmpty() }
+fun splitParts(text: String) = text.split(PARTS).flatMap(::splitAnd).map { it.trim() }.filter { it.isNotEmpty() }
+
+/**
+ * «банан и яблоко» — две позиции, а «пирог с мясом и сыром», «блины с творогом и изюмом» — одна:
+ * после «с …» слово в творительном падеже (сыром, изюмом, грибами) — это ещё начинка, а не новое блюдо.
+ */
+fun splitAnd(chunk: String): List<String> {
+    val out = mutableListOf<String>()
+    for (piece in chunk.split(Regex("\\s+и\\s+"))) {
+        val prev = out.lastOrNull()
+        val first = Regex("\\p{L}+").find(piece.lowercase())?.value.orEmpty()
+        if (prev != null && Regex("(?i)(^|\\s)(с|со)\\s").containsMatchIn(prev) && INSTRUMENTAL.containsMatchIn(first)) out[out.size - 1] = "$prev и $piece"
+        else out += piece
+    }
+    return out
+}
+private val INSTRUMENTAL = Regex("(ом|ем|ём|ой|ей|ою|ею|ами|ями|ью)$")
+
+/** Блюда с начинкой: «пирог с мясом» — это пирог, а не «пирог» + «мясо». */
+internal val STUFFED = Regex("^(пирог|пирожок|пирожки|пирожка|блин|блины|блинчик|блинчики|пицц|вареник|пельмен|чебурек|беляш|самс|шаурм|шаверм|лаваш|хачапури|сэндвич|бутерброд|круассан|булочк|булк|слойк|омлет|запеканк|сырник|лазань|ролл|буррито|хот|тост|ватрушк|кекс|маффин|торт|рулет|кулебяк|расстега)")
 
 /** Общие слова еды: если позиция только из них — это не товар магазина (гречка, курица, яйца…). */
 internal val GENERIC = setOf(
