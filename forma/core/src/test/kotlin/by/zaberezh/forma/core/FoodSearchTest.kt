@@ -70,13 +70,13 @@ class FoodSearchTest {
         assertTrue(!claudeCalled, "Claude не нужен для банана")
 
         val fail = FoodPipeline(s, fetch = { null }, claude = { _, _ -> error("провайдер упал") })
-            .run("кфс твистер, банан, бургер из Бургер Кинга")
+            .run("кфс твистер, банан, бургер из Теремка")
         assertEquals(listOf("KFC · Твистер оригинальный", "Банан"), fail.items.map { it.name })
-        assertEquals(listOf("бургер из Бургер Кинга"), fail.missing)
+        assertEquals(listOf("бургер из Теремка"), fail.missing)
         assertNotNull(fail.error)
 
         val claude = FoodPipeline(s, fetch = { null }, claude = { rest, _ -> listOf(FoodItem(rest, 200.0, Macro(250.0, 12.0, 12.0, 25.0))) })
-            .run("банан и бургер из Бургер Кинга")
+            .run("банан и бургер из Теремка")
         assertEquals("1 таблица · 1 Claude", claude.how)
     }
 
