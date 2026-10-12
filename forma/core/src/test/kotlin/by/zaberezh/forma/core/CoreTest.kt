@@ -292,7 +292,7 @@ class CoreTest {
         val s = MemoryStore()
         val ctx = Ctx(s, mon)
         val t = FoodModule.targets(ctx)
-        assertTrue(t.kcal in 2450..2600, "kcal=${t.kcal}")
+        assertTrue(t.kcal in 2350..2450, "kcal=${t.kcal}")                    // цели по весу нет — поддержание
         assertEquals(141, t.p)
         // 28 дней по 2800 ккал, вес растёт 0.1 кг/нед -> TDEE ≈ 2800 − 110
         val w = (0..27).map { mon.minusDays(27L - it) to 70.0 + it * 0.1 / 7 }

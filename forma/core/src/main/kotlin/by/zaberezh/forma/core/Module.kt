@@ -21,8 +21,10 @@ data class Profile(
     val heightCm: Double = 180.0,
     val male: Boolean = true,
     val activity: Double = 1.375,      // множитель к BMR: только 3 силовые в неделю (ходьба не учитывается)
-    val gainKgPerWeek: Double = 0.1,   // целевой темп веса: медленный набор/рекомпозиция
-    val targetKg: Double? = null,      // целевой вес; если задан — темп считается сам (набор или похудение)
+    val gainKgPerWeek: Double = 0.1,   // устарело: темп теперь следует из цели (набор/похудение); поле — для старых экспортов
+    val targetKg: Double? = null,      // целевой вес; нет — держим вес
+    val startKg: Double? = null,       // с какого веса начал идти к цели
+    val startDate: String? = null,     // когда (ISO-дата) — от неё считается «по плану»
     val proteinPerKg: Double = 2.0,
     val fatShare: Double = 0.25,       // доля калорий из жира
 )

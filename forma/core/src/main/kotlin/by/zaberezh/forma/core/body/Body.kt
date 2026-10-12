@@ -3,6 +3,7 @@ package by.zaberezh.forma.core.body
 import by.zaberezh.forma.core.Ctx
 import by.zaberezh.forma.core.Field
 import by.zaberezh.forma.core.Module
+import by.zaberezh.forma.core.Profile
 import by.zaberezh.forma.core.Section
 import by.zaberezh.forma.core.r1
 import by.zaberezh.forma.core.r2
@@ -76,33 +77,89 @@ const val LOSS_PACE = 0.5
 /** Ближе этого к цели — держим вес. */
 const val HOLD_KG = 0.5
 
-/** Цель по весу: темп (кг/нед) и, если задан целевой вес, — сам вес. */
-data class WeightGoal(val rate: Double, val targetKg: Double? = null, val current: Double? = null) {
-    /** Сколько недель до цели при этом темпе; null — цели нет или уже держим. */
+/**
+ * Цель по весу: старт → цель. Темп не задаётся руками — он следует из направления: набор +[GAIN_PACE],
+ * похудение −[LOSS_PACE] кг/нед; rate нужен только для калорий. Показываются прогресс, дата и «по плану ли».
+ */
+data class WeightGoal(
+    val rate: Double,
+    val targetKg: Double? = null,
+    val current: Double? = null,
+    val startKg: Double? = null,
+    val startDay: LocalDate? = null,
+) {
+    val kind: String get() = when { targetKg == null -> "держим вес"; rate > 0 -> "набор"; rate < 0 -> "похудение"; else -> "держим вес" }
+    /** Сколько недель до цели; null — цели нет или уже у цели. */
     val weeks: Int? get() = if (targetKg == null || current == null || rate == 0.0) null
         else kotlin.math.ceil((targetKg - current) / rate).toInt().coerceAtLeast(1)
+    /** Весь путь, кг. */
+    val totalKg: Double? get() = if (startKg != null && targetKg != null) kotlin.math.abs(targetKg - startKg) else null
+    /** Пройдено к цели от старта, кг (в обратную сторону — минус). */
+    val doneKg: Double? get() {
+        val s = startKg ?: return null; val t = targetKg ?: return null; val c = current ?: return null
+        return if (t >= s) c - s else s - c
+    }
+    val progress: Double? get() {
+        val tot = totalKg ?: return null; val d = doneKg ?: return null
+        return if (tot < 0.05) 1.0 else (d / tot).coerceIn(0.0, 1.0)
+    }
+    /** Где вес должен быть в этот день по плану: от старта в сторону цели обычным темпом, не дальше цели. */
+    fun planned(day: LocalDate): Double? {
+        val s = startKg ?: return null; val t = targetKg ?: return null; val d0 = startDay ?: return null
+        val w = ChronoUnit.DAYS.between(d0, day).coerceAtLeast(0) / 7.0
+        return when {
+            t > s -> minOf(s + GAIN_PACE * w, t)
+            t < s -> maxOf(s - LOSS_PACE * w, t)
+            else -> s
+        }
+    }
+    /** Насколько впереди плана, кг: плюс — ближе к цели, чем по плану; минус — отстаёшь. */
+    fun vsPlan(day: LocalDate): Double? {
+        val p = planned(day) ?: return null; val c = current ?: return null; val t = targetKg ?: return null; val s = startKg ?: return null
+        return if (t >= s) c - p else p - c
+    }
     val label: String get() = when {
-        targetKg == null -> "${if (rate >= 0) "+" else ""}${rate.r2()} кг/нед"
-        rate == 0.0 -> "${targetKg.r1()} кг — держим вес"
-        else -> "${targetKg.r1()} кг · ${if (rate > 0) "+" else ""}${rate.r2()} кг/нед" + (weeks?.let { " · ≈$it нед" } ?: "")
+        targetKg == null -> "не задана — держим вес"
+        startKg != null -> "${startKg.r1()} → ${targetKg.r1()} кг · $kind"
+        else -> "${targetKg.r1()} кг · $kind"
     }
 }
 
-/** Целевой вес задан — набор или похудение по текущему (сглаженному) весу; иначе — темп из настроек. */
+/** Цель задана — набор или похудение по текущему (сглаженному) весу; нет цели — держим вес. */
 fun weightGoal(p: by.zaberezh.forma.core.Profile, current: Double?): WeightGoal {
-    val t = p.targetKg ?: return WeightGoal(p.gainKgPerWeek)
-    if (current == null) return WeightGoal(p.gainKgPerWeek, t)
+    val t = p.targetKg ?: return WeightGoal(0.0, current = current)
+    val start = p.startKg ?: current
+    val day = p.startDate?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
+    if (current == null) return WeightGoal(if (start != null && t > start) GAIN_PACE else if (start != null && t < start) -LOSS_PACE else 0.0, t, null, start, day)
     val diff = t - current
     val rate = when {
         kotlin.math.abs(diff) < HOLD_KG -> 0.0
         diff > 0 -> GAIN_PACE
         else -> -LOSS_PACE
     }
-    return WeightGoal(rate, t, current)
+    return WeightGoal(rate, t, current, start, day)
+}
+
+/**
+ * Новая цель. Старт — как указал человек, иначе текущий вес; «по плану» считается с сегодня,
+ * но если старт тот же, что был, — дата старта остаётся (поменял только цель — путь не начинается заново).
+ */
+fun Profile.withGoal(target: Double?, start: Double?, current: Double?, today: LocalDate): Profile {
+    if (target == null) return copy(targetKg = null, startKg = null, startDate = null)
+    val st = start ?: current
+    val keepDay = st != null && startKg != null && kotlin.math.abs(st - startKg) < 0.05 && startDate != null
+    return copy(targetKg = target, startKg = st, startDate = if (keepDay) startDate else today.toString())
 }
 
 fun weightGoal(s: Store, p: by.zaberezh.forma.core.Profile, day: LocalDate): WeightGoal =
     weightGoal(p, trendWeight(s, day) ?: latestWeight(s))
+
+/** Как дела относительно плана: v — насколько впереди (плюс) или позади (минус), кг. */
+fun planNote(v: Double): String = when {
+    v >= 0.7 -> "быстрее плана на ${v.r1()} кг"
+    v <= -0.7 -> "отстаёшь от плана на ${(-v).r1()} кг"
+    else -> "идёшь по плану"
+}
 
 /** Ближайшее время напоминания взвеситься: будни и выходные — своё время. */
 fun nextWeighTime(st: by.zaberezh.forma.core.Settings, now: java.time.LocalDateTime): java.time.LocalDateTime {
@@ -142,10 +199,15 @@ object BodyModule : Module {
         val rate = weightRate(s, to, ChronoUnit.DAYS.between(from, to) + 1)
         val goal = weightGoal(s, ctx.settings.profile, to)
         val target = goal.rate
-        goal.targetKg?.let { lines += "Цель: ${goal.label}" }
+        goal.targetKg?.let {
+            lines += "Цель: ${goal.label}"
+            val done = goal.doneKg; val tot = goal.totalKg
+            if (done != null && tot != null) lines += "Пройдено: ${done.r1()} из ${tot.r1()} кг (${((goal.progress ?: 0.0) * 100).toInt()}%)"
+            goal.planned(to)?.let { p -> lines += "По плану сейчас ${p.r1()} кг" + (goal.vsPlan(to)?.let { v -> " — " + planNote(v) } ?: "") }
+        }
         if (w.isNotEmpty()) lines += "Вес: ${w.first().second.r1()} → ${w.last().second.r1()} кг, взвешиваний ${w.size}"
         trendWeight(s, to)?.let { lines += "Сглаженный вес: ${it.r1()} кг" }
-        rate?.let { lines += "Темп: ${it.r2()} кг/нед (цель ${target.r2()})" }
+        rate?.let { lines += "Фактический темп: ${it.r2()} кг/нед (нужно ${target.r2()})" }
         if (w.size < 7) actions += "Взвешиваний мало (${w.size}) — нужен минимум 4 раза в неделю для точного темпа."
 
         val ms = MEASURE.all(s).map { it.first.day to it.second.v }
