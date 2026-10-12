@@ -93,7 +93,7 @@ class WebFood(private val fetch: (String) -> String? = Edostavka::httpGet, priva
     }
 
     companion object {
-        private val SITE = Regex("https?://(?:www\\.)?(?:calorizator\\.ru|tablicakalorijnosti\\.ru|fatsecret\\.ru|health-diet\\.ru|edaplus\\.info|dietadiary\\.com|frykt\\.ru)/[^\"'&\\s<>]+")
+        private val SITE = Regex("https?://(?:www\\.)?(?:calorizator\\.ru|tablicakalorijnosti\\.ru|edaplus\\.info|dietadiary\\.com|frykt\\.ru)/[^\"'&\\s<>]+")
         private const val N = "(\\d+(?:[.,]\\d+)?)"
 
         private fun d(s: String) = s.replace(',', '.').toDouble()

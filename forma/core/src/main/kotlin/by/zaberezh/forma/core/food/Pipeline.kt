@@ -8,8 +8,8 @@ data class FoodResult(val items: List<FoodItem>, val how: String, val missing: L
 /**
  * Поиск КБЖУ по шагам — от мгновенного и точного к медленному:
  * 1) меню заведений (KFC, Mak.by, Burger King, Кинза) → 2) своя библиотека → 3) таблица частых продуктов (банан, гречка, яйца…) — всё офлайн;
- * 4) магазины — edostavka.by и «Соседи» сразу (товары с этикетки, точные цифры) → 5) интернет без ИИ (поисковик + сайты калорийности);
- * 6) Claude — только то, что не нашлось нигде.
+ * 4) магазины — edostavka.by и «Соседи» сразу (товары с этикетки, точные цифры) → 5) FatSecret (большая база блюд и продуктов)
+ * → 6) интернет без ИИ (Open Food Facts, поисковик + сайты калорийности); 7) Claude — только то, что не нашлось нигде.
  * Сетевые шаги делят общий бюджет времени, поэтому поиск не «висит».
  */
 /** Что за еда — выбирает человек: домашнюю не ищем в магазинах, покупную ищем там в первую очередь. */
@@ -43,6 +43,7 @@ class FoodPipeline(
     private val timed: (String) -> String? = { url -> if (clock() > deadline) null.also { log("время вышло: $url") } else fetch(url) }
     private val page = edostavka?.let { p -> PageRunner { js -> if (clock() > deadline) null.also { log("время вышло: edostavka") } else p.run(js) } }
     private val shops = ShopFinder(listOf(Edostavka(page, log), Sosedi(timed, log)), log)
+    private val fatSecret = ShopFinder(listOf(FatSecret(timed, log)), log)
     private val web = WebFood(timed, log)
 
     fun run(text: String): FoodResult {
@@ -75,6 +76,14 @@ class FoodPipeline(
 
         // «домашняя» — в магазинах не ищем: там другой продукт с другими цифрами
         if (rest.isNotEmpty() && kind == FoodKind.AUTO) rest = shopStage(rest, all = false) { hints = it }
+
+        // FatSecret — большая база и домашних блюд, и продуктов: раньше поисковиков и сайтов калорийности
+        if (rest.isNotEmpty()) {
+            stage("ищу в FatSecret…")
+            runCatching { fatSecret.resolve(rest, all = true) }
+                .onSuccess { r -> add("FatSecret", r.items); rest = r.unresolved; hints = hints + r.hints }
+                .onFailure { log("FatSecret: ${it.message}") }
+        }
 
         if (rest.isNotEmpty()) {
             stage("ищу в интернете…")

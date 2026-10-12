@@ -17,6 +17,7 @@
         android:allowBackup="false"
         android:fullBackupContent="@xml/backup_rules"
         android:dataExtractionRules="@xml/data_rules"
+        android:networkSecurityConfig="@xml/network_security"
         android:theme="@android:style/Theme.Material.NoActionBar">
 
         <activity
