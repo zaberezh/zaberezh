@@ -43,7 +43,8 @@ class FatSecret(private val fetch: (String) -> String?, private val log: (String
             val grams = servingGrams(serving, kcal, HUNDRED.find(row)?.groupValues?.get(1)?.let(::d)) ?: return@mapNotNull null
             val k = 100.0 / grams
             val full = if (brand != null) "$name ($brand)" else name
-            val m = WebFood.labelMacro(kcal * k, p * k, f * k, c * k, full) ?: return@mapNotNull null
+            fun r(x: Double) = kotlin.math.round(x * k * 10) / 10
+            val m = WebFood.labelMacro(r(kcal), r(p), r(f), r(c), full) ?: return@mapNotNull null
             ShopItem("FatSecret", link.groupValues[1], full, SITE + link.groupValues[1], m,
                 pieceGrams = grams.takeIf { !Regex("^100\\s*(?:г|мл)$").matches(serving) }, serving = serving.takeIf { grams != 100.0 })
         }.toList()
