@@ -15,9 +15,8 @@ class WebFood(private val fetch: (String) -> String? = Edostavka::httpGet, priva
         val name = nameOf(part)
         if (name.isBlank()) return null
         val f = lookup(name) ?: return null
-        val grams = gramsOf(part)
-        val note = if (grams == null) " · вес не указан — стоит 100 г, поправь" else ""
-        return FoodItem(name.replaceFirstChar { it.uppercase() }, grams ?: 100.0, f.per100, "интернет: ${f.from}$note", "medium")
+        val (grams, note) = Dish.portion(part)   // явный вес, «тарелка борща», «2 котлеты» или обычная порция блюда
+        return FoodItem(name.replaceFirstChar { it.uppercase() }, grams, f.per100, "интернет: ${f.from}" + (note?.let { " · $it" } ?: ""), "medium")
     }
 
     /**

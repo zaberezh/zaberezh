@@ -43,7 +43,7 @@ class FoodPipeline(
     private val timed: (String) -> String? = { url -> if (clock() > deadline) null.also { log("время вышло: $url") } else fetch(url) }
     private val page = edostavka?.let { p -> PageRunner { js -> if (clock() > deadline) null.also { log("время вышло: edostavka") } else p.run(js) } }
     private val shops = ShopFinder(listOf(Edostavka(page, log), Sosedi(timed, log)), log)
-    private val fatSecret = ShopFinder(listOf(FatSecret(timed, log)), log)
+    private val fatSecret = FatSecret(timed, log)
     private val web = WebFood(timed, log)
 
     fun run(text: String): FoodResult {
@@ -80,7 +80,7 @@ class FoodPipeline(
         // FatSecret — большая база и домашних блюд, и продуктов: раньше поисковиков и сайтов калорийности
         if (rest.isNotEmpty()) {
             stage("ищу в FatSecret…")
-            runCatching { fatSecret.resolve(rest, all = true) }
+            runCatching { fatSecret.resolve(rest) }
                 .onSuccess { r -> add("FatSecret", r.items); rest = r.unresolved; hints = hints + r.hints }
                 .onFailure { log("FatSecret: ${it.message}") }
         }

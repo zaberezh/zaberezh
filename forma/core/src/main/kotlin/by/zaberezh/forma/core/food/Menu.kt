@@ -70,13 +70,25 @@ class Menu(
             val pieces = best.nums.firstOrNull { it == Math.floor(it) && it >= 1 }
             val drink = best.nums.any { it != Math.floor(it) && it < 3 }   // в названии объём: «кола 0,5»
             when {
-                left == null -> best.grams * k
+                left == null -> best.grams * k * pieces(q, best)
                 left.unit == "l" || (drink && left.v < 3 && left.v != Math.floor(left.v)) -> left.v * 1000  // объём не из меню: 0,33 л
                 pieces != null -> best.grams / pieces * left.v                                               // 12 наггетсов
                 else -> best.grams * k * left.v                                                              // 2 банана, пол банана
             }
         }
         return FoodItem(if (prefix.isEmpty()) best.name else "$prefix · ${best.name}", Math.round(grams * 10) / 10.0, best.per100, source, conf)
+    }
+
+    /**
+     * «сырники», «блины», «котлеты» без числа — съедено несколько штук, а не одна: в таблице строка — на 1 шт.
+     * Только для штучных блюд ([Dish]) и строк в единственном числе («Блин», а не «Блины с творогом» — та уже порция).
+     */
+    private fun pieces(q: List<String>, best: MenuItem): Double {
+        if (!always) return 1.0
+        val head = best.words.firstOrNull() ?: return 1.0
+        if (Dish.plural(head)) return 1.0
+        if (q.none { Dish.plural(it) && Dish.sameWord(it, head) && Dish.typical(it)?.second?.piece == true }) return 1.0
+        return if (best.grams < 70) 3.0 else 2.0
     }
 
     private data class Num(val v: Double, val unit: String)

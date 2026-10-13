@@ -5,7 +5,14 @@ on:
 jobs:
   probe:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
-      - run: python3 .github/probe/fs2.py "пирожка с капустой" "пирожков с капустой" "сырника" "котлеты куриные" "блинов с творогом" "голубцы" "суп с фрикадельками" "оливье" "пельмени" "шаурма" "пицца пепперони" "борщ украинский" "манты" "запеканка творожная"
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@v4
+      - run: |
+          cp .github/probe/LiveFatSecretTest.kt forma/core/src/test/kotlin/by/zaberezh/forma/core/
+          cd forma && LIVE=fs ./gradlew :core:test --tests '*LiveFatSecretTest*' -i 2>&1 | grep -E "LIVE|FAILED|error:" || true

@@ -18,8 +18,6 @@ data class ShopItem(
     val per100: Macro? = null,
     val packGrams: Double? = null,
     val pieceGrams: Double? = null,
-    /** Порция источника, если это не штука из названия: «1 кусок», «1 чашка» (FatSecret). */
-    val serving: String? = null,
 )
 
 /** Магазин: поиск по названию (в порядке самого магазина) и КБЖУ товара, если поиск их не отдал. */
@@ -287,7 +285,7 @@ class ShopFinder(private val shops: List<Shop>, private val log: (String) -> Uni
             val count = COUNT.find(part.lowercase())?.groupValues?.get(1)?.replace(',', '.')?.toDoubleOrNull()
             if (count != null) return if (unit != null) unit * count to null else 100.0 * count to "вес штуки не указан — стоит 100 г, поправь"
             (condimentPortion(part) ?: condimentPortion(item.name))?.let { return it to null }
-            item.pieceGrams?.let { return it to "${item.serving ?: "1 шт."} — поправь, если больше" }
+            item.pieceGrams?.let { return it to "1 шт. — поправь, если больше" }
             pack?.let { return it to "вся упаковка — поправь, если меньше" }
             return 100.0 to "вес не указан — стоит 100 г, поправь"
         }
