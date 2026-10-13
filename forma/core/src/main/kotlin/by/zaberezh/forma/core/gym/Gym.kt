@@ -123,51 +123,64 @@ object GymModule : Module {
     }
 
     /**
-     * План на дату: сохранённый (правили руками / тренировка начата) или составленный заново.
+     * План на дату: сохранённый (правили руками / тренировка начата) или из плана всей недели ([weekPlans]).
      * day — тип дня сплита вручную (иначе по очереди; при акценте — день, куда акцент входит).
-     * Для будущих дней учитываются запланированные до них тренировки недели (симуляция), чтобы дни не повторялись.
      */
     fun planFor(ctx: Ctx, date: LocalDate, focus: String? = null, day: String? = null): DayPlan {
         val s = ctx.store
-        val p0 = program(s)
-        if (focus == null && day == null) storedPlan(s, date)?.let { return it.copy(items = Planner.arrange(p0, it.items, ctx.settings.supersets, it.focus, it.lead == "pull")) }
-        val p = program(s)
-        val log = Planner.muscleLog(p, sessions(s)).toMutableList()
-        val used = lastUsed(s).toMutableMap()
-        val trained = trainedDays(ctx, ctx.today.minusDays(7), ctx.today)
-        val weekPlan = week(ctx).plan
-        val sim = HashMap<LocalDate, DayPlan>()
-        weekPlan.filter { it >= ctx.today && it < date && it !in trained }.forEach { d ->
-            val pl = planFor(ctx, d)
-            sim[d] = pl
-            log += d to Planner.planCredit(p, pl)
-            pl.items.forEach { used[it.ex] = d }
+        if (focus == null && day == null) storedPlan(s, date)?.let {
+            return it.copy(items = Planner.arrange(program(s), it.items, ctx.settings.supersets, it.focus, it.lead == "pull"))
         }
+        return weekPlans(ctx, date, focus, day)[date] ?: DayPlan(date.toString(), emptyList(), focus, day = day)
+    }
+
+    /**
+     * Все тренировки недели этой даты — одним расчётом ([Planner.week]): кто когда и сколько — по правилу «каждая мышца
+     * хотя бы раз в неделю, два — если успевает восстановиться». Сделанные тренировки и сохранённые планы учитываются как есть.
+     * focus/day — выбор человека для этой даты (акцент, тип дня).
+     */
+    fun weekPlans(ctx: Ctx, date: LocalDate, focus: String? = null, day: String? = null): Map<LocalDate, DayPlan> {
+        val s = ctx.store
+        val p = program(s)
+        val mon = date.with(DayOfWeek.MONDAY)
+        val trained = trainedDays(ctx, mon, mon.plusDays(6))
+        val thisWeek = mon == ctx.today.with(DayOfWeek.MONDAY)
+        // тренировки недели, которые ещё впереди (сделанные — в истории); другая неделя — только эта дата
+        val dates = ((if (thisWeek) week(ctx).plan.filter { it !in trained } else emptyList()) + date).distinct().sorted()
         val days = split(ctx)
         val focusSet = focus?.let { FOCUS[it]?.second } ?: emptySet()
         // акцент переносит день в тот тип сплита, где акцентных мышц больше всего («Ноги» в день «Верх» → «Низ»)
         fun overlap(d: DayType) = d.muscles.count { it in focusSet }
         val best = days.maxOf(::overlap)
-        val type = days.firstOrNull { it.id == day }
-            ?: (storedPlan(s, date)?.day?.let { id -> days.firstOrNull { it.id == id } } ?: dayType(ctx, date)).takeIf { overlap(it) == best }
-            ?: days.first { overlap(it) == best }
-        // тренировки этой недели после этой даты — по ним делится остаток недельного объёма (другая неделя — по среднему)
-        val ahead = if (date.with(DayOfWeek.MONDAY) != ctx.today.with(DayOfWeek.MONDAY)) null
-            else weekPlan.filter { it > date && it >= ctx.today }.map { dayType(ctx, it) }
-        // подходы по упражнениям на этой неделе до этой даты: сделанные и запланированные — чтобы варианты движения чередовались
-        val monday = date.with(DayOfWeek.MONDAY)
-        val weekSets = HashMap<String, Double>()
-        sessions(s).filter { it.first >= monday && it.first < date }.forEach { (_, sets) ->
-            sets.filter { it.r >= 5 }.forEach { weekSets[it.ex] = (weekSets[it.ex] ?: 0.0) + 1 }
+        fun storedType(d: LocalDate) = storedPlan(s, d)?.day?.let { id -> days.firstOrNull { it.id == id } }
+        val sessions = dates.map { d ->
+            if (d == date && (focus != null || day != null)) {
+                val type = days.firstOrNull { it.id == day }
+                    ?: (storedType(d) ?: dayType(ctx, d)).takeIf { overlap(it) == best } ?: days.first { overlap(it) == best }
+                Planner.Session(d, type, focus)
+            } else {
+                val stored = storedPlan(s, d)
+                Planner.Session(d, storedType(d) ?: dayType(ctx, d), stored?.focus, stored?.items)
+            }
         }
-        sim.values.forEach { pl -> pl.items.forEach { weekSets[it.ex] = (weekSets[it.ex] ?: 0.0) + it.sets } }
-        val plan = Planner.build(p, date, log, used, ctx.settings.sessionsPerWeek, focus, type, days, Planner.budget(ctx.settings.sessionMin), ahead, weekSets)
-        // в днях с грудью и спиной жимы и тяги меняются местами через раз: прошлый такой же день начинался с жимов → сегодня с тяг
-        val lead = if (type.muscles.containsAll(listOf("chest", "back"))) {
-            val prev = (1L..21L).map { date.minusDays(it) }.firstNotNullOfOrNull { d -> (sim[d] ?: storedPlan(s, d))?.takeIf { it.day == type.id } }
-            if (prev != null && prev.lead != "pull") "pull" else null
-        } else null
-        return plan.copy(items = Planner.arrange(p, plan.items, ctx.settings.supersets, focus, lead == "pull"), lead = lead)
+        // сделанное этой и прошлой недели: объём недели и восстановление
+        val hist = sessions(s).filter { it.first >= mon.minusDays(7) && it.first < mon.plusDays(7) && it.first !in dates }
+        val doneSets = HashMap<String, Double>()
+        hist.filter { it.first >= mon }.forEach { (_, sets) -> sets.filter { it.r >= 5 }.forEach { doneSets[it.ex] = (doneSets[it.ex] ?: 0.0) + 1 } }
+        val composed = Planner.week(p, sessions, Planner.muscleLog(p, hist), doneSets, lastUsed(s), Planner.budget(ctx.settings.sessionMin))
+
+        val out = LinkedHashMap<LocalDate, DayPlan>()
+        for (ss in sessions) {
+            val pl = composed[ss.date] ?: storedPlan(s, ss.date) ?: continue
+            // в днях с грудью и спиной жимы и тяги меняются местами через раз: прошлый такой же день начинался с жимов → этот с тяг
+            val lead = if (ss.fixed != null) pl.lead
+                else if (ss.type?.muscles?.containsAll(listOf("chest", "back")) == true) {
+                    val prev = (1L..21L).map { ss.date.minusDays(it) }.firstNotNullOfOrNull { d -> (out[d] ?: storedPlan(s, d))?.takeIf { it.day == ss.type.id } }
+                    if (prev != null && prev.lead != "pull") "pull" else null
+                } else null
+            out[ss.date] = pl.copy(items = Planner.arrange(p, pl.items, ctx.settings.supersets, pl.focus, lead == "pull"), lead = lead)
+        }
+        return out
     }
 
     /** Цели по упражнениям плана (двойная прогрессия; число подходов — из плана). */

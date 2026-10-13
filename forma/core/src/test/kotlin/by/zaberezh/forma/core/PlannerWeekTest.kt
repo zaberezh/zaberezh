@@ -48,29 +48,48 @@ class PlannerWeekTest {
     private fun pats(pl: DayPlan, m: String, p: Program = prog) = pl.items.mapNotNull { p.ex(it.ex) }.filter { main(it) == m }.map(::pattern)
     private fun count(pl: DayPlan, m: String) = mains(pl).count { it == m }
 
-    @Test fun upperLowerArmsEverySessionAndNotTheSameDayTwice() {
-        val plans = twoWeeks("ul")
-        assertEquals(6, plans.size)
-        plans.forEach { pl ->
-            assertTrue(count(pl, "triceps") >= 1 && count(pl, "biceps") >= 1, "руки в каждой тренировке: ${mains(pl)}")
-            assertTrue(pl.items.sumOf { it.sets } in 20..26, "подходов: ${pl.items}")
+    /** Мышца → дни недели, где она есть в плане. */
+    private fun days(plans: List<DayPlan>, p: Program = prog): Map<String, List<LocalDate>> =
+        plans.flatMap { pl -> pl.items.mapNotNull { p.ex(it.ex) }.map { mainMuscle(it) to LocalDate.parse(pl.date) } }
+            .distinct().groupBy({ it.first }, { it.second })
+
+    @Test fun everyMuscleOnceOrTwiceAWeekNeverTwoDaysInARow() {
+        // правило: каждая мышца — хотя бы раз в неделю, два — если между тренировками есть день отдыха; не чаще двух
+        val must = listOf("chest", "back", "side_delts", "biceps", "triceps", "quads", "hams", "forearms")
+        for ((split, n) in listOf("ul" to 3, "ul" to 4, "ppl" to 3, "full" to 3)) {
+            val plans = twoWeeks(split, n, weeks = 3)
+            for (w in 0..2) {
+                val d = days(week(plans, w))
+                val what = "$split×$n неделя $w: $d"
+                must.forEach { m -> assertTrue((d[m]?.size ?: 0) in 1..2, "$m: $what") }
+                d.forEach { (m, l) -> assertTrue(l.sorted().zipWithNext().none { (x, y) -> y == x.plusDays(1) }, "$m два дня подряд: $what") }
+            }
+            plans.forEach { pl -> assertTrue(pl.items.sumOf { it.sets } in 12..26, "$split: подходов ${pl.items}") }
         }
-        val upper = plans.filter { it.day == "upper" }
-        // не «2 на грудь и 2 на спину» в каждый «Верх»: в неделю с двумя «Верхами» объём делится между ними
-        val week1 = upper.filter { LocalDate.parse(it.date) < mon.plusWeeks(1) }
-        assertEquals(2, week1.size)
-        assertTrue(week1.any { count(it, "chest") == 1 }, "грудь: ${week1.map { count(it, "chest") }}")
-        assertTrue(week1.map { mains(it).filter { m -> m == "chest" || m == "back" }.size }.sum() <= 7, "${week1.map(::mains)}")
-        // разные варианты в разные дни: два «Верха» недели не повторяют упражнения на грудь
-        val chest = week1.map { pl -> pl.items.map { it.ex }.filter { prog.ex(it)!!.muscles.maxBy { m -> m.value }.key == "chest" }.toSet() }
-        assertTrue((chest[0] intersect chest[1]).isEmpty(), "грудь по дням: $chest")
+        // два раза — когда успевает восстановиться: при 4 тренировках «Верх» и «Низ» — по два раза, мышцы — дважды
+        for (w in 0..1) {
+            val d = days(week(twoWeeks("ul", 4), w))
+            listOf("chest", "back", "biceps", "triceps", "quads", "hams").forEach { assertEquals(2, d[it]?.size, "$it: $d") }
+        }
+        // «Верх–Низ–Верх»: руки в обоих «Верхах», в «Низ» им не нужно; «Низ–Верх–Низ»: «Верх» + один из «Низов»
+        val ul = twoWeeks("ul", 3)
+        val a = week(ul, 0); val b = week(ul, 1)
+        assertEquals(listOf("upper", "lower", "upper"), a.map { it.day })
+        assertTrue(a[1].items.none { mainMuscle(prog.ex(it.ex)!!) in setOf("biceps", "triceps") }, "${a[1].items}")
+        assertEquals(2, days(b)["biceps"]?.size, "${b.map { it.items }}")
+        assertEquals(1, days(b)["chest"]?.size)                  // крупные — только в свой день
+        // разные варианты в разные дни: главный жим в двух «Верхах» недели — разный (горизонтальный и наклонный)
+        val press = a.filter { it.day == "upper" }.map { pl -> pl.items.map { prog.ex(it.ex)!! }.first { main(it) == "chest" && by.zaberezh.forma.core.gym.isCompound(it) }.id }
+        assertEquals(2, press.toSet().size, "жим по дням: $press")
     }
 
-    @Test fun fullBodyOneChestOneTricepsEachDay() {
-        twoWeeks("full").forEach { pl ->
-            assertEquals(1, count(pl, "chest"), "${mains(pl)}")
-            assertTrue(count(pl, "triceps") == 1 && count(pl, "biceps") == 1, "${mains(pl)}")
-            assertTrue(count(pl, "quads") >= 1 && count(pl, "hams") >= 1, "${mains(pl)}")
+    @Test fun fullBodySpreadsEachMuscleOverTwoOfThreeDays() {
+        val plans = twoWeeks("full")
+        for (w in 0..1) {
+            val wk = week(plans, w)
+            val d = days(wk)
+            listOf("chest", "back", "side_delts", "biceps", "triceps", "quads", "hams").forEach { assertEquals(2, d[it]?.size, "$it: $d") }
+            wk.forEach { pl -> assertTrue(pl.items.size >= 5, "${pl.date}: ${mains(pl)}") }   // ни одного «пустого» дня
         }
     }
 
@@ -108,8 +127,10 @@ class PlannerWeekTest {
     @Test fun twoExercisesOfOneMuscleAreDifferentMovements() {
         for ((split, n) in listOf("ul" to 3, "ul" to 4, "ppl" to 3, "full" to 3)) twoWeeks(split, n).forEach { pl ->
             for (m in listOf("back", "chest", "triceps", "biceps")) {
+                // повтор варианта — только когда упражнений на мышцу больше, чем вариантов в базе
                 val p = pats(pl, m)
-                assertEquals(p.size, p.toSet().size, "$split×$n ${pl.date}: $m — одинаковые варианты $p")
+                val avail = prog.exercises.filter { main(it) == m }.map(::pattern).toSet().size
+                assertEquals(minOf(p.size, avail), p.toSet().size, "$split×$n ${pl.date}: $m — одинаковые варианты $p")
             }
         }
         // тяга дня — вертикальная + горизонтальная, а не две вертикальные (было: подтягивания + верхний блок)

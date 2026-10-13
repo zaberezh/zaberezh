@@ -188,8 +188,9 @@ class CoreTest {
         fun mains(pl: by.zaberezh.forma.core.gym.DayPlan) = pl.items.map { p.ex(it.ex)!!.muscles.maxBy { m -> m.value }.key }.toSet()
         assertTrue(mains(plans[0]).none { it in legs }, "верх без ног: ${plans[0]}")
         assertTrue(mains(plans[1]).any { it in legs } && mains(plans[1]).none { it in setOf("chest", "back") }, "низ: ${plans[1]}")
-        // руки — в каждой тренировке, и в «Низ» тоже: трицепс не раз в неделю
-        plans.forEach { pl -> assertTrue("triceps" in mains(pl) && "biceps" in mains(pl), "руки в каждой тренировке: $pl") }
+        // руки — в обоих «Верхах» недели (два раза — восстанавливаются); в «Низ» их не тащим, раз два раза уже есть
+        listOf(plans[0], plans[2]).forEach { pl -> assertTrue("triceps" in mains(pl) && "biceps" in mains(pl), "руки в «Верхе»: $pl") }
+        assertTrue(mains(plans[1]).none { it == "triceps" || it == "biceps" }, "${plans[1]}")
         // сделанная тренировка «Верх» → следующая по очереди «Низ», даже через пропуск
         GymModule.savePlan(s, plans[0])
         WORKOUT.save(s, Workout(mon.toString(), mon.startMs(), sets = listOf(SetLog("bench", 60.0, 8))), ts = mon.startMs() + 3600_000)
@@ -201,7 +202,8 @@ class CoreTest {
         val ppl = Ctx(MemoryStore().also { PROGRAM.set(it, prog); SETTINGS.set(it, Settings(split = "ppl")) }, mon)
         val pp = GymModule.week(ppl).plan.map { GymModule.planFor(ppl, it) }
         assertEquals(listOf("push", "pull", "legs"), pp.map { it.day })
-        assertTrue(mains(pp[0]).all { it in setOf("chest", "front_delts", "side_delts", "triceps") }, "жим: ${pp[0]}")
+        // крупные мышцы — только в свой день (мелкие — руки, дельты, пресс — могут во второй раз за неделю прийти и в чужой)
+        assertTrue(mains(pp[0]).none { it in setOf("back", "quads", "hams", "glutes") } && "chest" in mains(pp[0]), "жим: ${pp[0]}")
         // акцент «Ноги» в день «Верх» переводит день в «Низ»
         assertEquals("lower", GymModule.planFor(ctx, mon, "legs").day)
     }
