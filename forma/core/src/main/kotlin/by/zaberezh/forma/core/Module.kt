@@ -39,6 +39,7 @@ data class Settings(
     val supersets: Boolean = false,     // суперсеты не используются (решение пользователя)
     val split: String = "ul",
     val sessionMin: Int = 90,
+    val gymLevel: Int = 0,              // стаж в зале: 0 — до года, 1 — 1–3 года, 2 — больше 3 лет (плановый темп силы)
     val iisWatch: Boolean = true,       // фоновая проверка ИИС: отметки, пропуски, лабы
     val waterReminder: Boolean = true,  // «попей воды» каждый час
     val waterWeekdayFrom: Int = 16, val waterWeekendFrom: Int = 11, val waterTo: Int = 23,

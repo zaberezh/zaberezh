@@ -201,7 +201,8 @@ object GymModule : Module {
 
     /** Вывод по упражнению за последние [days] дней: растёт / медленно / стоит / падает (см. [verdict]). */
     fun trend(s: Store, ex: Exercise, to: LocalDate, days: Long = TREND_DAYS): ExTrend =
-        trendOf(ex, strengthPoints(ex, history(s, ex.id), latestWeight(s) ?: 70.0).second, to, days)
+        trendOf(ex, strengthPoints(ex, history(s, ex.id), latestWeight(s) ?: 70.0).second, to, days,
+            planPace(by.zaberezh.forma.core.SETTINGS.get(s).gymLevel))
 
     /** Подходы на мышцу за период (≥5 повторов; косвенные с коэффициентом). */
     fun volume(s: Store, from: LocalDate, to: LocalDate): Map<String, Double> {

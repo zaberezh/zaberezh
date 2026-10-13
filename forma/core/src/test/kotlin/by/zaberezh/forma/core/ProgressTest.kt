@@ -109,4 +109,24 @@ class ProgressTest {
         assertTrue(row.advice.any { "раз в ~14 дн." in it }, "${row.advice}")
         assertTrue(pr.notes.any { "худеешь" in it }, "${pr.notes}")
     }
+
+    @Test fun plannedPaceDependsOnExperience() {
+        // жим: три недели 60 × 8, потом три недели 60 × 9 — около +0,7% силы в неделю
+        fun run(level: Int): by.zaberezh.forma.core.gym.ExProgress {
+            val s = store()
+            SETTINGS.set(s, Settings(gymLevel = level, schema = 99))
+            listOf(8, 8, 8, 9, 9, 9).forEachIndexed { i, r -> log(s, 36L - i * 7, *three("bench", 60.0, r)) }
+            return GymModule.progress(Ctx(s, today), six).items.single()
+        }
+        val novice = run(0); val mid = run(1)
+        assertEquals("медленно", novice.trend.status)          // новичку план +1% в неделю — отстаёт
+        assertEquals("растёт", mid.trend.status)               // при стаже 1–3 года план +0,5% — в темпе
+        assertTrue(novice.vsPlan!! < 0 && mid.vsPlan!! > 0, "${novice.vsPlan} ${mid.vsPlan}")
+        // плановая линия — от первой тренировки окна, плановым темпом
+        val start = novice.planFrom!!
+        assertEquals(start.value * 1.01, novice.planned(start.date.plusDays(7))!!, 1e-9)
+        // цель через 4 недели: 60 × 9 = 78; +2% → 60 × 10; +4% ≈ 81.2 — это 60 × 11, выше диапазона 6–10 → +шаг: 62.5 × 9
+        assertEquals("62.5 кг × 9", novice.planGoal(4))
+        assertEquals("60 кг × 10", mid.planGoal(4))
+    }
 }
