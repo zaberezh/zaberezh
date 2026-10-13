@@ -14,10 +14,10 @@ package by.zaberezh.forma.core.gym
 fun pattern(e: Exercise): String {
     val n = e.name.lowercase().replace('ё', 'е')
     fun has(vararg w: String) = w.any { it in n }
-    return when (e.muscles.maxByOrNull { it.value }?.key) {
+    return when (mainMuscle(e)) {
         "chest" -> when {
             has("брусь", "dips", "вниз головой", "отрицательн", "decline") -> "dips"
-            has("наклон", "инклайн", "incline", "верх груди") -> "incline"
+            has("наклон", "инклайн", "incline", "верх груди", "°", "градус") -> "incline"   // «жим гантелей лёжа 45°» — на наклонной
             has("сведен", "развод", "бабочк", "кроссовер", "пек-дек", "пек дек", "fly", "пуловер", "pullover") -> "fly"
             else -> "flat"
         }
@@ -80,7 +80,7 @@ fun pattern(e: Exercise): String {
  * Только важное: варианты, без которых мышца растёт заметно хуже, и мышцы с одним упражнением на всю неделю.
  */
 fun baseAdvice(p: Program): List<String> {
-    val by = p.exercises.groupBy { it.muscles.maxByOrNull { m -> m.value }?.key.orEmpty() }
+    val by = p.exercises.groupBy(::mainMuscle)
     fun pats(m: String) = by[m].orEmpty().map(::pattern).toSet()
     val out = mutableListOf<String>()
     fun need(m: String, pat: String, text: String) { if (by[m].orEmpty().isNotEmpty() && pat !in pats(m)) out += text }

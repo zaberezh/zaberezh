@@ -59,6 +59,17 @@ val MUSCLES = linkedMapOf(
     "calves" to "икры", "abs" to "пресс", "forearms" to "предплечья",
 )
 
+/** Крупнее — раньше: порядок для выбора главной мышцы при равном вкладе. */
+private val SIZE = listOf("back", "chest", "quads", "hams", "glutes", "front_delts", "side_delts", "rear_delts",
+    "triceps", "biceps", "calves", "forearms", "abs")
+
+/**
+ * Главная мышца упражнения — с наибольшим вкладом; при равенстве — крупная: тяга с отмеченными «спина + бицепс» —
+ * упражнение на спину, жим «грудь + трицепс» — на грудь (порядок, в котором нажимали мышцы, не важен).
+ */
+fun mainMuscle(e: Exercise): String =
+    e.muscles.entries.minWithOrNull(compareBy({ -it.value }, { SIZE.indexOf(it.key).let { i -> if (i < 0) SIZE.size else i } }))?.key.orEmpty()
+
 fun defaultProgram(): Program =
     JSON.decodeFromString(Program.serializer(), Program::class.java.getResource("/default_program.json")!!.readText())
 

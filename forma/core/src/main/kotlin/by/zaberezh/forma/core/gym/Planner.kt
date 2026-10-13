@@ -36,19 +36,26 @@ val FOCUS: Map<String, Pair<String, Set<String>>> = linkedMapOf(
     "forearms" to ("Предплечья" to setOf("forearms")),
 )
 
-/** Тип дня сплита: какие мышцы в нём тренируются. */
-data class DayType(val id: String, val title: String, val muscles: Set<String>)
+/**
+ * Тип дня сплита: muscles — мышцы этого дня (их работа в нём обязательна по методике), extra — добивка по объёму
+ * недели (руки в «Низ»): берутся, если неделе их не хватает, но день без них — тоже полный.
+ */
+data class DayType(val id: String, val title: String, val muscles: Set<String>, val extra: Set<String> = emptySet()) {
+    val all: Set<String> get() = muscles + extra
+}
 
 private val UPPER = setOf("chest", "back", "front_delts", "side_delts", "rear_delts", "biceps", "triceps", "forearms")
 private val LEGS = setOf("quads", "hams", "glutes", "calves")
 
 /**
- * Сплиты: дни идут по кругу в порядке тренировок (пропуск не сбивает очередь).
- * В «Низ» — ещё руки (бицепс, трицепс) и предплечья: мелкие мышцы, восстанавливаются быстро, а при 3 тренировках
- * «Верх/Низ» иначе попадают в зал раз-два в неделю (в неделю с одним «Верхом» — один раз).
+ * Сплиты: дни идут по кругу в порядке тренировок (пропуск не сбивает очередь). При 3 тренировках «Верх/Низ» недели
+ * чередуются: Верх–Низ–Верх, потом Низ–Верх–Низ — за две недели поровну.
+ * В «Низ» руки, средняя дельта и предплечья — добивкой: мелкие мышцы восстанавливаются быстро, а в неделю с одним
+ * «Верхом» иначе попадали бы в зал раз в неделю. Обязательны они в «Верхе» — там свой день.
  */
 val SPLITS: Map<String, Pair<String, List<DayType>>> = linkedMapOf(
-    "ul" to ("Верх / Низ" to listOf(DayType("upper", "Верх", UPPER), DayType("lower", "Низ", LEGS + "abs" + "forearms" + "biceps" + "triceps" + "side_delts"))),
+    "ul" to ("Верх / Низ" to listOf(DayType("upper", "Верх", UPPER),
+        DayType("lower", "Низ", LEGS + "abs", extra = setOf("forearms", "biceps", "triceps", "side_delts")))),
     "ppl" to ("Жим / Тяга / Ноги" to listOf(
         DayType("push", "Жим", setOf("chest", "front_delts", "side_delts", "triceps")),
         DayType("pull", "Тяга", setOf("back", "rear_delts", "biceps", "forearms")),
@@ -72,7 +79,7 @@ private val SMALL = setOf("biceps", "triceps", "forearms", "calves", "abs", "sid
 
 /** Базовое (многосуставное) упражнение: несколько мышц и главная — крупная. */
 fun isCompound(e: Exercise): Boolean =
-    e.muscles.size > 1 && (e.muscles.maxByOrNull { it.value }?.key ?: "") !in SMALL
+    e.muscles.size > 1 && mainMuscle(e) !in SMALL
 
 /** Крупные мышцы: им можно 2 упражнения за тренировку, когда объёма дня много (разные углы/растяжение → равномернее рост). */
 private val BIG = setOf("chest", "back", "side_delts", "quads", "hams")
@@ -110,16 +117,29 @@ object Planner {
     /** Мышцы, которым засчитываются только свои упражнения (косвенная нагрузка из базовых не в счёт). */
     private val DIRECT = setOf("biceps", "triceps", "forearms", "side_delts")
 
+    /** Руки и средняя дельта — прямой работой в каждой тренировке, где они есть в дне сплита. */
+    private val ARMS = setOf("biceps", "triceps", "side_delts")
+
+    /** Основа дня: «Верх» без спины и груди или «Низ» без бицепса бедра — уже не тот день. */
+    private val CORE = setOf("back", "chest", "quads", "hams")
+
     /** Важность мышц: в этом порядке набирается тренировка, с конца срезается при нехватке времени (V-силуэт и руки — вперёд). */
     private val KEEP = listOf("back", "side_delts", "chest", "triceps", "biceps", "quads", "hams", "forearms",
         "rear_delts", "front_delts", "glutes", "calves", "abs")
     private fun keep(m: String) = KEEP.indexOf(m).let { if (it < 0) KEEP.size else it }
 
-    /** Засчитанные подходы на мышцу за один подход упражнения: прямой = 1, косвенный = доля (кроме [DIRECT]). */
-    fun credit(e: Exercise): Map<String, Double> = e.muscles.mapNotNull { (m, k) ->
-        val c = if (m in DIRECT) (if (k >= 1.0) 1.0 else 0.0) else k
-        if (c > 0) m to c else null
-    }.toMap()
+    /**
+     * Засчитанные подходы на мышцу за один подход упражнения: прямой = 1, косвенный = доля. Мышцам из [DIRECT] —
+     * только их собственные упражнения: тяга с отмеченными «спина + бицепс» бицепсу не засчитывается, иначе
+     * сгибания на бицепс из плана пропадают, а тяги их не заменяют.
+     */
+    fun credit(e: Exercise): Map<String, Double> {
+        val main = mainMuscle(e)
+        return e.muscles.mapNotNull { (m, k) ->
+            val c = if (m in DIRECT) (if (m == main) 1.0 else 0.0) else k
+            if (c > 0) m to c else null
+        }.toMap()
+    }
 
     /** Засчитанные подходы на мышцу по дням (≥5 повторов). */
     fun muscleLog(p: Program, sessions: List<Pair<LocalDate, List<SetLog>>>): List<Pair<LocalDate, Map<String, Double>>> =
@@ -158,13 +178,13 @@ object Planner {
         if (p.exercises.isEmpty()) return DayPlan(date.toString(), emptyList(), focus, day = day?.id)
         val volume = DEFAULT_VOLUME + p.volume
         val focusSet = focus?.let { FOCUS[it]?.second } ?: emptySet()
-        val allowed = (day?.muscles ?: volume.keys) + focusSet
-        fun main(e: Exercise) = e.muscles.maxByOrNull { it.value }?.key ?: ""
-        val byMuscle = p.exercises.groupBy(::main)
+        val allowed = (day?.all ?: volume.keys) + focusSet
+        val home = day?.muscles ?: allowed   // мышцы, для которых этот день — свой
+        val byMuscle = p.exercises.groupBy(::mainMuscle)
 
         // сколько тренировок с этой мышцей ещё будет на неделе, считая сегодняшнюю
-        fun left(m: String): Double = if (ahead != null) 1.0 + ahead.count { m in it.muscles }
-            else (if (split.isEmpty()) sessionsPerWeek.toDouble() else sessionsPerWeek.toDouble() * split.count { m in it.muscles } / split.size).coerceAtLeast(1.0)
+        fun left(m: String): Double = if (ahead != null) 1.0 + ahead.count { m in it.all }
+            else (if (split.isEmpty()) sessionsPerWeek.toDouble() else sessionsPerWeek.toDouble() * split.count { m in it.all } / split.size).coerceAtLeast(1.0)
         val monday = date.with(java.time.DayOfWeek.MONDAY)
         val thisWeek = log.filter { it.first >= monday && it.first < date }
         fun usedThisWeek(e: Exercise) = lastUsed[e.id]?.let { it >= monday && it < date } == true
@@ -180,7 +200,8 @@ object Planner {
             var s = (w - done).coerceAtLeast(0.0) / left(m)
             val last = log.filter { it.first < date && (it.second[m] ?: 0.0) >= 3 }.maxOfOrNull { it.first }
             val gap = last?.let { ChronoUnit.DAYS.between(it, date) } ?: 99
-            s *= when { gap <= 1 -> 0.3; gap == 2L -> 0.8; else -> 1.0 }
+            // мелкие мышцы (руки, дельты, икры, пресс) восстанавливаются за 48 ч — им только «вчера» снижает объём
+            s *= when { gap <= 1 -> if (m in SMALL) 0.5 else 0.3; gap == 2L -> if (m in SMALL) 1.0 else 0.8; else -> 1.0 }
             if (focusSet.isNotEmpty() && m !in focusSet) s *= 0.6
             if (m in focusSet) s = maxOf(s, 6.0)              // акцент дня — минимум 2 упражнения по ~3 подхода
             return s.coerceAtMost(PER_MUSCLE)
@@ -193,7 +214,10 @@ object Planner {
         for (m in allowed.sortedBy(::keep)) {
             val have = byMuscle[m].orEmpty().filter { e -> slots.none { it.e.id == e.id } }
             if (have.isEmpty()) continue
-            val s = want(m) - (today[m] ?: 0.0)
+            var s = want(m) - (today[m] ?: 0.0)
+            // руки и средняя дельта в своём дне — хотя бы 2 прямых подхода, пока неделя не набрала их максимум
+            // (иначе объём «уходит» в добивку другого дня, а в «Верхе» бицепса нет вовсе)
+            if (m in ARMS && m in home && s < 2.0 && thisWeek.sumOf { it.second[m] ?: 0.0 } < (volume[m]?.getOrNull(1) ?: 0)) s = 2.0
             if (s < 1.5) continue
             // второе упражнение — только когда одному не вытянуть объём дня (> ~6 подходов): иначе одно,
             // а другой вариант — в другой день недели
@@ -230,15 +254,29 @@ object Planner {
             }
         }
 
-        // время: лишнее срезается с наименее важного (второе упражнение мышцы — менее важно первого)
-        val maxEx = (sessionSets / 2.5).toInt().coerceAtLeast(4)
-        fun rank(sl: Slot) = keep(sl.m) + if (sl.second) 4 else 0
+        // время: лишнее срезается с наименее важного. Важность — по ступеням, а не одним списком мышц на все дни:
+        // 0 — основа дня (спина и грудь в «Верх», квадрицепс и бицепс бедра в «Низ») и акцент;
+        // 1 — руки и средняя дельта: прямой работой в каждой тренировке, где они есть (из них первым — кто сильнее
+        //     отстаёт от недельной цели: пропустили бицепс во вторник — в пятницу он раньше трицепса);
+        // 2 — второе упражнение основы; 3 — предплечья и задняя дельта; 4 — остальное (икры, пресс, вторые упражнения мелких)
+        val core = home.intersect(CORE)
+        fun tier(sl: Slot) = when {
+            sl.m in focusSet -> if (sl.second) 2 else 0
+            sl.second -> if (sl.m in core) 2 else 4
+            sl.m in core -> 0
+            sl.m in ARMS -> if (sl.m in home) 1 else 3
+            sl.m == "forearms" || sl.m == "rear_delts" -> 3
+            else -> 4
+        }
+        fun rank(sl: Slot): Double = tier(sl) * 100.0 + if (tier(sl) == 1) -want(sl.m) else keep(sl.m).toDouble()
+        // короткая тренировка — меньше подходов в упражнении, но не меньше 5 упражнений: основа дня + руки и дельты
+        val maxEx = (sessionSets / 2.5).toInt().coerceAtLeast(5)
         while (slots.size > maxEx) slots.remove(slots.maxByOrNull(::rank)!!)
         while (slots.sumOf { it.sets } > sessionSets) {
             val drop = slots.maxByOrNull(::rank) ?: break
             val cut = slots.filter { it.sets > 2 }.maxByOrNull(::rank)
-            // необязательное (пресс, икры, вторые упражнения ног) — убрать; важное — сначала урезать подходы
-            if (rank(drop) >= 10 || cut == null) slots.remove(drop) else cut.sets--
+            // необязательное (пресс, икры, вторые упражнения мелких) — убрать; важное — сначала урезать подходы
+            if (tier(drop) >= 4 || cut == null) slots.remove(drop) else cut.sets--
         }
         // время осталось — подходы важным мышцам, пока им ещё нужно (не больше 4 в упражнении)
         while (slots.sumOf { it.sets } < sessionSets - 1) {
@@ -254,7 +292,7 @@ object Planner {
 
     private enum class Kind { PUSH, PULL, LEGS, ARMS_FLEX, ARMS_EXT, OTHER }
 
-    private fun main(e: Exercise) = e.muscles.maxByOrNull { it.value }?.key ?: ""
+    private fun main(e: Exercise) = mainMuscle(e)
 
     private fun kind(e: Exercise): Kind = when (main(e)) {
         "chest", "front_delts" -> Kind.PUSH
@@ -369,11 +407,11 @@ object Planner {
         return out
     }
 
-    /** Короткое описание дня: главные мышцы плана. */
+    /** Короткое описание дня: что реально тренируется (засчитанные подходы), до 5 мышц — бицепс с 2–3 подходами не теряется. */
     fun summary(p: Program, plan: DayPlan): String {
-        val m = HashMap<String, Int>()
-        plan.items.forEach { i -> p.ex(i.ex)?.muscles?.filterValues { it >= 1.0 }?.keys?.forEach { k -> m[k] = (m[k] ?: 0) + i.sets } }
-        return m.entries.sortedByDescending { it.value }.take(4)
+        val m = HashMap<String, Double>()
+        plan.items.forEach { i -> p.ex(i.ex)?.let(::credit)?.filterValues { it >= 1.0 }?.forEach { (k, v) -> m[k] = (m[k] ?: 0.0) + v * i.sets } }
+        return m.entries.sortedByDescending { it.value }.take(5)
             .joinToString(", ") { MUSCLES[it.key]?.substringBefore(" (") ?: it.key }
     }
 }

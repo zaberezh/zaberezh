@@ -15,7 +15,8 @@ fun aiPlanPrompt(ctx: Ctx, date: LocalDate, focus: String?): String = buildStrin
     val draft = GymModule.planFor(ctx, date, focus ?: stored?.focus, stored?.day)
     val type = GymModule.split(ctx).firstOrNull { it.id == draft.day }
     appendLine("Составь тренировку на $date (${date.dayOfWeek.getDisplayName(TextStyle.FULL, ru)}). " +
-        "Тип дня: ${type?.let { "${it.title} — только мышцы ${it.muscles.joinToString(",")}" } ?: "всё тело"}. " +
+        "Тип дня: ${type?.let { "${it.title} — только мышцы ${it.muscles.joinToString(",")}" +
+            (if (it.extra.isEmpty()) "" else " (и добивкой по объёму недели: ${it.extra.joinToString(",")})") } ?: "всё тело"}. " +
         "Акцент дня: ${focus?.let { FOCUS[it]?.first } ?: "нет"}.")
     appendLine("\nБаза упражнений (id | название | мышцы | схема | сейчас):")
     p.exercises.forEach { e ->

@@ -4,6 +4,7 @@ import by.zaberezh.forma.core.gym.DayPlan
 import by.zaberezh.forma.core.gym.Exercise
 import by.zaberezh.forma.core.gym.Program
 import by.zaberezh.forma.core.gym.baseAdvice
+import by.zaberezh.forma.core.gym.mainMuscle
 import by.zaberezh.forma.core.gym.pattern
 import by.zaberezh.forma.core.gym.FOREARM_SEED
 import by.zaberezh.forma.core.gym.GymModule
@@ -24,11 +25,12 @@ class PlannerWeekTest {
     private val prog = parseProgram(javaClass.getResource("/test_program.json")!!.readText()).let { it.copy(exercises = it.exercises + FOREARM_SEED) }
     private val mon = LocalDate.of(2026, 10, 5)
 
-    /** Прожить две недели: каждую тренировку сделать ровно по плану. */
-    private fun twoWeeks(split: String, sessions: Int = 3, program: Program = prog): List<DayPlan> {
-        val s = MemoryStore(); PROGRAM.set(s, program); SETTINGS.set(s, Settings(split = split, sessionsPerWeek = sessions, schema = 99))
+    /** Прожить недели: каждую тренировку сделать ровно по плану. */
+    private fun twoWeeks(split: String, sessions: Int = 3, program: Program = prog, weeks: Int = 2, minutes: Int = 90): List<DayPlan> {
+        val s = MemoryStore(); PROGRAM.set(s, program)
+        SETTINGS.set(s, Settings(split = split, sessionsPerWeek = sessions, sessionMin = minutes, schema = 99))
         val out = mutableListOf<DayPlan>()
-        for (w in 0..1) for (d in GymModule.week(Ctx(s, mon.plusWeeks(w.toLong()))).plan) {
+        for (w in 0 until weeks) for (d in GymModule.week(Ctx(s, mon.plusWeeks(w.toLong()))).plan) {
             val plan = GymModule.planFor(Ctx(s, d), d)
             out += plan
             GymModule.savePlan(s, plan.copy(source = "edited"))
@@ -38,8 +40,8 @@ class PlannerWeekTest {
         return out
     }
 
-    private fun mains(pl: DayPlan) = pl.items.map { prog.ex(it.ex)!!.muscles.maxBy { m -> m.value }.key }
-    private fun main(e: Exercise) = e.muscles.maxBy { it.value }.key
+    private fun mains(pl: DayPlan) = pl.items.map { mainMuscle(prog.ex(it.ex)!!) }
+    private fun main(e: Exercise) = mainMuscle(e)
     private val legCurl = Exercise("leg_curl", "Сгибания ног сидя", mapOf("hams" to 1.0), repMin = 10, repMax = 15)
     private fun week(plans: List<DayPlan>, w: Int) = plans.filter { LocalDate.parse(it.date).let { d -> d >= mon.plusWeeks(w.toLong()) && d < mon.plusWeeks(w + 1L) } }
     /** Варианты движения мышцы в плане, по порядку. */
@@ -116,8 +118,8 @@ class PlannerWeekTest {
 
     @Test fun weekCoversBothFunctionsAndRepeatsWeekToWeek() {
         val withCurl = prog.copy(exercises = prog.exercises + legCurl)
-        val plans = twoWeeks("ul", 4, withCurl)
-        for (w in 0..1) {
+        val plans = twoWeeks("ul", 4, withCurl, weeks = 4)
+        for (w in 0..3) {
             val wk = week(plans, w)
             // бицепс бедра: румынская тяга и сгибания ног — в разные «Низы» недели, а не одно и то же дважды
             assertEquals(setOf("hinge", "curl"), wk.flatMap { pats(it, "hams", withCurl) }.toSet(), "неделя $w")
@@ -127,9 +129,10 @@ class PlannerWeekTest {
             // разные «Верхи»: первым жимом — горизонтальный и наклонный
             assertEquals(setOf("flat", "incline"), upper.map { pats(it, "chest", withCurl).first() }.toSet())
         }
-        // неделя к неделе — та же раскладка базовых (вес по ним растёт)
+        // неделя к неделе — та же раскладка базовых (вес по ним растёт); первые недели вводят в ротацию то, что ещё не делал,
+        // дальше раскладка устоялась
         fun base(pl: DayPlan) = pl.items.mapNotNull { withCurl.ex(it.ex) }.filter { main(it) in setOf("chest", "back", "quads", "hams") }.map { it.id }.toSet()
-        val a = week(plans, 0); val b = week(plans, 1)
+        val a = week(plans, 2); val b = week(plans, 3)
         a.indices.forEach { i -> assertEquals(base(a[i]), base(b[i]), "день $i: ${a[i].date} / ${b[i].date}") }
     }
 
@@ -148,5 +151,28 @@ class PlannerWeekTest {
         val poor = Program("p", exercises = listOf(prog.ex("bench")!!, prog.ex("lat_pulldown")!!), days = emptyList())
         val b = baseAdvice(poor)
         assertTrue(b.any { "горизонтальной тяги" in it } && b.any { "наклонной" in it } && b.any { "Одно упражнение" in it }, "$b")
+    }
+
+    @Test fun armsOnEveryUpperAndLegsOnEveryLowerAtAnyLength() {
+        for (minutes in listOf(45, 60, 75, 90)) for (n in listOf(3, 4)) twoWeeks("ul", n, minutes = minutes).forEach { pl ->
+            val m = mains(pl)
+            val what = "$minutes мин ×$n ${pl.date} ${pl.day}: $m"
+            if (pl.day == "upper") {
+                // свой день рук: бицепс, трицепс, средняя дельта — прямой работой каждый раз (а не «бицепс ушёл в Низ»)
+                assertTrue("biceps" in m && "triceps" in m && "side_delts" in m, what)
+                assertTrue("back" in m && "chest" in m, what)
+            } else assertTrue("quads" in m && "hams" in m, what)       // «Низ» без бицепса бедра — не «Низ»
+        }
+    }
+
+    @Test fun pullMarkedWithBicepsDoesNotReplaceCurls() {
+        // тяга, где бицепс отмечен основной мышцей раньше спины: упражнение всё равно на спину, и бицепсу оно не засчитывается
+        val pulldown = prog.ex("lat_pulldown")!!.copy(muscles = linkedMapOf("biceps" to 1.0, "back" to 1.0, "rear_delts" to 0.5))
+        assertEquals("back", mainMuscle(pulldown))
+        assertEquals(null, by.zaberezh.forma.core.gym.Planner.credit(pulldown)["biceps"])
+        val p = prog.copy(exercises = prog.exercises.map { if (it.id == "lat_pulldown") pulldown else it })
+        twoWeeks("ul", program = p).filter { it.day == "upper" }.forEach { pl ->
+            assertTrue(pl.items.any { p.ex(it.ex)?.let(::mainMuscle) == "biceps" }, "${pl.date}: ${pl.items.map { it.ex }}")
+        }
     }
 }
