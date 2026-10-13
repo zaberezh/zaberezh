@@ -90,6 +90,24 @@ class FatSecretTest {
         assertTrue("кусок" in pie.source, pie.source)
     }
 
+    @Test fun descriptorIsNotAnExtraIngredient() {
+        val olivier = page(
+            row("/Лента/Оливье", "Оливье", "ВкусВилл", "в 100г - " + kcal("134", "8,10", "7,00", "8,20")),
+            row("/общий/Салат-Оливье", "Салат Оливье", null, "в 100 г - " + kcal("172", "11.57", "11.35", "6.00")),
+            row("/общий/Оливье-с-Курицей", "Оливье с Курицей", null, "в 100 г - " + kcal("112", "4.15", "10.50", "8.17")),
+        )
+        val o = assertNotNull(site("оливье" to olivier).find("оливье 200г"))
+        assertEquals("Салат оливье", o.name)                                                   // «салат» — не лишний ингредиент
+        assertEquals(172.0, o.per100.kcal, 0.5); assertEquals(200.0, o.grams)
+        val pie = page(
+            row("/Провиант/Пирог", "Пирог с Мясом и Сыром", "Провиант ", "в 100г - " + kcal("376", "22,90", "29,10", "13,00")),
+            row("/общий/Пирог-с-Мясом", "Пирог с Мясом", null, "в 1 кусок - " + kcal("313", "7.77", "44.82", "14.33"), "1 порция - 313ккал, 100 г - 285ккал"),
+        )
+        val p = assertNotNull(site("пирог с мясом и сыром" to pie).find("пирог с мясом и сыром"))
+        assertEquals("Пирог с мясом и сыром (Провиант)", p.name)
+        assertEquals(109.8, p.grams, 0.1); assertTrue("1 кусок ≈110 г" in p.source, p.source)  // кусок — у общего «Пирога с мясом»
+    }
+
     @Test fun typicalAmongBrandsWhenNoPlainDish() {
         val b = assertNotNull(site("блины с творогом и изюмом" to blini).find("блины с творогом и изюмом"))
         assertEquals("Блины с творогом и изюмом", b.name)
@@ -132,7 +150,7 @@ class FatSecretTest {
         assertEquals(50.0, Dish.portion("сырник").first)
         assertEquals(180.0, Dish.portion("котлеты").first)                                    // 2 по 90 г
         assertEquals(160.0, Dish.portion("2 пирожка").first)
-        assertEquals(120.0, Dish.portion("кусок пиццы").first)
+        assertEquals(120.0 to "кусок ≈120 г — поправь, если не так", Dish.portion("кусок пиццы"))
         assertEquals(180.0, Dish.portion("тарелка блинов").first)                            // тарелка штучного — несколько штук
         assertEquals(150.0, Dish.portion("курица 150г").first)
         assertEquals(100.0, Dish.portion("что-то непонятное").first)

@@ -121,7 +121,7 @@ object Dish {
      * Сколько положить и пометка «поправь». piece — вес одной штуки у источника (FatSecret: «1 пирожок» = 75 г),
      * portion — его порция («1 порция» = 155 г); null — источник не знает. Явный вес из запроса — главнее всего.
      */
-    fun portion(part: String, piece: Double? = null, portion: Double? = null): Pair<Double, String?> {
+    fun portion(part: String, piece: Double? = null, portion: Double? = null, pieceLabel: String = "шт."): Pair<Double, String?> {
         WebFood.gramsOf(part)?.takeIf { it > 0 }?.let { return it to null }
         val o = order(part)
         val (word, t) = typical(o.dish) ?: (null to null)
@@ -136,12 +136,12 @@ object Dish {
             }
             Unit.PIECE -> {
                 val one = piece ?: t?.takeIf { it.piece }?.grams ?: 100.0
-                one * n to "${num(n)} × кусок ≈${g(one)} г — поправь, если не так"
+                one * n to "${if (n == 1.0) "" else num(n) + " × "}кусок ≈${g(one)} г — поправь, если не так"
             }
             Unit.GLASS -> 250.0 * n to "${if (n == 1.0) "" else num(n) + " × "}стакан ≈250 г"
             null -> {
                 val pieceG = piece ?: t?.takeIf { it.piece }?.grams
-                val label = if (piece == null && t?.piece == true) t.label else "шт."
+                val label = if (piece == null && t?.piece == true) t.label else pieceLabel
                 when {
                     o.count != null && pieceG != null -> pieceG * n to "${num(n)} $label по ${g(pieceG)} г — поправь, если не так"
                     o.count != null -> (t?.grams ?: portion ?: 100.0).let { it * n to "${num(n)} × ≈${g(it)} г — поправь, если не так" }

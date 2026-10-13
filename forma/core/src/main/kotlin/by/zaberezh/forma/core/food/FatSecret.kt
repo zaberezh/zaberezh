@@ -32,11 +32,11 @@ class FatSecret(private val fetch: (String) -> String?, private val log: (String
          * Вес одной штуки того, что съедено: кусок, штука или та же вещь («1 котлета» для «котлеты»).
          * loose — блюдо незнакомое (не суп, не пирог…), тогда годится любая штучная порция («1 пирожное (28г)»).
          */
-        fun piece(word: String?, loose: Boolean): Double? =
-            servings.firstOrNull { it.unit in SLICE }?.grams
-                ?: servings.firstOrNull { word != null && it.unit !in PORTION && it.unit !in PACK && Dish.sameWord(it.unit, word) }?.grams
-                ?: servings.firstOrNull { it.unit in PIECE }?.grams
-                ?: if (loose) servings.firstOrNull { it.unit !in PORTION && it.unit !in PACK }?.grams else null
+        fun piece(word: String?, loose: Boolean): Pair<Double, String>? =
+            servings.firstOrNull { it.unit in SLICE }?.let { it.grams to "кусок" }
+                ?: (servings.firstOrNull { word != null && it.unit !in PORTION && it.unit !in PACK && Dish.sameWord(it.unit, word) }
+                    ?: servings.firstOrNull { it.unit in PIECE }
+                    ?: if (loose) servings.firstOrNull { it.unit !in PORTION && it.unit !in PACK } else null)?.let { it.grams to "шт." }
 
         fun portion(): Double? = (servings.firstOrNull { it.unit == "порция" } ?: servings.firstOrNull { it.unit in PORTION })?.grams
     }
@@ -93,7 +93,7 @@ class FatSecret(private val fetch: (String) -> String?, private val log: (String
         val donors = listOf(e) + all.filter { it !== e && (it.title.equals(e.title, true) || it.generic && Dish.sameWord(head(it.name), head(e.name))) }
         val piece = donors.firstNotNullOfOrNull { it.piece(word, loose = typical == null) }
         val portion = donors.firstNotNullOfOrNull { it.portion() }
-        val (grams, note) = Dish.portion(part, piece, portion)
+        val (grams, note) = Dish.portion(part, piece?.first, portion, piece?.second ?: "шт.")
         log("FatSecret: «$part» → «${e.title}»" + (if (p.typicalOf > 0) " (типичное из ${p.typicalOf})" else "") + ", ${Math.round(grams)} г")
         val name = if (p.typicalOf > 0) tidy(e.name) else tidy(e.name) + (e.brand?.let { " ($it)" } ?: "")
         val src = "FatSecret" + (if (p.typicalOf > 0) " · типичное из ${p.typicalOf} вариантов" else "") + (note?.let { " · $it" } ?: "")
@@ -170,7 +170,7 @@ class FatSecret(private val fetch: (String) -> String?, private val log: (String
             data class C(val e: Entry, val score: Double, val extra: Int)
             val cs = entries.mapNotNull { e ->
                 val fit = ShopMatch.fit(dish, e.name + " " + e.brand.orEmpty())
-                if (fit.ok) C(e, fit.score, ShopMatch.fit(dish, e.name).extra) else null
+                if (fit.ok) C(e, fit.score, ShopMatch.fit(dish, plain(e.name)).extra) else null
             }
             val best = cs.minWithOrNull(compareBy<C>({ -it.score }, { it.extra }, { if (it.e.generic) 0 else 1 }, { it.e.rank })) ?: return null
             val tier = cs.filter { abs(it.score - best.score) < 0.01 && it.extra == best.extra }
@@ -190,6 +190,11 @@ class FatSecret(private val fetch: (String) -> String?, private val log: (String
             out += ShopMatch.queryWords(dish).joinToString(" ")
             return out.filter { it.isNotBlank() }
         }
+
+        /** «Салат», «домашний», «классический» — не лишний ингредиент: «Салат Оливье» — это и есть оливье. */
+        private val DESCRIPTOR = Regex("салат|суп|блюдо|домашн\\p{L}*|по-домашнему|классическ\\p{L}*|традиционн\\p{L}*|обычн\\p{L}*|" +
+            "прост(ой|ая|ое|ые)|свеж\\p{L}*|вкусн\\p{L}*|готов\\p{L}*|натуральн\\p{L}*", RegexOption.IGNORE_CASE)
+        private fun plain(name: String) = name.split(" ").filterNot { DESCRIPTOR.matches(it) }.joinToString(" ")
 
         private fun head(name: String) = Regex("\\p{L}+").find(name.lowercase())?.value.orEmpty()
 
