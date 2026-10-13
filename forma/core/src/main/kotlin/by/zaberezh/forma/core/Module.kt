@@ -8,6 +8,7 @@ import by.zaberezh.forma.core.daily.TestDef
 import by.zaberezh.forma.core.daily.TestModule
 import by.zaberezh.forma.core.gym.GymModule
 import by.zaberezh.forma.core.gym.PROGRAM
+import by.zaberezh.forma.core.gym.reguessed
 import by.zaberezh.forma.core.sleep.SleepModule
 import by.zaberezh.forma.core.store.Pref
 import by.zaberezh.forma.core.store.Store
@@ -70,7 +71,7 @@ val PULLUP_MAX = TestDef("pullups_max", "Подтягивания: максим�
 val SETTINGS = Pref("settings", Settings.serializer()) { Settings() }
 
 /** Последняя версия схемы настроек (см. миграции ниже). */
-const val SETTINGS_SCHEMA = 6
+const val SETTINGS_SCHEMA = 7
 
 /**
  * Миграция сохранённых настроек при обновлении приложения.
@@ -100,6 +101,10 @@ fun migrateSettings(store: Store) {
     }
     if (st.schema < 6) { // v6: максимум подтягиваний — каждый день, а не раз в неделю
         st = st.copy(tests = st.tests.map { if (it.id == PULLUP_MAX.id) PULLUP_MAX else it }, schema = 6)
+    }
+    if (st.schema < 7) { // v7: мышцы и шаг, угаданные по названию старыми правилами, — по новым (французский жим — трицепс)
+        if (store.kvGet(PROGRAM.key) != null) PROGRAM.set(store, PROGRAM.get(store).reguessed())
+        st = st.copy(schema = 7)
     }
     SETTINGS.set(store, st)
 }

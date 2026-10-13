@@ -131,12 +131,23 @@ object Planner {
         }.toMap()
     }
 
-    /** Засчитанные подходы на мышцу по дням (≥5 повторов). */
-    fun muscleLog(p: Program, sessions: List<Pair<LocalDate, List<SetLog>>>): List<Pair<LocalDate, Map<String, Double>>> =
+    /**
+     * Сделанная тренировка для составителя: credit — засчитанные подходы на мышцу (недельный объём), direct — подходы
+     * упражнений, где мышца главная. Тренировкой мышцы (частота, отдых) считается только direct: румынская тяга
+     * нагружает спину косвенно, но тренировкой спины не становится — иначе спина выпадает из второго «Верха».
+     */
+    data class Done(val date: LocalDate, val credit: Map<String, Double>, val direct: Map<String, Double>)
+
+    /** Сделанные тренировки → засчитанные и прямые подходы на мышцу (≥5 повторов). */
+    fun muscleLog(p: Program, sessions: List<Pair<LocalDate, List<SetLog>>>): List<Done> =
         sessions.map { (d, sets) ->
-            val m = HashMap<String, Double>()
-            sets.filter { it.r >= 5 }.forEach { st -> p.ex(st.ex)?.let(::credit)?.forEach { (k, v) -> m[k] = (m[k] ?: 0.0) + v } }
-            d to m
+            val m = HashMap<String, Double>(); val direct = HashMap<String, Double>()
+            sets.filter { it.r >= 5 }.forEach { st ->
+                val e = p.ex(st.ex) ?: return@forEach
+                credit(e).forEach { (k, v) -> m[k] = (m[k] ?: 0.0) + v }
+                mainMuscle(e).let { direct[it] = (direct[it] ?: 0.0) + 1 }
+            }
+            Done(d, m, direct)
         }
 
     /** План → засчитанные подходы на мышцу (зафиксированные планы недели учитываются в остальных днях). */
@@ -163,14 +174,17 @@ object Planner {
 
     private class Slot(val e: Exercise, var sets: Int, val m: String, val second: Boolean)
 
+    /** Варианты, которые засчитываются мышце, но её не растят как основные (шраги — спине). */
+    private val ACCESSORY = setOf("traps")
+
     /**
      * Планы открытых (не сделанных и не зафиксированных) тренировок недели.
-     * @param done сделанные тренировки (дата → засчитанные подходы на мышцу) этой и прошлой недели: объём и восстановление
+     * @param done сделанные тренировки этой и прошлой недели: объём и восстановление
      * @param doneSets подходы по упражнениям, сделанные на этой неделе (для чередования вариантов движения)
      * @param lastUsed последняя дата каждого упражнения
      */
     fun week(
-        p: Program, sessions: List<Session>, done: List<Pair<LocalDate, Map<String, Double>>>,
+        p: Program, sessions: List<Session>, done: List<Done>,
         doneSets: Map<String, Double>, lastUsed: Map<String, LocalDate>, sessionSets: Int,
     ): Map<LocalDate, DayPlan> {
         val all = sessions.sortedBy { it.date }
@@ -187,7 +201,7 @@ object Planner {
 
     private fun compose(
         p: Program, all: List<Session>, open: List<Session>, slots: Map<LocalDate, MutableList<Slot>>,
-        done: List<Pair<LocalDate, Map<String, Double>>>, doneSets: Map<String, Double>, lastUsed: Map<String, LocalDate>, sessionSets: Int,
+        done: List<Done>, doneSets: Map<String, Double>, lastUsed: Map<String, LocalDate>, sessionSets: Int,
     ) {
         val volume = DEFAULT_VOLUME + p.volume
         val byMuscle = p.exercises.groupBy(::mainMuscle)
@@ -199,14 +213,16 @@ object Planner {
         // сделанное и зафиксированное: объём недели, дни работы мышцы (для восстановления — и прошлой недели), подходы упражнений
         val base = HashMap<String, Double>()
         val worked = HashMap<String, MutableSet<LocalDate>>()
-        fun account(d: LocalDate, c: Map<String, Double>) = c.forEach { (m, v) ->
-            if (inWeek(d)) base[m] = (base[m] ?: 0.0) + v
-            if (v >= 2.0) worked.getOrPut(m) { mutableSetOf() } += d
+        fun account(d: LocalDate, credit: Map<String, Double>, direct: Map<String, Double>) {
+            if (inWeek(d)) credit.forEach { (m, v) -> base[m] = (base[m] ?: 0.0) + v }
+            direct.forEach { (m, v) -> if (v >= 2.0) worked.getOrPut(m) { mutableSetOf() } += d }
         }
-        done.forEach { (d, c) -> account(d, c) }
+        done.forEach { account(it.date, it.credit, it.direct) }
         val exSets = HashMap(doneSets)
         all.filter { it.fixed != null }.forEach { s ->
-            account(s.date, planCredit(p, DayPlan(s.date.toString(), s.fixed!!)))
+            val direct = HashMap<String, Double>()
+            s.fixed!!.forEach { i -> p.ex(i.ex)?.let { e -> mainMuscle(e).let { direct[it] = (direct[it] ?: 0.0) + i.sets } } }
+            account(s.date, planCredit(p, DayPlan(s.date.toString(), s.fixed)), direct)
             s.fixed.forEach { exSets[it.ex] = (exSets[it.ex] ?: 0.0) + it.sets }
         }
         val used = HashMap(lastUsed)
@@ -247,6 +263,8 @@ object Planner {
                 // сколько подходов этого варианта движения уже на неделе (сделано + зафиксировано + составлено)
                 fun weekUses(e: Exercise) = have.filter { pattern(it) == pattern(e) }.sumOf { exSets[it.id] ?: 0.0 }
                 val e = pool.minWithOrNull(compareBy<Exercise>(
+                    // шраги — трапеция, а не широчайшие: спине их дают, только если других упражнений не осталось
+                    { if (pattern(it) in ACCESSORY) 1 else 0 },
                     // крупной мышце первым — базовое; у бицепса бедра сгибания ног — не добивка, а его вторая функция
                     { if (first == null && m in BIG && m != "hams" && !isCompound(it) && pool.any(::isCompound)) 1 else 0 },
                     // второе упражнение дня — другой вариант движения: вертикальная + горизонтальная тяга, а не две вертикальные
@@ -259,7 +277,7 @@ object Planner {
                     { used[it.id] ?: LocalDate.MIN },
                     { p.exercises.indexOf(it) },
                 )) ?: return@repeat
-                day += Slot(e, per, m, i > 0)
+                day += Slot(e, per, m, first != null)
                 exSets[e.id] = (exSets[e.id] ?: 0.0) + per
                 used[e.id] = d
             }
@@ -270,7 +288,10 @@ object Planner {
             if (byMuscle[m].isNullOrEmpty()) return
             val forced = open.filter { m in focusOf.getValue(it.date) }   // акцент дня — мышца в этот день обязательно
             val rem = target(m) - got(m)
-            if (rem < 1.5 && forced.isEmpty()) return
+            // цель недели уже набрана (в прошлый раз сделал с запасом), но второй раз мышца прийти может — она приходит,
+            // хотя бы с 2 подходами, пока до верха диапазона есть место: частота важнее, чем идеальный объём
+            val top = (volume[m]?.getOrNull(1)?.toDouble() ?: target(m)) - got(m)
+            if (rem < 1.5 && top < 2.0 && forced.isEmpty()) return
             val before = worked[m].orEmpty().count(::inWeek)             // сколько раз уже была на этой неделе
             var k = maxOf(PER_WEEK - before, forced.size)
             if (forced.isEmpty()) k = minOf(k, maxOf(1, (rem / 3).toInt()))   // осталось мало — один раз, а не два по подходу
@@ -306,7 +327,8 @@ object Planner {
 
         /**
          * Время: не влезает — сначала мышцы, у которых на неделе есть другая тренировка (если даже по 2 подхода не
-         * помещаются), потом лишние вторые упражнения, потом подходы — соразмерно у всех, не меньше 2 на мышцу.
+         * помещаются), потом лишние вторые упражнения, потом подходы: сперва у тех, у кого за неделю выходит больше
+         * минимума, потом соразмерно у всех, не меньше 2 на мышцу.
          */
         fun fit(d: LocalDate) {
             val day = slots.getValue(d)
@@ -319,12 +341,15 @@ object Planner {
             val maxEx = (sessionSets / 2.5).toInt().coerceAtLeast(5)
             while (day.size > maxEx) day.remove(day.filter { it.second }.maxByOrNull { prio(it.m) } ?: break)
             val want = muscles().associateWith(::sets)
+            fun floor(m: String) = volume[m]?.getOrNull(0) ?: 0
             while (day.sumOf { it.sets } > sessionSets) {
-                // у кого больше доля от запланированного — тот и теряет подход: урезка соразмерная, менее важные — первыми
+                // сначала теряют те, у кого за неделю есть запас над минимумом диапазона (средней дельте 10 при минимуме 8 —
+                // не в ущерб трицепсу на 6 при минимуме 6); дальше — соразмерно запланированному, менее важные — первыми
                 val m = muscles().filter { sets(it) > 2 }
-                    .maxWithOrNull(compareBy({ sets(it).toDouble() / (want[it] ?: 1) }, { prio(it) })) ?: break
+                    .maxWithOrNull(compareBy({ if (got(it) - 1 >= floor(it)) 1 else 0 }, { sets(it).toDouble() / (want[it] ?: 1) }, { prio(it) })) ?: break
                 val mine = day.filter { it.m == m }
-                val sl = mine.filter { it.sets > 2 }.maxByOrNull { it.sets }
+                // урезаем то, где подходов больше; при равенстве — второе упражнение: базовому подходы нужнее
+                val sl = mine.filter { it.sets > 2 }.maxWithOrNull(compareBy({ it.sets }, { if (it.second) 1 else 0 }))
                 if (sl != null) sl.sets-- else day.remove(mine.last())        // все по 2 — убираем второе упражнение
             }
         }
@@ -335,12 +360,20 @@ object Planner {
          */
         fun fill(d: LocalDate) {
             val day = slots.getValue(d)
+            val maxEx = (sessionSets / 2.5).toInt().coerceAtLeast(5)
+            fun sets(m: String) = day.filter { it.m == m }.sumOf { it.sets }
             for (top in listOf(false, true)) while (room(d) >= 1) {
                 fun goal(m: String) = if (top) maxOf(target(m), volume[m]?.getOrNull(1)?.toDouble() ?: 0.0) else target(m)
-                val sl = day.filter { sl ->
-                    sl.sets < MAX_SETS && day.filter { it.m == sl.m }.sumOf { it.sets } < PER_MUSCLE && got(sl.m) < goal(sl.m) - 0.5
-                }.minWithOrNull(compareBy({ got(it.m) / goal(it.m) }, { prio(it.m) }, { it.second })) ?: break
-                sl.sets++
+                val sl = day.filter { sl -> sl.sets < MAX_SETS && sets(sl.m) < PER_MUSCLE && got(sl.m) < goal(sl.m) - 0.5 }
+                    .minWithOrNull(compareBy({ got(it.m) / goal(it.m) }, { prio(it.m) }, { it.second }))
+                if (sl != null) { sl.sets++; continue }
+                // упражнение упёрлось в 5 подходов, а мышца ещё не добрала и время есть — второе упражнение
+                // другим вариантом (к приседу — жим ногами или разгибания), а не пустое время в конце тренировки
+                val m = day.map { it.m }.distinct().filter { m ->
+                    room(d) >= 2 && day.size < maxEx && day.count { it.m == m } < 2 && sets(m) + 2 <= PER_MUSCLE &&
+                        got(m) < goal(m) - 1.5 && byMuscle[m].orEmpty().any { e -> day.none { it.e.id == e.id } }
+                }.minWithOrNull(compareBy({ got(it) / goal(it) }, { prio(it) })) ?: break
+                pick(d, m, 2.0)
             }
         }
 
@@ -427,7 +460,10 @@ object Planner {
         val lead = focusSet.filter { it != "forearms" && it != "abs" }.map(::block).toSet()
         // без акцента жимы и тяги через раз меняются местами: свежими — то грудь, то спина
         val base = if (pullFirst && lead.isEmpty()) listOf(Block.LEGS, Block.PULL, Block.PUSH) else listOf(Block.LEGS, Block.PUSH, Block.PULL)
-        val blocks = base.sortedBy { if (it in lead) 0 else 1 } + Block.CORE
+        // блок, где только мелкие мышцы чужого дня (икры в день жимов, махи в день ног), — после блоков с крупными:
+        // тренировка не начинается с подъёмов на носки перед жимом лёжа
+        val big = known.filter { main(ex(it)) !in SMALL }.map { block(main(ex(it))) }.toSet()
+        val blocks = base.sortedWith(compareBy({ if (it in lead) 0 else 1 }, { if (it in big || big.isEmpty()) 0 else 1 })) + Block.CORE
         val regionRank = known.groupBy { region(main(ex(it))) }.mapValues { (r, l) ->
             val hasComp = l.any { isCompound(ex(it)) }
             // зона с базовым — по главной мышце базового (жим лёжа раньше армейского), иначе по изоляции

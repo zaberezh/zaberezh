@@ -52,7 +52,6 @@ import by.zaberezh.forma.core.gym.Target
 import by.zaberezh.forma.core.gym.WORKOUT
 import by.zaberezh.forma.core.gym.Workout
 import by.zaberezh.forma.core.gym.aiPlanPrompt
-import by.zaberezh.forma.core.gym.nextTarget
 import by.zaberezh.forma.core.gym.parseProgram
 import by.zaberezh.forma.core.r1
 import by.zaberezh.forma.core.store.JSON
@@ -188,6 +187,7 @@ private fun DayPlanBlock(ctx: Ctx, date: LocalDate) {
     var busy by remember { mutableStateOf(false) }
     var info by remember(date) { mutableStateOf<String?>(null) }
     var err by remember(date) { mutableStateOf<String?>(null) }
+    var tune by remember(date) { mutableStateOf(false) }
     val title = if (date == ctx.today) "Сегодня" else DAY.format(date).replaceFirstChar { it.uppercase() }
 
     Block(title, trailing = {
@@ -211,31 +211,40 @@ private fun DayPlanBlock(ctx: Ctx, date: LocalDate) {
             return@Block
         }
         if (!isGym) Muted("По плану сегодня отдых, но потренироваться можно.")
-        // переключатель дня — сразу под заголовком, а не в самом низу плана
-        Secondary(if (isGym) "Сделать днём отдыха" else "Сделать днём зала", { err = GymModule.toggleDay(ctx, date) }, Modifier.fillMaxWidth())
 
         val plan = GymModule.planFor(ctx, date)
         fun save(pl: DayPlan) = GymModule.savePlan(s, pl.copy(source = if (pl.source == "claude") "claude" else "edited"))
+        val summary = Planner.summary(p, plan)
+        if (summary.isNotEmpty()) Stat("Главное", summary)
+        // главное действие дня — сразу под планом дня, а не под всем списком
+        if (date == ctx.today && plan.items.isNotEmpty()) Primary("Начать тренировку", { startWorkout(ctx) }, Modifier.fillMaxWidth())
 
+        // тип дня, акцент и «день отдыха» — свёрнуты: меняются редко, а место занимают каждый раз
         val days = GymModule.split(ctx)
-        if (days.size > 1) {
-            Text("День", style = MaterialTheme.typography.labelLarge, color = C.muted)
+        Line {
+            Muted(listOfNotNull(days.firstOrNull { it.id == plan.day }?.title,
+                "акцент: " + (plan.focus?.let { FOCUS[it]?.first?.lowercase() } ?: "авто")).joinToString(" · "), Modifier.weight(1f))
+            Flat(if (tune) "Готово" else "Настроить день", { tune = !tune }, C.muted)
+        }
+        if (tune) {
+            Secondary(if (isGym) "Сделать днём отдыха" else "Сделать днём зала", { err = GymModule.toggleDay(ctx, date) }, Modifier.fillMaxWidth())
+            if (days.size > 1) {
+                Text("День", style = MaterialTheme.typography.labelLarge, color = C.muted)
+                Buttons {
+                    days.forEach { d ->
+                        FilterChip(selected = plan.day == d.id, onClick = { if (plan.day != d.id) save(GymModule.planFor(ctx, date, plan.focus, d.id)) },
+                            label = { Text(d.title) })
+                    }
+                }
+            }
+            Text("Акцент (по желанию)", style = MaterialTheme.typography.labelLarge, color = C.muted)
             Buttons {
-                days.forEach { d ->
-                    FilterChip(selected = plan.day == d.id, onClick = { if (plan.day != d.id) save(GymModule.planFor(ctx, date, plan.focus, d.id)) },
-                        label = { Text(d.title) })
+                FilterChip(selected = plan.focus == null, onClick = { GymModule.resetPlan(s, date) }, label = { Text("Авто") })
+                FOCUS.forEach { (key, v) ->
+                    FilterChip(selected = plan.focus == key, onClick = { save(GymModule.planFor(ctx, date, key, plan.day)) }, label = { Text(v.first) })
                 }
             }
         }
-        Text("Акцент (по желанию)", style = MaterialTheme.typography.labelLarge, color = C.muted)
-        Buttons {
-            FilterChip(selected = plan.focus == null, onClick = { GymModule.resetPlan(s, date) }, label = { Text("Авто") })
-            FOCUS.forEach { (key, v) ->
-                FilterChip(selected = plan.focus == key, onClick = { save(GymModule.planFor(ctx, date, key, plan.day)) }, label = { Text(v.first) })
-            }
-        }
-        val summary = Planner.summary(p, plan)
-        if (summary.isNotEmpty()) Stat("Главное", summary)
         if (plan.note.isNotBlank()) Muted(plan.note)
         if (plan.source != "auto") Muted(if (plan.source == "claude") "Составлено Claude · «Авто» вернёт автоплан" else "Изменено вручную · «Авто» вернёт автоплан")
 
@@ -291,7 +300,6 @@ private fun DayPlanBlock(ctx: Ctx, date: LocalDate) {
             })
             if (busy) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
         }
-        if (date == ctx.today && plan.items.isNotEmpty()) Primary("Начать тренировку", { startWorkout(ctx) }, Modifier.fillMaxWidth())
         Note(info); Err(err)
     }
 }
@@ -329,7 +337,7 @@ private fun WorkoutScreen(ctx: Ctx, id: String) {
     val targets = remember(e.ts, ids, setsPlanned) {
         ids.mapNotNull(p::ex).associate { ex ->
             val x = ex.copy(sets = setsPlanned[ex.id] ?: ex.sets)
-            ex.id to (x to nextTarget(x, GymModule.history(s, ex.id, e.ts).map { it.second }))
+            ex.id to (x to GymModule.target(s, x, date, e.ts))
         }
     }
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
@@ -443,6 +451,8 @@ private fun ExerciseCard(
             done.forEach { Pill("${it.w.r1()} × ${it.r}", C.good) }
         }
         val weightLabel = if (ex.bw > 0) "Доп. вес" else "Вес"
+        // пустое поле веса — не «0 кг» (это обнулит прогресс): вес прошлого подхода или цели; с весом тела пусто — свой вес
+        fun logWeight() = wt.num() ?: if (ex.bw > 0) 0.0 else (done.lastOrNull()?.w ?: t?.weight ?: 0.0)
         if (eachSet) {
             Line {
                 Field(weightLabel, wt, { wt = it }, Modifier.weight(1f), suffix = "кг")
@@ -451,7 +461,7 @@ private fun ExerciseCard(
             Line {
                 Primary("Записать подход", {
                     val r = rp.num()?.toInt()
-                    if (r != null && r > 0) onAdd(listOf(SetLog(ex.id, wt.num() ?: 0.0, r)))
+                    if (r != null && r > 0) onAdd(listOf(SetLog(ex.id, logWeight(), r)))
                 }, Modifier.weight(1f))
                 if (done.isNotEmpty()) Flat("Отменить последний", { onUndo(false) }, C.muted)
             }
@@ -464,7 +474,7 @@ private fun ExerciseCard(
             }
             Primary("Записать", {
                 val r = rp.num()?.toInt(); val k = n.num()?.toInt()?.coerceIn(1, 10) ?: 1
-                if (r != null && r > 0) onAdd(List(k) { SetLog(ex.id, wt.num() ?: 0.0, r) })
+                if (r != null && r > 0) onAdd(List(k) { SetLog(ex.id, logWeight(), r) })
             }, Modifier.fillMaxWidth())
         } else Flat("Изменить", { onUndo(true) }, C.muted)
         Line {

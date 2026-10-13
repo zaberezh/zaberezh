@@ -185,18 +185,25 @@ object GymModule : Module {
     /** Цели по упражнениям плана (двойная прогрессия; число подходов — из плана). */
     fun targets(s: Store, plan: DayPlan, before: Long = Long.MAX_VALUE): List<Target> {
         val p = program(s)
-        return plan.items.mapNotNull { i -> p.ex(i.ex)?.copy(sets = i.sets) }
-            .map { ex -> nextTarget(ex, history(s, ex.id, before).map { it.second }) }
+        val date = LocalDate.parse(plan.date)
+        return plan.items.mapNotNull { i -> p.ex(i.ex)?.copy(sets = i.sets) }.map { ex -> target(s, ex, date, before) }
+    }
+
+    /** Цель упражнения на дату: по тренировкам до [before] и перерыву с последней из них. */
+    fun target(s: Store, ex: Exercise, date: LocalDate, before: Long = Long.MAX_VALUE): Target {
+        val h = history(s, ex.id, before)
+        return nextTarget(ex, h.map { it.second }, h.lastOrNull()?.let { ChronoUnit.DAYS.between(it.first, date) } ?: 0)
     }
 
     /** Текущая сила по упражнению: последний рабочий вес × повторы (или стартовые из базы). */
-    fun strength(s: Store, ex: Exercise): String {
-        val last = history(s, ex.id).lastOrNull()?.second?.let(::workingSets)
-        return when {
-            last != null && last.isNotEmpty() -> "${last.first().w.r1()} кг × ${last.joinToString(",") { it.r.toString() }}"
-            ex.startWeight != null -> "${ex.startWeight.r1()} кг × ${ex.repMin}"
-            else -> "вес не задан"
-        }
+    fun strength(s: Store, ex: Exercise): String = strengthOf(ex, history(s, ex.id).lastOrNull()?.second)
+
+    /** Сила по подходам последней тренировки: «60 кг × 8,8,7», «свой вес × 10,9», «15,14 повт.». */
+    fun strengthOf(ex: Exercise, last: List<SetLog>?): String {
+        val work = last?.let(::workingSets).orEmpty()
+        if (work.isEmpty()) return ex.startWeight?.let { w -> loadText(ex, w)?.let { "$it × ${ex.repMin}" } ?: "${ex.repMin} повт." } ?: "вес не задан"
+        val reps = work.joinToString(",") { it.r.toString() }
+        return loadText(ex, work.first().w)?.let { "$it × $reps" } ?: "$reps повт."
     }
 
     /** Вывод по упражнению за последние [days] дней: растёт / медленно / стоит / падает (см. [verdict]). */

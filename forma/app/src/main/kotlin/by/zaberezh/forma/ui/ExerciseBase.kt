@@ -21,7 +21,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import by.zaberezh.forma.core.Ctx
-import by.zaberezh.forma.core.body.latestWeight
 import by.zaberezh.forma.core.gym.Exercise
 import by.zaberezh.forma.core.gym.ExerciseInput
 import by.zaberezh.forma.core.gym.GymModule
@@ -31,6 +30,7 @@ import by.zaberezh.forma.core.gym.guessBodyweight
 import by.zaberezh.forma.core.gym.guessMuscles
 import by.zaberezh.forma.core.gym.guessStep
 import by.zaberezh.forma.core.gym.parseReps
+import by.zaberezh.forma.core.gym.progress
 import by.zaberezh.forma.core.gym.remove
 import by.zaberezh.forma.core.gym.upsert
 import by.zaberezh.forma.core.pct
@@ -50,7 +50,8 @@ fun ExerciseBase(ctx: Ctx) {
     val p = GymModule.program(s)
     var editing by remember { mutableStateOf<String?>(null) }   // "" — новое, id — правка
     var open by remember { mutableStateOf<String?>(null) }
-    val bwKg = latestWeight(s) ?: 70.0
+    // статус и сила — одним проходом по истории, а не по всем тренировкам на каждое упражнение
+    val byEx = remember(ctx) { GymModule.progress(ctx, null).items.associateBy { it.ex.id } }
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         editing?.let { id -> ExerciseForm(ctx, p.ex(id), onDone = { editing = null }) }
         // чего не хватает, чтобы тренировки недели дополняли друг друга (вертикальная и горизонтальная тяга и т. п.)
@@ -64,15 +65,16 @@ fun ExerciseBase(ctx: Ctx) {
             if (editing == null) Primary("+ Новое упражнение", { editing = "" }, Modifier.fillMaxWidth())
             p.exercises.forEachIndexed { i, ex ->
                 if (i > 0) HorizontalDivider(color = C.line)
-                val tr = GymModule.trend(s, ex, ctx.today)
+                val pr = byEx[ex.id]
+                val tr = pr?.trend
                 Column(Modifier.fillMaxWidth().clickable { open = if (open == ex.id) null else ex.id }.padding(vertical = 4.dp),
                     verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Line {
                         Text(ex.name, Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge)
-                        if (tr.n > 0) Pill("${statusIcon(tr.status)} ${tr.status}", statusColor(tr.status))
+                        if (tr != null && tr.n > 0) Pill("${statusIcon(tr.status)} ${tr.status}", statusColor(tr.status))
                     }
-                    Muted("сейчас ${GymModule.strength(s, ex)} · ${ex.sets}×${ex.repMin}–${ex.repMax}" +
-                        (tr.pctWeek?.let { " · ${it.pct()}/нед" } ?: ""))
+                    Muted("сейчас ${GymModule.strengthOf(ex, pr?.points?.last()?.sets)} · ${ex.sets}×${ex.repMin}–${ex.repMax}" +
+                        (tr?.pctWeek?.let { " · ${it.pct()}/нед" } ?: ""))
                     if (open == ex.id) {
                         val hist = GymModule.history(s, ex.id).takeLast(8).reversed()
                         if (hist.isEmpty()) Muted("Истории пока нет")

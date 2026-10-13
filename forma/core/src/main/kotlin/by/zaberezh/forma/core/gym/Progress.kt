@@ -67,12 +67,15 @@ fun trendOf(ex: Exercise, all: List<StrengthPoint>, to: LocalDate, days: Long = 
     return ExTrend(ex, pts.size, pts.first().value, pts.last().value, pts.maxOf { it.value }, pct, status, pts.first().best, pts.last().best)
 }
 
-/** Подход понятным языком: «60 кг × 8», «+10 кг × 6» и «свой вес × 12» (с весом тела), «15 повт.» (без веса). */
-fun setText(ex: Exercise, x: SetLog): String = when {
-    ex.bw > 0 -> (if (x.w > 0) "+${x.w.r1()} кг" else "свой вес") + " × ${x.r}"
-    x.w > 0 -> "${x.w.r1()} кг × ${x.r}"
-    else -> "${x.r} повт."
+/** Вес понятным языком: «60 кг», «+10 кг» и «свой вес» (с весом тела); null — упражнение без веса. */
+fun loadText(ex: Exercise, w: Double): String? = when {
+    ex.bw > 0 -> if (w > 0) "+${w.r1()} кг" else "свой вес"
+    w > 0 -> "${w.r1()} кг"
+    else -> null
 }
+
+/** Подход понятным языком: «60 кг × 8», «+10 кг × 6» и «свой вес × 12» (с весом тела), «15 повт.» (без веса). */
+fun setText(ex: Exercise, x: SetLog): String = loadText(ex, x.w)?.let { "$it × ${x.r}" } ?: "${x.r} повт."
 
 /**
  * Прогресс упражнения. points — тренировки выбранного периода (график, «было → стало»), trend — вывод
@@ -164,7 +167,8 @@ fun GymModule.progress(ctx: Ctx, from: LocalDate? = null): GymProgress {
     val ranges = DEFAULT_VOLUME + p.volume
     val items = raw.map { r ->
         val six = r.all.filter { it.date > to.minusDays(TREND_DAYS) }
-        ExProgress(r.ex, r.pts, r.reps, r.trend, nextTarget(r.ex, r.hist), advice(r.ex, r.trend, six, weekly, ranges, systemic),
+        ExProgress(r.ex, r.pts, r.reps, r.trend, nextTarget(r.ex, r.hist, ChronoUnit.DAYS.between(r.all.last().date, to)),
+            advice(r.ex, r.trend, six, weekly, ranges, systemic),
             plan, six.firstOrNull(), bwKg * r.ex.bw)
     }
     val byMuscle = judged.groupBy { mainMuscle(it.ex) }
@@ -208,9 +212,5 @@ private fun otherRange(ex: Exercise): String = when {
 fun targetText(t: Target): String {
     val w = t.weight ?: return "подбери вес на ${t.ex.repMin}–${t.ex.repMax} повт."
     val reps = t.reps.joinToString(", ")
-    return when {
-        t.ex.bw > 0 -> (if (w > 0) "+${w.r1()} кг" else "свой вес") + " × $reps"
-        w > 0 -> "${w.r1()} кг × $reps"
-        else -> "$reps повт."
-    }
+    return loadText(t.ex, w)?.let { "$it × $reps" } ?: "$reps повт."
 }
