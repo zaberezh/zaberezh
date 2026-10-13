@@ -157,7 +157,10 @@ private fun SleepLine(ctx: Ctx, onClick: () -> Unit) {
     }
 }
 
-/** Пары на сегодня (текущая выделена), ДЗ к ним и лабы в работе. */
+/**
+ * Пары на сегодня (текущая выделена), ДЗ к ним и лабы в работе.
+ * Пары на сегодня закончились (или их не было) — показывается следующий учебный день: завтра, а в субботу вечером — понедельник.
+ */
 @Composable
 private fun StudyToday(ctx: Ctx, onStudy: (Int) -> Unit) {
     val s = ctx.store
@@ -166,52 +169,68 @@ private fun StudyToday(ctx: Ctx, onStudy: (Int) -> Unit) {
     val lessons = remember(tt, sub, ctx.today) { Bsuir.on(tt, ctx.today, sub) }
     val now = LocalTime.now(ZONE)
     fun time(x: String) = runCatching { LocalTime.parse(x) }.getOrNull()
-    Block("Учёба сегодня", trailing = { if (lessons.isNotEmpty()) Pill("${lessons.size} " + plural(lessons.size, "пара", "пары", "пар"), C.study) }) {
+    val over = lessons.isNotEmpty() && lessons.all { l -> time(l.end)?.let { now.isAfter(it) } ?: false }
+    // следующий день с парами — когда сегодня уже нечего показывать
+    val next = remember(tt, sub, ctx.today, over) {
+        if (lessons.isNotEmpty() && !over) null
+        else (1L..7L).map { ctx.today.plusDays(it) }.firstNotNullOfOrNull { d -> Bsuir.on(tt, d, sub).takeIf { it.isNotEmpty() }?.let { d to it } }
+    }
+    val nextName = next?.first?.let { d ->
+        if (d == ctx.today.plusDays(1)) "завтра" else d.dayOfWeek.getDisplayName(TextStyle.SHORT, RU) + ", " + d.dayOfMonth + " " +
+            d.month.getDisplayName(TextStyle.SHORT, RU).trimEnd('.')
+    }
+    val shown = next?.second ?: lessons
+    val title = if (next != null) "Учёба $nextName" else "Учёба сегодня"
+    Block(title, trailing = { if (shown.isNotEmpty()) Pill("${shown.size} " + plural(shown.size, "пара", "пары", "пар"), C.study) }) {
         when {
             tt.lessons.isEmpty() -> Muted("Расписание ещё не загружено — открой «Учёба → Расписание».")
-            lessons.isEmpty() -> {
-                Muted("Сегодня пар нет.")
-                (1L..7L).map { ctx.today.plusDays(it) }.firstNotNullOfOrNull { d -> Bsuir.on(tt, d, sub).firstOrNull()?.let { d to it } }?.let { (d, l) ->
-                    Muted("Дальше: ${d.dayOfWeek.getDisplayName(TextStyle.SHORT, RU)}, ${l.start} — ${l.short}")
-                }
+            next != null -> {
+                Muted(if (over) "Сегодня пары закончились." else "Сегодня пар нет.")
+                next.second.forEach { l -> LessonRow(l, past = false, current = false) { onStudy(0) } }
             }
-            else -> { lessons.forEach { l ->
+            lessons.isEmpty() -> Muted("Сегодня пар нет, на неделе вперёд — тоже.")
+            else -> lessons.forEach { l ->
                 val start = time(l.start); val end = time(l.end)
                 val past = end != null && now.isAfter(end)
                 val current = start != null && end != null && !now.isBefore(start) && !now.isAfter(end)
-                Row(
-                    Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp))
-                        .background(if (current) C.study.copy(alpha = 0.12f) else C.card).clickable { onStudy(0) }.padding(vertical = 6.dp, horizontal = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp),
-                ) {
-                    // время пары — крупно и цветом раздела, конец — сразу под ним
-                    Column(Modifier.width(48.dp)) {
-                        Text(l.start, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, color = if (past) C.muted else C.study)
-                        Text(l.end, style = MaterialTheme.typography.bodySmall, color = if (past) C.muted else C.text.copy(alpha = 0.75f))
-                    }
-                    Box(Modifier.size(width = 4.dp, height = 34.dp).clip(RoundedCornerShape(2.dp)).background(typeColor(l.type).copy(alpha = if (past) 0.4f else 1f)))
-                    Column(Modifier.weight(1f)) {
-                        Text(l.short, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium,
-                            color = if (past) C.muted else C.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        // тип и аудитория — тем же цветом, что в расписании (ЛК — зелёный, ПЗ — фиолетовый, ЛР — жёлтый)
-                        Text(listOf(l.type, l.rooms.joinToString(", ")).filter(String::isNotBlank).joinToString(" · "),
-                            style = MaterialTheme.typography.bodySmall, color = typeColor(l.type).copy(alpha = if (past) 0.5f else 1f))
-                    }
-                    if (current) Pill("сейчас", C.study)
-                }
-            } }
+                LessonRow(l, past, current) { onStudy(0) }
+            }
         }
-        val hw = remember(ctx) { Study.open(s, ctx.today).count { it.second.due == ctx.today.toString() } }
+        val day = next?.first ?: ctx.today
+        val hw = remember(ctx, day) { Study.open(s, ctx.today).count { it.second.due == day.toString() } }
         val all = remember(ctx) { Study.labs(s).map { it.second } }
         val labs = all.count { it.stage == 0 }
         val submit = all.count { it.stage == 1 }
         if (hw > 0 || labs > 0 || submit > 0) Buttons {
-            if (hw > 0) Pill("ДЗ на сегодня: $hw", C.warn)
+            if (hw > 0) Pill(if (next != null) "ДЗ на $nextName: $hw" else "ДЗ на сегодня: $hw", C.warn)
             if (submit > 0) Pill("сдать лаб: $submit", C.warn)
             if (labs > 0) Pill("в работе: $labs", C.study)
             Flat("Лабы ›", { onStudy(1) }, C.study)
         }
     }
+}
+
+/** Одна пара: время крупно, полоска типа, предмет, тип и аудитория. */
+@Composable
+private fun LessonRow(l: by.zaberezh.forma.core.study.Lesson, past: Boolean, current: Boolean, onClick: () -> Unit) = Row(
+    Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp))
+        .background(if (current) C.study.copy(alpha = 0.12f) else C.card).clickable(onClick = onClick).padding(vertical = 6.dp, horizontal = 4.dp),
+    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp),
+) {
+    // время пары — крупно и цветом раздела, конец — сразу под ним
+    Column(Modifier.width(48.dp)) {
+        Text(l.start, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, color = if (past) C.muted else C.study)
+        Text(l.end, style = MaterialTheme.typography.bodySmall, color = if (past) C.muted else C.text.copy(alpha = 0.75f))
+    }
+    Box(Modifier.size(width = 4.dp, height = 34.dp).clip(RoundedCornerShape(2.dp)).background(typeColor(l.type).copy(alpha = if (past) 0.4f else 1f)))
+    Column(Modifier.weight(1f)) {
+        Text(l.short, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium,
+            color = if (past) C.muted else C.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        // тип и аудитория — тем же цветом, что в расписании (ЛК — зелёный, ПЗ — фиолетовый, ЛР — жёлтый)
+        Text(listOf(l.type, l.rooms.joinToString(", ")).filter(String::isNotBlank).joinToString(" · "),
+            style = MaterialTheme.typography.bodySmall, color = typeColor(l.type).copy(alpha = if (past) 0.5f else 1f))
+    }
+    if (current) Pill("сейчас", C.study)
 }
 
 /** Вода: стаканы за день и процент от нормы; «+ стакан» — то же, что нажать на уведомление. */
