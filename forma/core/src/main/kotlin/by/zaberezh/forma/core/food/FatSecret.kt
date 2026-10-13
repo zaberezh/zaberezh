@@ -172,9 +172,11 @@ class FatSecret(private val fetch: (String) -> String?, private val log: (String
                 val fit = ShopMatch.fit(dish, e.name + " " + e.brand.orEmpty())
                 if (fit.ok) C(e, fit.score, ShopMatch.fit(dish, plain(e.name)).extra) else null
             }
-            val best = cs.minWithOrNull(compareBy<C>({ -it.score }, { it.extra }, { if (it.e.generic) 0 else 1 }, { it.e.rank })) ?: return null
+            // среди равных — короче название: «Пельмени», а не «Простые пельмени»
+            val order = compareBy<C>({ -it.score }, { it.extra }, { if (it.e.generic) 0 else 1 }, { it.e.name.split(" ").size }, { it.e.rank })
+            val best = cs.minWithOrNull(order) ?: return null
             val tier = cs.filter { abs(it.score - best.score) < 0.01 && it.extra == best.extra }
-            tier.firstOrNull { it.e.generic }?.let { return Pick(it.e) }
+            if (best.e.generic) return Pick(best.e)
             if (tier.size < 3) return Pick(best.e)
             val kcal = tier.map { it.e.per100.kcal }.sorted()
             val median = kcal[kcal.size / 2]
@@ -193,7 +195,7 @@ class FatSecret(private val fetch: (String) -> String?, private val log: (String
 
         /** «Салат», «домашний», «классический» — не лишний ингредиент: «Салат Оливье» — это и есть оливье. */
         private val DESCRIPTOR = Regex("салат|суп|блюдо|домашн\\p{L}*|по-домашнему|классическ\\p{L}*|традиционн\\p{L}*|обычн\\p{L}*|" +
-            "прост(ой|ая|ое|ые)|свеж\\p{L}*|вкусн\\p{L}*|готов\\p{L}*|натуральн\\p{L}*", RegexOption.IGNORE_CASE)
+            "свеж\\p{L}*|вкусн\\p{L}*|готов\\p{L}*|натуральн\\p{L}*", RegexOption.IGNORE_CASE)
         private fun plain(name: String) = name.split(" ").filterNot { DESCRIPTOR.matches(it) }.joinToString(" ")
 
         private fun head(name: String) = Regex("\\p{L}+").find(name.lowercase())?.value.orEmpty()
