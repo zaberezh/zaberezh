@@ -20,6 +20,7 @@ data class DayPlan(
     val source: String = "auto",    // auto / edited / claude
     val note: String = "",
     val day: String? = null,        // тип дня сплита (upper, lower, push…); null — старые планы
+    val lead: String? = null,       // "pull" — тяги в начале тренировки (чередуется с жимами по дням одного типа)
 )
 
 val DAYPLAN = Kind("gym.dayplan", DayPlan.serializer())
@@ -87,7 +88,11 @@ private val PRIORITY = mapOf("side_delts" to 1.3, "back" to 1.2, "chest" to 1.15
  *   трицепс растёт хуже — поэтому им засчитываются только свои упражнения, и они есть в каждой тренировке, где разрешены;
  * - 2 упражнения на мышцу — только когда на сегодня ей нужно больше ~6 подходов (иначе одно, а другое — в другой день недели);
  *   передняя дельта и ягодицы почти полностью закрываются жимами и приседами — отдельно берутся редко;
- * - упражнения одной мышцы чередуются по дням: первым идёт то, что дольше всего не делал (жим лёжа → наклонный → …);
+ * - упражнения подбираются по вариантам движения ([pattern]): два упражнения на мышцу в один день — разные варианты
+ *   (вертикальная + горизонтальная тяга, а не две вертикальные); в разные дни недели первым идёт вариант, которого
+ *   на этой неделе ещё не было (горизонтальный жим → наклонный, румынская тяга → сгибания ног) — дни дополняют
+ *   друг друга, а не повторяют; внутри варианта — то, что дольше всего не делал. Неделя к неделе повторяется
+ *   (A, B, A, B…), поэтому каждое упражнение регулярно возвращается и вес по нему растёт;
  * - мышца, нагруженная вчера, почти не берётся (×0.3), позавчера — ×0.8 (восстановление 48–72 ч);
  * - не больше ~11 подходов на мышцу за тренировку — дальше прибавки почти нет (Pelland/Remmert 2025);
  * - бюджет подходов — от длительности тренировки (~3,6 мин на рабочий подход с отдыхом; 90 мин ≈ 25 подходов):
@@ -141,12 +146,14 @@ object Planner {
     /**
      * @param log засчитанные подходы по дням (сделанное + запланированное до этой даты на этой неделе)
      * @param ahead типы тренировок этой недели после этой даты; null — по среднему для сплита
+     * @param weekSets подходы по упражнениям на этой неделе до этой даты (сделано + запланировано); null — считать по [lastUsed]
      */
     fun build(
         p: Program, date: LocalDate, log: List<Pair<LocalDate, Map<String, Double>>>,
         lastUsed: Map<String, LocalDate>, sessionsPerWeek: Int, focus: String? = null,
         day: DayType? = null, split: List<DayType> = listOfNotNull(day), sessionSets: Int = budget(75),
         ahead: List<DayType>? = null,
+        weekSets: Map<String, Double>? = null,
     ): DayPlan {
         if (p.exercises.isEmpty()) return DayPlan(date.toString(), emptyList(), focus, day = day?.id)
         val volume = DEFAULT_VOLUME + p.volume
@@ -160,6 +167,7 @@ object Planner {
             else (if (split.isEmpty()) sessionsPerWeek.toDouble() else sessionsPerWeek.toDouble() * split.count { m in it.muscles } / split.size).coerceAtLeast(1.0)
         val monday = date.with(java.time.DayOfWeek.MONDAY)
         val thisWeek = log.filter { it.first >= monday && it.first < date }
+        fun usedThisWeek(e: Exercise) = lastUsed[e.id]?.let { it >= monday && it < date } == true
         // нужно сегодня: остаток недельной цели на оставшиеся тренировки
         fun want(m: String): Double {
             val range = volume[m] ?: return 0.0
@@ -199,13 +207,24 @@ object Planner {
             repeat(n) { i ->
                 val pool = have.filter { e -> slots.none { it.e.id == e.id } }
                 val first = slots.firstOrNull { it.m == m }?.e
-                val pref = when {
-                    first == null && m in BIG -> pool.filter(::isCompound).ifEmpty { pool }      // сначала базовое
-                    first != null -> pool.filter { isCompound(it) != isCompound(first) }.ifEmpty { pool } // второе — другого типа
-                    else -> pool
-                }
-                // по очереди: дольше всего не делал — первым (разные упражнения в разные дни недели)
-                val e = pref.minWithOrNull(compareBy<Exercise>({ lastUsed[it.id] ?: LocalDate.MIN }, { p.exercises.indexOf(it) })) ?: return@repeat
+                val todayPat = slots.filter { it.m == m }.map { pattern(it.e) }.toSet()
+                // сколько подходов этого варианта движения уже было на неделе (сделано + запланировано до этой даты)
+                fun weekUses(e: Exercise): Double = byMuscle[m].orEmpty().filter { o -> pattern(o) == pattern(e) }
+                    .sumOf { o -> weekSets?.get(o.id) ?: if (weekSets == null && usedThisWeek(o)) 1.0 else 0.0 }
+                val e = pool.minWithOrNull(compareBy<Exercise>(
+                    // крупной мышце первым — базовое (жим, тяга, присед), изоляция — вторым; у бицепса бедра сгибания ног —
+                    // не добивка, а его вторая функция (сгибание колена), им можно быть единственным упражнением дня
+                    { if (first == null && m in BIG && m != "hams" && !isCompound(it) && pool.any(::isCompound)) 1 else 0 },
+                    // второе упражнение дня — другой вариант движения: вертикальная + горизонтальная тяга, а не две вертикальные
+                    { if (pattern(it) in todayPat) 1 else 0 },
+                    // вариант, которого на этой неделе ещё не было, — первым: дни недели дополняют друг друга
+                    { weekUses(it) },
+                    // при прочих равных второе — другого типа: базовое + изоляция
+                    { if (first != null && isCompound(it) == isCompound(first)) 1 else 0 },
+                    // по очереди: дольше всего не делал — первым
+                    { lastUsed[it.id] ?: LocalDate.MIN },
+                    { p.exercises.indexOf(it) },
+                )) ?: return@repeat
                 slots += Slot(e, per, m, i > 0)
                 credit(e).forEach { (k, v) -> today[k] = (today[k] ?: 0.0) + v * per }
             }
@@ -274,6 +293,8 @@ object Planner {
      *   группы первыми). Мелкие мышцы — в конце своего блока, чтобы не утомить их до жимов и тяг, где они помогают.
      * - Блок с акцентом дня идёт первым: первым упражнениям достаётся больше повторов и прирост силы (Simão 2012);
      *   на рост мышц порядок почти не влияет (Nunes 2021). Пресс всегда в конце (держит корпус в базовых).
+     * - Без акцента жимы и тяги чередуются по дням одного типа ([pullFirst]): в одном «Верхе» свежей приходит грудь,
+     *   в следующем — спина; ни одна группа не остаётся всегда «второй» и не отстаёт в силе.
      * - Хват (предплечья) — последним, чтобы не подводил в тягах: блок тяг ставится в конец, а если акцент
      *   на спину вывел его вперёд — упражнения на предплечья переносятся в самый конец.
      * - Предутомление (изоляция перед базой) пользы не даёт (Trindade 2019).
@@ -282,8 +303,8 @@ object Planner {
      * Добавленное на тренировке упражнение — на своё место по группе мышц (порядок как у [arrange]):
      * сразу после того, за кем оно шло бы в упорядоченном плане. Остальные не двигаются — порядок дня не ломается.
      */
-    fun insert(p: Program, items: List<PlanItem>, item: PlanItem, supersets: Boolean, focus: String? = null): List<PlanItem> {
-        val arranged = arrange(p, items + item, supersets, focus)
+    fun insert(p: Program, items: List<PlanItem>, item: PlanItem, supersets: Boolean, focus: String? = null, pullFirst: Boolean = false): List<PlanItem> {
+        val arranged = arrange(p, items + item, supersets, focus, pullFirst)
         val i = arranged.indexOfFirst { it.ex == item.ex }
         if (i < 0) return items + item
         val prev = arranged.getOrNull(i - 1)?.ex
@@ -291,12 +312,14 @@ object Planner {
         return items.toMutableList().apply { add(at.coerceIn(0, size), item) }
     }
 
-    fun arrange(p: Program, items: List<PlanItem>, supersets: Boolean, focus: String? = null): List<PlanItem> {
+    fun arrange(p: Program, items: List<PlanItem>, supersets: Boolean, focus: String? = null, pullFirst: Boolean = false): List<PlanItem> {
         val known = items.filter { p.ex(it.ex) != null }
         fun ex(i: PlanItem) = p.ex(i.ex)!!
         val focusSet = focus?.let { FOCUS[it]?.second } ?: emptySet()
         val lead = focusSet.filter { it != "forearms" && it != "abs" }.map(::block).toSet()
-        val blocks = listOf(Block.LEGS, Block.PUSH, Block.PULL).sortedBy { if (it in lead) 0 else 1 } + Block.CORE
+        // без акцента жимы и тяги через раз меняются местами: свежими — то грудь, то спина
+        val base = if (pullFirst && lead.isEmpty()) listOf(Block.LEGS, Block.PULL, Block.PUSH) else listOf(Block.LEGS, Block.PUSH, Block.PULL)
+        val blocks = base.sortedBy { if (it in lead) 0 else 1 } + Block.CORE
         val regionRank = known.groupBy { region(main(ex(it))) }.mapValues { (r, l) ->
             val hasComp = l.any { isCompound(ex(it)) }
             // зона с базовым — по главной мышце базового (жим лёжа раньше армейского), иначе по изоляции

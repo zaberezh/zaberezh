@@ -53,6 +53,12 @@ fun ExerciseBase(ctx: Ctx) {
     val bwKg = latestWeight(s) ?: 70.0
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         editing?.let { id -> ExerciseForm(ctx, p.ex(id), onDone = { editing = null }) }
+        // чего не хватает, чтобы тренировки недели дополняли друг друга (вертикальная и горизонтальная тяга и т. п.)
+        val advice = remember(p) { by.zaberezh.forma.core.gym.baseAdvice(p) }
+        if (p.exercises.isNotEmpty() && advice.isNotEmpty()) Block("Чего не хватает в базе") {
+            Muted("Тренировки недели собираются из разных вариантов движения — так мышца растёт полнее, чем от одного и того же упражнения дважды.")
+            advice.forEach { Text("• $it", style = MaterialTheme.typography.bodyMedium) }
+        }
         Block("База упражнений", trailing = { Pill("${p.exercises.size}", C.muted) }) {
             Muted("Всё, что тебе удобно делать в зале, с текущим весом и повторами. План на каждый день зала собирается отсюда.")
             if (editing == null) Primary("+ Новое упражнение", { editing = "" }, Modifier.fillMaxWidth())

@@ -130,14 +130,16 @@ object GymModule : Module {
     fun planFor(ctx: Ctx, date: LocalDate, focus: String? = null, day: String? = null): DayPlan {
         val s = ctx.store
         val p0 = program(s)
-        if (focus == null && day == null) storedPlan(s, date)?.let { return it.copy(items = Planner.arrange(p0, it.items, ctx.settings.supersets, it.focus)) }
+        if (focus == null && day == null) storedPlan(s, date)?.let { return it.copy(items = Planner.arrange(p0, it.items, ctx.settings.supersets, it.focus, it.lead == "pull")) }
         val p = program(s)
         val log = Planner.muscleLog(p, sessions(s)).toMutableList()
         val used = lastUsed(s).toMutableMap()
         val trained = trainedDays(ctx, ctx.today.minusDays(7), ctx.today)
         val weekPlan = week(ctx).plan
+        val sim = HashMap<LocalDate, DayPlan>()
         weekPlan.filter { it >= ctx.today && it < date && it !in trained }.forEach { d ->
             val pl = planFor(ctx, d)
+            sim[d] = pl
             log += d to Planner.planCredit(p, pl)
             pl.items.forEach { used[it.ex] = d }
         }
@@ -152,8 +154,20 @@ object GymModule : Module {
         // тренировки этой недели после этой даты — по ним делится остаток недельного объёма (другая неделя — по среднему)
         val ahead = if (date.with(DayOfWeek.MONDAY) != ctx.today.with(DayOfWeek.MONDAY)) null
             else weekPlan.filter { it > date && it >= ctx.today }.map { dayType(ctx, it) }
-        val plan = Planner.build(p, date, log, used, ctx.settings.sessionsPerWeek, focus, type, days, Planner.budget(ctx.settings.sessionMin), ahead)
-        return plan.copy(items = Planner.arrange(p, plan.items, ctx.settings.supersets, focus))
+        // подходы по упражнениям на этой неделе до этой даты: сделанные и запланированные — чтобы варианты движения чередовались
+        val monday = date.with(DayOfWeek.MONDAY)
+        val weekSets = HashMap<String, Double>()
+        sessions(s).filter { it.first >= monday && it.first < date }.forEach { (_, sets) ->
+            sets.filter { it.r >= 5 }.forEach { weekSets[it.ex] = (weekSets[it.ex] ?: 0.0) + 1 }
+        }
+        sim.values.forEach { pl -> pl.items.forEach { weekSets[it.ex] = (weekSets[it.ex] ?: 0.0) + it.sets } }
+        val plan = Planner.build(p, date, log, used, ctx.settings.sessionsPerWeek, focus, type, days, Planner.budget(ctx.settings.sessionMin), ahead, weekSets)
+        // в днях с грудью и спиной жимы и тяги меняются местами через раз: прошлый такой же день начинался с жимов → сегодня с тяг
+        val lead = if (type.muscles.containsAll(listOf("chest", "back"))) {
+            val prev = (1L..21L).map { date.minusDays(it) }.firstNotNullOfOrNull { d -> (sim[d] ?: storedPlan(s, d))?.takeIf { it.day == type.id } }
+            if (prev != null && prev.lead != "pull") "pull" else null
+        } else null
+        return plan.copy(items = Planner.arrange(p, plan.items, ctx.settings.supersets, focus, lead == "pull"), lead = lead)
     }
 
     /** Цели по упражнениям плана (двойная прогрессия; число подходов — из плана). */

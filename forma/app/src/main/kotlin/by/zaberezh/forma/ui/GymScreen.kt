@@ -283,7 +283,7 @@ private fun DayPlanBlock(ctx: Ctx, date: LocalDate) {
                     r.onSuccess { (items, note) ->
                         val valid = items.filter { p.ex(it.first) != null }.distinctBy { it.first }.map { PlanItem(it.first, it.second) }
                         if (valid.isEmpty()) err = "Claude вернул пустой план"
-                        else GymModule.savePlan(s, DayPlan(date.toString(), valid, plan.focus, "claude", note, plan.day))
+                        else GymModule.savePlan(s, DayPlan(date.toString(), valid, plan.focus, "claude", note, plan.day, plan.lead))
                         info = "Claude: ~${ai.used} токенов"
                     }.onFailure { err = Claude.explain(it) + " (~${ai.used} токенов)" }
                 }
@@ -345,7 +345,7 @@ private fun WorkoutScreen(ctx: Ctx, id: String) {
         val sets = GymModule.program(s).ex(exId)?.sets ?: 3
         if (cur.items.any { it.ex == exId }) return
         // на своё место по группе мышц, а не в конец
-        val items = by.zaberezh.forma.core.gym.Planner.insert(GymModule.program(s), cur.items, PlanItem(exId, sets), ctx.settings.supersets, cur.focus)
+        val items = by.zaberezh.forma.core.gym.Planner.insert(GymModule.program(s), cur.items, PlanItem(exId, sets), ctx.settings.supersets, cur.focus, cur.lead == "pull")
         GymModule.savePlan(s, cur.copy(items = items, source = "edited"))
     }
 
