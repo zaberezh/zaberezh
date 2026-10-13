@@ -101,14 +101,14 @@ private fun GymHome(ctx: Ctx) {
     var tab by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(0) }
     val s = ctx.store
     Screen {
-        // разделы вкладки: план недели и дня / база упражнений / история — не всё одной простынёй
+        // разделы вкладки: план недели и дня / база упражнений / прогресс силы / история — не всё одной простынёй
         item {
             Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(C.card).padding(3.dp)) {
-                listOf("План", "Упражнения", "История").forEachIndexed { i, name ->
+                listOf("План", "Упражнения", "Прогресс", "История").forEachIndexed { i, name ->
                     Box(Modifier.weight(1f).clip(RoundedCornerShape(10.dp)).background(if (tab == i) C.accent.copy(alpha = 0.18f) else C.card)
                         .clickable { tab = i }.padding(vertical = 10.dp), contentAlignment = Alignment.Center) {
-                        Text(name, style = MaterialTheme.typography.labelLarge, color = if (tab == i) C.accent else C.muted,
-                            fontWeight = if (tab == i) FontWeight.SemiBold else FontWeight.Normal)
+                        Text(name, style = MaterialTheme.typography.labelMedium, color = if (tab == i) C.accent else C.muted,
+                            fontWeight = if (tab == i) FontWeight.SemiBold else FontWeight.Normal, maxLines = 1)
                     }
                 }
             }
@@ -121,8 +121,9 @@ private fun GymHome(ctx: Ctx) {
             item { ExerciseBase(ctx) }
             item { BackupBlock(GymModule.program(s), ctx) }
         }
-        if (tab == 2) item { GymYears(ctx) }
-        if (tab == 2) item {
+        if (tab == 2) item { ProgressTab(ctx) }
+        if (tab == 3) item { GymYears(ctx) }
+        if (tab == 3) item {
             val list = GymModule.workouts(s).takeLast(20).reversed()
             Block("История тренировок") {
                 if (list.isEmpty()) Muted("Пока пусто")

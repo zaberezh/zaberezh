@@ -69,7 +69,7 @@ fun ExerciseBase(ctx: Ctx) {
                     verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Line {
                         Text(ex.name, Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge)
-                        if (tr.n > 0) Pill(tr.status, statusColor(tr.status))
+                        if (tr.n > 0) Pill("${statusIcon(tr.status)} ${tr.status}", statusColor(tr.status))
                     }
                     Muted("сейчас ${GymModule.strength(s, ex)} · ${ex.sets}×${ex.repMin}–${ex.repMax}" +
                         (tr.pctWeek?.let { " · ${it.pct()}/нед" } ?: ""))

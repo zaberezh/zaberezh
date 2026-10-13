@@ -6,7 +6,6 @@ import by.zaberezh.forma.core.Section
 import by.zaberezh.forma.core.body.latestWeight
 import by.zaberezh.forma.core.pct
 import by.zaberezh.forma.core.r1
-import by.zaberezh.forma.core.slope
 import by.zaberezh.forma.core.store.Entry
 import by.zaberezh.forma.core.store.Store
 import by.zaberezh.forma.core.store.ZONE
@@ -200,25 +199,9 @@ object GymModule : Module {
         }
     }
 
-    fun trend(s: Store, ex: Exercise, to: LocalDate, days: Long = 42): ExTrend {
-        val bw = (latestWeight(s) ?: 70.0) * ex.bw
-        val days0 = history(s, ex.id).filter { it.first > to.minusDays(days) && it.first <= to }
-        val bestSets = days0.map { (_, sets) -> sets.maxBy { e1rm(it.w, it.r, bw) } }
-        val pts = days0.map { (d, sets) -> d to sets.maxOf { e1rm(it.w, it.r, bw) } }
-        if (pts.isEmpty()) return ExTrend(ex, 0, 0.0, 0.0, 0.0, null, "нет данных")
-        val mean = pts.map { it.second }.average()
-        val k = slope(pts.map { ChronoUnit.DAYS.between(to, it.first).toDouble() to it.second })
-        val pct = k?.let { it * 7 / mean * 100 }
-        val status = when {
-            pts.size < 3 || pct == null -> "мало данных"
-            pct >= 1.0 -> "растёт"
-            pct >= 0.3 -> "медленно"
-            pct > -1.0 -> "стоит"
-            else -> "падает"
-        }
-        return ExTrend(ex, pts.size, pts.first().second, pts.last().second, pts.maxOf { it.second }, pct, status,
-            bestSets.first(), bestSets.last())
-    }
+    /** Вывод по упражнению за последние [days] дней: растёт / медленно / стоит / падает (см. [verdict]). */
+    fun trend(s: Store, ex: Exercise, to: LocalDate, days: Long = TREND_DAYS): ExTrend =
+        trendOf(ex, strengthPoints(ex, history(s, ex.id), latestWeight(s) ?: 70.0).second, to, days)
 
     /** Подходы на мышцу за период (≥5 повторов; косвенные с коэффициентом). */
     fun volume(s: Store, from: LocalDate, to: LocalDate): Map<String, Double> {
@@ -252,7 +235,7 @@ object GymModule : Module {
         val used = workouts(s, from, to).flatMap { it.second.sets.map(SetLog::ex) }.toSet()
         val trends = p.exercises.filter { it.id in used }.map { trend(s, it, to) }
         // понятным языком: лучший подход в начале и в конце периода, и вывод (сила считается по формуле Эпли)
-        fun set(ex: Exercise, x: SetLog?) = x?.let { (if (ex.bw > 0) (if (it.w > 0) "+${it.w.r1()} кг" else "свой вес") else "${it.w.r1()} кг") + " × ${it.r}" } ?: "—"
+        fun set(ex: Exercise, x: SetLog?) = x?.let { setText(ex, it) } ?: "—"
         trends.forEach { t ->
             val was = set(t.ex, t.firstSet); val now = set(t.ex, t.lastSet)
             lines += "${t.ex.name}: " + when {
