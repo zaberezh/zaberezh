@@ -75,10 +75,15 @@ object GymModule : Module {
 
     fun resetWeek(ctx: Ctx) = ctx.store.kvPut(planKey(ctx.today.with(DayOfWeek.MONDAY)), null)
 
+    /** Тренировки → по упражнениям: (время, день, подходы) — один проход на все упражнения, пока тренировки не менялись. */
+    private val byExercise = by.zaberezh.forma.core.store.Memo { all: List<Pair<Entry, Workout>> ->
+        val m = HashMap<String, MutableList<Triple<Long, LocalDate, List<SetLog>>>>()
+        all.forEach { (e, w) -> w.sets.groupBy { it.ex }.forEach { (id, l) -> m.getOrPut(id) { mutableListOf() } += Triple(e.ts, e.day, l) } }
+        m
+    }
+
     fun history(s: Store, exId: String, before: Long = Long.MAX_VALUE): List<Pair<LocalDate, List<SetLog>>> =
-        workouts(s).filter { it.first.ts < before }
-            .map { (e, w) -> e.day to w.sets.filter { it.ex == exId } }
-            .filter { it.second.isNotEmpty() }
+        byExercise(workouts(s))[exId].orEmpty().filter { it.first < before }.map { it.second to it.third }
 
     // ---------- план на дату ----------
     private fun planId(d: LocalDate) = "plan:$d"
@@ -94,8 +99,10 @@ object GymModule : Module {
     fun resetPlan(s: Store, d: LocalDate) = s.delete(planId(d))
 
     /** Выполненные сессии: дата → подходы. */
-    fun sessions(s: Store): List<Pair<LocalDate, List<SetLog>>> =
-        workouts(s).filter { it.second.sets.isNotEmpty() }.map { it.first.day to it.second.sets }
+    fun sessions(s: Store): List<Pair<LocalDate, List<SetLog>>> = sessionsOf(workouts(s))
+    private val sessionsOf = by.zaberezh.forma.core.store.Memo { all: List<Pair<Entry, Workout>> ->
+        all.filter { it.second.sets.isNotEmpty() }.map { it.first.day to it.second.sets }
+    }
 
     private fun lastUsed(s: Store): Map<String, LocalDate> {
         val m = HashMap<String, LocalDate>()

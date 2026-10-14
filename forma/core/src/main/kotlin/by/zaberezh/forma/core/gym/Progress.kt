@@ -137,16 +137,12 @@ fun GymModule.progress(ctx: Ctx, from: LocalDate? = null): GymProgress {
     val to = ctx.today
     val p = program(s)
     val bwKg = latestWeight(s) ?: 70.0
-    val byEx = HashMap<String, MutableList<Pair<LocalDate, List<SetLog>>>>()
-    sessions(s).filter { it.first <= to }.forEach { (d, sets) ->
-        sets.groupBy { it.ex }.forEach { (id, l) -> byEx.getOrPut(id) { mutableListOf() } += d to l }
-    }
     val plan = planPace(ctx.settings.gymLevel)
     class Raw(val ex: Exercise, val reps: Boolean, val all: List<StrengthPoint>, val pts: List<StrengthPoint>, val hist: List<List<SetLog>>) {
         val trend = trendOf(ex, all, to, plan = plan)
     }
     val raw = p.exercises.mapNotNull { ex ->
-        val hist = byEx[ex.id] ?: return@mapNotNull null
+        val hist = history(s, ex.id).filter { it.first <= to }.takeIf { it.isNotEmpty() } ?: return@mapNotNull null
         val (reps, all) = strengthPoints(ex, hist, bwKg)
         val pts = all.filter { from == null || it.date >= from }
         if (pts.isEmpty()) null else Raw(ex, reps, all, pts, hist.map { it.second })

@@ -35,6 +35,23 @@ private val photos = android.util.LruCache<String, ImageBitmap>(64)
  */
 private fun load(start: String, cookie: String?): ImageBitmap? {
     if (start.startsWith("data:image")) return decodeSmall(Base64.decode(start.substringAfter(','), Base64.DEFAULT))
+    // фото преподавателей общие — лежат в кэше на диске (система чистит его сама при нехватке места): расписание
+    // не качает их заново при каждом запуске. Своё фото из кабинета (с сессией) на диск не пишем.
+    val file = if (cookie == null) diskFile(start) else null
+    file?.takeIf { it.isFile }?.let { f -> runCatching { decodeSmall(f.readBytes()) }.getOrNull()?.let { return it } }
+    val bytes = fetch(start, cookie) ?: return null
+    val img = decodeSmall(bytes) ?: return null
+    if (file != null && bytes.size <= 512 shl 10) runCatching { file.writeBytes(bytes) }
+    return img
+}
+
+private fun diskFile(url: String): java.io.File? = runCatching {
+    val dir = java.io.File(by.zaberezh.forma.Forma.app.cacheDir, "photos").apply { mkdirs() }
+    val name = java.security.MessageDigest.getInstance("SHA-1").digest(url.toByteArray()).joinToString("") { "%02x".format(it) }
+    java.io.File(dir, name)
+}.getOrNull()
+
+private fun fetch(start: String, cookie: String?): ByteArray? {
     var url = start
     repeat(4) {
         val c = URL(url).openConnection() as HttpURLConnection
@@ -45,7 +62,7 @@ private fun load(start: String, cookie: String?): ImageBitmap? {
             c.setRequestProperty("Referer", "${Iis.HOST}/")
             if (cookie != null && url.startsWith("${Iis.HOST}/")) c.setRequestProperty("Cookie", cookie)
             when (c.responseCode) {
-                in 200..299 -> return decodeSmall(c.inputStream.use { it.readUpTo(MAX_BYTES + 1) }.takeIf { it.size <= MAX_BYTES } ?: return null)
+                in 200..299 -> return c.inputStream.use { it.readUpTo(MAX_BYTES + 1) }.takeIf { it.size <= MAX_BYTES }
                 in 300..399 -> url = URL(URL(url), c.getHeaderField("Location") ?: return null).toString().takeIf { it.startsWith("https://") } ?: return null
                 else -> return null
             }

@@ -7,6 +7,7 @@ import android.database.sqlite.SQLiteOpenHelper
 import androidx.compose.runtime.mutableIntStateOf
 import by.zaberezh.forma.core.SETTINGS
 import by.zaberezh.forma.core.store.Entry
+import by.zaberezh.forma.core.store.EntryCache
 import by.zaberezh.forma.core.store.JSON
 import by.zaberezh.forma.core.store.Store
 import kotlinx.serialization.json.JsonArray
@@ -26,6 +27,9 @@ class SqlStore(context: Context) : SQLiteOpenHelper(context, "forma.db", null, 1
     val version = mutableIntStateOf(0)
     private fun changed() { version.intValue++ }
 
+    /** Кэш в памяти (см. [EntryCache]): экраны не перечитывают базу и не разбирают JSON заново на каждое изменение. */
+    private val cache = EntryCache()
+
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL("CREATE TABLE entries(id TEXT PRIMARY KEY, type TEXT NOT NULL, ts INTEGER NOT NULL, data TEXT NOT NULL)")
         db.execSQL("CREATE INDEX entries_type_ts ON entries(type, ts)")
@@ -38,11 +42,15 @@ class SqlStore(context: Context) : SQLiteOpenHelper(context, "forma.db", null, 1
         writableDatabase.insertWithOnConflict("entries", null, ContentValues().apply {
             put("id", e.id); put("type", e.type); put("ts", e.ts); put("data", e.data.toString())
         }, SQLiteDatabase.CONFLICT_REPLACE)
+        cache.put(e)
         changed()
     }
 
     override fun delete(id: String) {
-        writableDatabase.delete("entries", "id=?", arrayOf(id)); changed()
+        val old = get(id)
+        writableDatabase.delete("entries", "id=?", arrayOf(id))
+        cache.deleted(id, old)
+        changed()
     }
 
     private fun query(sql: String, args: Array<String>): List<Entry> =
@@ -52,19 +60,20 @@ class SqlStore(context: Context) : SQLiteOpenHelper(context, "forma.db", null, 1
             }
         }
 
-    override fun get(id: String): Entry? = query("SELECT id,type,ts,data FROM entries WHERE id=?", arrayOf(id)).firstOrNull()
+    override fun get(id: String): Entry? = cache.get(id) { query("SELECT id,type,ts,data FROM entries WHERE id=?", arrayOf(id)).firstOrNull() }
 
-    override fun list(type: String, fromTs: Long, toTs: Long): List<Entry> = query(
-        "SELECT id,type,ts,data FROM entries WHERE type=? AND ts BETWEEN CAST(? AS INTEGER) AND CAST(? AS INTEGER) ORDER BY ts",
-        arrayOf(type, fromTs.toString(), toTs.toString()),
-    )
+    /** Все записи типа — из кэша; диапазон по времени — двоичным поиском. */
+    override fun list(type: String, fromTs: Long, toTs: Long): List<Entry> =
+        cache.list(type, fromTs, toTs) { query("SELECT id,type,ts,data FROM entries WHERE type=? ORDER BY ts", arrayOf(type)) }
 
-    override fun kvGet(key: String): String? =
+    override fun kvGet(key: String): String? = cache.kv(key) {
         readableDatabase.rawQuery("SELECT v FROM kv WHERE k=?", arrayOf(key)).use { if (it.moveToFirst()) it.getString(0) else null }
+    }
 
     override fun kvPut(key: String, value: String?) {
         if (value == null) writableDatabase.delete("kv", "k=?", arrayOf(key))
         else writableDatabase.insertWithOnConflict("kv", null, ContentValues().apply { put("k", key); put("v", value) }, SQLiteDatabase.CONFLICT_REPLACE)
+        cache.kvPut(key, value)
         changed()
     }
 
@@ -112,6 +121,7 @@ class SqlStore(context: Context) : SQLiteOpenHelper(context, "forma.db", null, 1
             }
             db.setTransactionSuccessful()
         } finally { db.endTransaction() }
+        cache.clear()
         changed()
         return n
     }
