@@ -3,6 +3,8 @@ package by.zaberezh.forma.core.daily
 import by.zaberezh.forma.core.Ctx
 import by.zaberezh.forma.core.Module
 import by.zaberezh.forma.core.Section
+import by.zaberezh.forma.core.gym.planPace
+import by.zaberezh.forma.core.slope
 import by.zaberezh.forma.core.store.Kind
 import by.zaberezh.forma.core.store.Store
 import by.zaberezh.forma.core.store.ZONE
@@ -14,6 +16,15 @@ import java.time.temporal.ChronoUnit
 @Serializable data class TestDef(val id: String, val title: String, val everyDays: Int = 7, val unit: String = "раз", val hint: String = "")
 
 @Serializable data class TestResult(val test: String, val date: String, val value: Double)
+
+/**
+ * Темп роста максимума: лучший результат каждой недели (обычный день с подходами не до отказа максимум не занижает),
+ * прирост в неделю по регрессии и план. weeks — конец недели → лучший результат, от старых к новым.
+ */
+data class RepsPace(val weeks: List<Pair<LocalDate, Double>>, val perWeek: Double?, val plan: Double, val status: String) {
+    /** Где по плану быть через [n] недель от нынешнего лучшего. */
+    fun goal(n: Int): Double? = weeks.lastOrNull()?.let { it.second + plan * n }
+}
 
 val TEST = Kind("daily.test", TestResult.serializer())
 
@@ -73,6 +84,32 @@ object TestModule : Module {
             facts[d.id] = all.takeLast(8).map { mapOf("date" to it.first.toString(), "value" to it.second) }
         }
         return if (lines.isEmpty()) null else Section(title, lines, emptyList(), facts)
+    }
+
+    /**
+     * Темп за [weeks] недель. План — тот же плановый рост силы, что в зале (по стажу): для подтягиваний +1% силы —
+     * это +(30 + повторы)/100 раза за подход по формуле Эпли (при 10 разах ≈ +0,4 в неделю, раз в 2–3 недели +1);
+     * для других тестов — +план% от результата.
+     */
+    fun pace(ctx: Ctx, test: String, weeks: Int = 6): RepsPace {
+        val all = results(ctx.store, test)
+        val best = (weeks - 1 downTo 0).mapNotNull { i ->
+            val end = ctx.today.minusDays(7L * i)
+            all.filter { it.first > end.minusDays(7) && it.first <= end }.maxOfOrNull { it.second }?.let { end to it }
+        }
+        val cur = best.lastOrNull()?.second ?: return RepsPace(best, null, 0.0, "нет данных")
+        val pct = planPace(ctx.settings.gymLevel)
+        val unit = if (test in FROM_COUNTER) (30 + cur) / 100 else cur / 100   // сколько раз — это 1% силы
+        val plan = pct * unit
+        val perWeek = slope(best.map { ChronoUnit.DAYS.between(ctx.today, it.first).toDouble() to it.second })?.times(7)
+        val status = when {
+            best.size < 3 || perWeek == null -> "мало данных"
+            perWeek >= plan - 1e-9 -> "растёт"
+            perWeek >= plan * 0.3 -> "медленно"
+            perWeek > -unit -> "стоит"
+            else -> "падает"
+        }
+        return RepsPace(best, perWeek, plan, status)
     }
 
     fun fmt(v: Double) = if (v == Math.rint(v)) v.toLong().toString() else "%.1f".format(v)

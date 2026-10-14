@@ -60,6 +60,19 @@ object CounterModule : Module {
     fun series(s: Store, c: String, from: LocalDate, to: LocalDate): List<Pair<LocalDate, Int>> =
         (0..ChronoUnit.DAYS.between(from, to)).map { from.plusDays(it) }.map { it to get(s, c, it) }
 
+    /** Сумма за каждую из последних [weeks] недель (по 7 дней до [today]), от старых к новым. */
+    fun weekly(s: Store, c: String, today: LocalDate, weeks: Int = 6): List<Pair<LocalDate, Int>> {
+        val days = series(s, c, today.minusDays(7L * weeks - 1), today)
+        return days.chunked(7).map { w -> w.last().first to w.sumOf { it.second } }
+    }
+
+    /** Как растёт недельный объём: прибавка за неделю по регрессии (null — меньше 3 недель с подходами). */
+    fun weeklyPace(weekly: List<Pair<LocalDate, Int>>): Double? {
+        val used = weekly.dropWhile { it.second == 0 }
+        if (used.size < 3) return null
+        return by.zaberezh.forma.core.slope(used.mapIndexed { i, w -> i.toDouble() to w.second.toDouble() })
+    }
+
     private fun used(s: Store, c: String) = COUNT.all(s).any { it.second.counter == c }
 
     override fun morning(ctx: Ctx): List<String> = ctx.settings.counters.filter { used(ctx.store, it.id) }.map { d ->

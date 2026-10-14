@@ -120,6 +120,12 @@ private fun HistoryBlock(ctx: Ctx, def: CounterDef) {
         Stat("В среднем в день", (w / 7.0).r1())
         Stat("Пропусков за неделю", "${week.count { it.second == 0 }} из 7")
         best?.let { Stat("Лучший подход", "${it.second} (${DM.format(it.first)})", C.good) }
+        // темп объёма: как растёт сумма за неделю (по 6 неделям)
+        val weekly = remember(ctx, def.id) { CounterModule.weekly(s, def.id, ctx.today) }
+        CounterModule.weeklyPace(weekly)?.let { k ->
+            Stat("Темп объёма", "${if (k >= 0) "+" else ""}${k.r1()} ${def.unit} в неделю каждую неделю")
+            Muted("За неделю, 6 недель: " + weekly.dropWhile { it.second == 0 }.joinToString(" → ") { "${it.second}" })
+        }
     }
 }
 
