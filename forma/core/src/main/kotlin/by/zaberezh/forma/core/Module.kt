@@ -70,8 +70,20 @@ val PULLUP_MAX = TestDef("pullups_max", "Подтягивания: максим�
 
 val SETTINGS = Pref("settings", Settings.serializer()) { Settings() }
 
+/**
+ * Протеиновый коктейль: молоко 2,5% 250 мл (258 г) + банан (~120 г без кожуры) + скуп протеина 30 г (80% белка).
+ * Молоко 134 ккал, Б 7,2 Ж 6,5 У 12,1; банан 107 ккал, Б 1,3 Ж 0,4 У 27,4, клетчатка 3,1; протеин 118 ккал, Б 24 Ж 1,8 У 2,4.
+ * Итого 408 г: 359 ккал, Б 32,5, Ж 8,7, У 41,9 — ниже на 100 г.
+ */
+val PROTEIN_SHAKE = by.zaberezh.forma.core.food.LibFood(
+    "Протеиновый коктейль", 408.0, by.zaberezh.forma.core.food.Macro(kcal = 88.0, p = 7.97, f = 2.13, c = 10.27, fib = 0.76),
+    "домашний рецепт: молоко 2,5% 250 мл + банан + скуп протеина 30 г (80%)", uses = 5,
+    aliases = listOf("протеиновый коктейль", "коктейль протеиновый", "протеиновый шейк", "шейк", "коктейль", "протеин с молоком и бананом",
+        "протеиновых коктейля", "протеиновых коктейлей"),
+)
+
 /** Последняя версия схемы настроек (см. миграции ниже). */
-const val SETTINGS_SCHEMA = 7
+const val SETTINGS_SCHEMA = 8
 
 /**
  * Миграция сохранённых настроек при обновлении приложения.
@@ -105,6 +117,11 @@ fun migrateSettings(store: Store) {
     if (st.schema < 7) { // v7: мышцы и шаг, угаданные по названию старыми правилами, — по новым (французский жим — трицепс)
         if (store.kvGet(PROGRAM.key) != null) PROGRAM.set(store, PROGRAM.get(store).reguessed())
         st = st.copy(schema = 7)
+    }
+    if (st.schema < 8) { // v8: свой протеиновый коктейль — всегда одинаковый, в библиотеку еды
+        if (store.get(by.zaberezh.forma.core.food.FoodModule.libId(PROTEIN_SHAKE.name)) == null)
+            by.zaberezh.forma.core.food.LIB.save(store, PROTEIN_SHAKE, id = by.zaberezh.forma.core.food.FoodModule.libId(PROTEIN_SHAKE.name))
+        st = st.copy(schema = 8)
     }
     SETTINGS.set(store, st)
 }
