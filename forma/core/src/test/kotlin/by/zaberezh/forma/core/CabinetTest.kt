@@ -4,6 +4,7 @@ import by.zaberezh.forma.core.study.Cabinet
 import by.zaberezh.forma.core.study.Certificates
 import by.zaberezh.forma.core.study.Http
 import by.zaberezh.forma.core.study.HttpResp
+import by.zaberezh.forma.core.study.Iis
 import by.zaberezh.forma.core.study.IisSession
 import by.zaberezh.forma.core.study.IisUnauthorized
 import by.zaberezh.forma.core.study.Omissions
@@ -106,7 +107,7 @@ class CabinetTest {
     }
 
     @Test fun loadSectionsWithOptionalParts() {
-        val calls = mutableListOf<String>()
+        val calls = java.util.Collections.synchronizedList(mutableListOf<String>())   // части раздела грузятся параллельно
         val http = Http { _, url, _, _ ->
             calls += url.substringAfter("/api/v1")
             when {
@@ -133,5 +134,29 @@ class CabinetTest {
         assertTrue(!by.zaberezh.forma.core.study.adoptGroup(s, "гр. 12"))
         assertTrue(by.zaberezh.forma.core.study.adoptGroup(s, " 421701 "))
         assertEquals(by.zaberezh.forma.core.study.StudyPrefs("421701", 0), by.zaberezh.forma.core.study.STUDY_PREFS.get(s))
+    }
+
+    @Test fun unexcusedHoursCountEvenWithoutMonthlySummary() {
+        // сводка по месяцам пустая (или в другом формате), а неуважительные есть — было «0 ч», должно быть 4
+        val o = Cabinet.omissions(null,
+            """{"omissionDtoList":[{"date":"2026-10-02","subject":"Физика","lessonTypeAbbrev":"ЛК","term":1},
+               {"date":"2026-10-09","subject":{"name":"ОКГ"},"lessonTypeAbbrev":"ЛР","hours":2,"term":1}]}""", null)
+        assertEquals(4, o.total)                         // часы не указаны — одна пара: 2 ч
+        assertEquals(listOf("09.10.2026", "02.10.2026"), o.unexcused.map { it.date })
+        // и поля сводки под другим именем тоже читаются
+        assertEquals(6, Cabinet.omissions("""[{"monthName":"октябрь","count":6}]""", null, null).total)
+    }
+
+    @Test fun expiredSessionIsUnauthorizedNotAnError() {
+        val s = IisSession("SESSION=old")
+        // ИИС на протухшую сессию отвечает переадресацией или страницей входа — это «войти снова», а не сбой раздела
+        assertFailsWith<IisUnauthorized> { Iis.get({ _, _, _, _ -> HttpResp(302, "") }, s, "/markbook", pause = {}) }
+        assertFailsWith<IisUnauthorized> { Iis.get({ _, _, _, _ -> HttpResp(200, "<!doctype html><html>вход</html>") }, s, "/markbook", pause = {}) }
+        // сбой сети или 503 — одна повторная попытка
+        var n = 0
+        assertEquals("{}", Iis.get({ _, _, _, _ -> if (n++ == 0) throw java.io.IOException("reset") else HttpResp(200, "{}") }, s, "/x", pause = {}))
+        n = 0
+        assertEquals("[]", Iis.get({ _, _, _, _ -> if (n++ == 0) HttpResp(503, "") else HttpResp(200, "[]") }, s, "/x", pause = {}))
+        assertFailsWith<by.zaberezh.forma.core.study.IisError> { Iis.get({ _, _, _, _ -> throw java.io.IOException("down") }, s, "/x", pause = {}) }
     }
 }

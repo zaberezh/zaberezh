@@ -96,14 +96,22 @@ object Iis {
         return if (r.code in 200..299 && r.body.trimStart().startsWith("{")) s.copy(profile = r.body) else null
     }
 
-    /** GET раздела. 401/403 — сессия истекла. */
-    fun get(http: Http, session: IisSession, path: String): String {
-        val r = http.send("GET", BASE + path, null, headers(session))
+    /**
+     * GET раздела. Сессия истекла — [IisUnauthorized]: это не только 401/403, но и переадресация на вход (3xx)
+     * и страница входа вместо JSON — иначе раздел показывал «не загрузилось», а повторный вход не запускался.
+     * Сбой сети или перегрузка ИИС (502–504) — одна повторная попытка через секунду.
+     */
+    fun get(http: Http, session: IisSession, path: String, pause: (Long) -> Unit = Thread::sleep): String {
+        fun once() = http.send("GET", BASE + path, null, headers(session))
+        val r = try { once().let { if (it.code in 502..504) { pause(1000); once() } else it } }
+            catch (e: java.io.IOException) { pause(1000); try { once() } catch (e2: java.io.IOException) {
+                throw IisError("Нет связи с ИИС — проверь интернет и нажми «Обновить»") } }
         return when {
-            r.code == 401 || r.code == 403 -> throw IisUnauthorized()
+            r.code == 401 || r.code == 403 || r.code in 300..399 -> throw IisUnauthorized()
             r.code == 404 -> throw IisError("Раздел недоступен в ИИС")
             r.code in 500..599 -> throw IisError("ИИС сейчас недоступен (ошибка ${r.code}) — попробуй позже")
             r.code !in 200..299 -> throw IisError("ИИС ответил ошибкой ${r.code}")
+            r.body.trimStart().startsWith("<") -> throw IisUnauthorized()   // HTML страницы входа вместо данных
             else -> r.body
         }
     }

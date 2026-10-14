@@ -55,7 +55,14 @@ data class IisTask(val number: Int, val due: String?, val done: Boolean, val mar
 
 /** Пропуски: по месяцам, без уважительной причины, справки об уважительных. */
 data class Omissions(val monthly: List<Pair<String, Int>>, val unexcused: List<Omission>, val certificates: List<OmissionCert>) : CabinetData {
-    val total get() = monthly.sumOf { it.second }
+    /** Последний семестр, где есть пропуски без уважительной причины (0 — семестр не указан). */
+    val term get() = unexcused.maxOfOrNull { it.term } ?: 0
+    /** Часы без уважительной причины в текущем семестре — по списку пропусков, а не по сводке по месяцам. */
+    val unexcusedHours get() = unexcused.filter { it.term == term }.sumOf { it.hours }
+    /** Всего по месяцам (сводка ИИС; бывает пустой). */
+    val monthlyTotal get() = monthly.sumOf { it.second }
+    /** Главное число: без уважительной; списка нет — сводка по месяцам. */
+    val total get() = if (unexcused.isNotEmpty()) unexcusedHours else monthlyTotal
 }
 data class Omission(val date: String, val subject: String, val type: String, val hours: Int, val term: Int)
 data class OmissionCert(val name: String, val from: String, val to: String, val note: String)
@@ -192,13 +199,20 @@ object Cabinet {
         return Rating(subjects.sortedByDescending { it.marks.size })
     }
 
+    /** Список из ответа: сам массив или первый массив внутри объекта-обёртки ({"omissionDtoList":[…]} и т. п.). */
+    private fun list(e: JsonElement?): List<JsonObject> =
+        ((e as? JsonArray) ?: e.o()?.values?.firstOrNull { it is JsonArray }).a().mapNotNull { it.o() }
+
     fun omissions(monthlyJson: String?, unexcusedJson: String?, certsJson: String?): Omissions {
-        val monthly = parse(monthlyJson).a().mapNotNull { it.o() }.map { it.s("month") to (it.i("omissionCount") ?: 0) }
+        // имена полей у ИИС менялись — читаем все известные варианты, а не только одно
+        val monthly = list(parse(monthlyJson)).map { it.s("month", "monthName", "name") to (it.i("omissionCount") ?: it.i("count") ?: it.i("hours") ?: 0) }
             .filter { it.first.isNotEmpty() }
-        val unexcused = parse(unexcusedJson).a().mapNotNull { it.o() }.map { x ->
+        val unexcused = list(parse(unexcusedJson)).map { x ->
             val subj = x["subject"].o()
-            Omission(date(x.s("date")), subj.s("name").ifEmpty { subj.s("abbrev") }.ifEmpty { x.s("subject") },
-                x.s("lessonTypeAbbrev"), x.i("hours") ?: 0, x.i("term") ?: 0)
+            Omission(date(x.s("date", "dateString", "lessonDate")), subj.s("name").ifEmpty { subj.s("abbrev") }.ifEmpty { x.s("subject", "subjectName") },
+                x.s("lessonTypeAbbrev", "lessonType"),
+                // часы не указаны — это одна пара: 2 академических часа
+                x.i("hours") ?: x.i("omissionHours") ?: x.i("hoursCount") ?: 2, x.i("term") ?: x.i("semester") ?: 0)
         }.sortedByDescending { day(it.date) }
         val c = parse(certsJson)
         val list = (c as? JsonArray) ?: c.o()?.let { it["omissionDtoList"] ?: it["omissionList"] ?: it["omissions"] }
@@ -221,16 +235,26 @@ object Cabinet {
             x.s("certificateType"), x.i("status") ?: 0, x.s("rejectionReason"))
     }.sortedByDescending { it.number })
 
+    /** Несколько запросов раздела — параллельно: ИИС отвечает по секунде-две, по очереди это складывается. */
+    private fun <T> par(vararg f: () -> T): List<T> {
+        val jobs = f.map { java.util.concurrent.CompletableFuture.supplyAsync(it, POOL) }
+        return jobs.map { j ->
+            try { j.join() } catch (e: java.util.concurrent.CompletionException) { throw e.cause ?: e }
+        }
+    }
+    private val POOL = java.util.concurrent.Executors.newFixedThreadPool(4) { r -> Thread(r, "iis").apply { isDaemon = true } }
+
     /** Загрузка раздела целиком (несколько запросов там, где ИИС раскладывает данные по разным адресам). */
     fun load(http: Http, session: IisSession, id: String): CabinetData {
         fun get(path: String) = Iis.get(http, session, path)
         // необязательные части: раздел недоступен (404 и т. п.) — просто без них; истёкшая сессия — наверх
         fun opt(path: String) = try { get(path) } catch (e: IisUnauthorized) { throw e } catch (e: Exception) { null }
         return when (id) {
-            "cv" -> person(opt("/profiles/personal-profile"), opt("/personal-information"), session.profile)
+            "cv" -> par({ opt("/profiles/personal-profile") }, { opt("/personal-information") }).let { (a, b) -> person(a, b, session.profile) }
             "markbook" -> markbook(get("/markbook"))
             "rating" -> rating(get("/personal-rating"))
-            "omissions" -> omissions(opt("/omission-count-by-student-for-semester"), opt("/disrespectful-omissions-by-student"), opt("/omissions-by-student"))
+            "omissions" -> par({ opt("/omission-count-by-student-for-semester") }, { opt("/disrespectful-omissions-by-student") }, { opt("/omissions-by-student") })
+                .let { (m, u, c) -> omissions(m, u, c) }
             "group" -> group(get("/student-groups/user-group-info"))
             "certificates" -> certificates(get("/certificate"))
             else -> throw IisError("Неизвестный раздел")

@@ -63,6 +63,17 @@ import kotlinx.coroutines.withContext
 private fun loadSession(c: Context): IisSession? =
     SecureStore.get(c, "cookie")?.let { IisSession(it, SecureStore.get(c, "profile").orEmpty()) }
 
+/** Сессия ИИС живёт около получаса: старше этого — сначала тихо входим заново, а не ловим ошибки по всем разделам. */
+private const val STALE_MS = 20 * 60_000L
+
+/**
+ * Разделы кабинета — в памяти, пока приложение открыто (на диск не пишутся): вернулся во вкладку — данные видны
+ * сразу, свежие догружаются в фоне. «Выйти» стирает.
+ */
+private object CabinetCache {
+    val data = mutableStateMapOf<String, Result<CabinetData>>()
+}
+
 /**
  * Личный кабинет ИИС в дизайне приложения. Безопасность: пароль уходит только на https://iis.bsuir.by;
  * хранится сессия (и, если включено «Оставаться в системе», логин с паролем) — только в сейфе Android Keystore.
@@ -77,18 +88,32 @@ fun CabinetScreen() {
     val s = session
     val scope = rememberCoroutineScope()
     var renewing by remember { mutableStateOf(false) }
+    // проверка возраста сессии при открытии: протухла — сначала новый вход, потом разделы (а не «не загрузилось» на всех)
+    var ready by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        val at = SecureStore.get(c, "cookie_at")?.toLongOrNull() ?: 0L
+        if (session != null && by.zaberezh.forma.sys.IisAuth.canRenew(c) && System.currentTimeMillis() - at > STALE_MS) {
+            renewing = true
+            withContext(Dispatchers.IO) { by.zaberezh.forma.sys.IisAuth.renew(c) }?.let { session = it }
+            renewing = false
+        }
+        ready = true
+    }
     fun enter(x: IisSession, creds: Pair<String, String>? = null) {
         // сбой сейфа или планировщика не должен ронять вход: сессия работает и без них, просто не запомнится
-        val saved = runCatching { SecureStore.put(c, "cookie", x.cookie); SecureStore.put(c, "profile", x.profile) }.isSuccess
+        val saved = runCatching {
+            SecureStore.put(c, "cookie", x.cookie); SecureStore.put(c, "profile", x.profile)
+            SecureStore.put(c, "cookie_at", System.currentTimeMillis().toString())
+        }.isSuccess
         runCatching { if (creds != null) by.zaberezh.forma.sys.IisAuth.remember(c, creds.first, creds.second) else by.zaberezh.forma.sys.IisAuth.forget(c) }
-        session = x; site = false
+        session = x; site = false; ready = true
         notice = if (saved) null else "Вошёл, но сессию не удалось сохранить — после перезапуска войди снова"
         runCatching { by.zaberezh.forma.sys.IisCheck.loggedIn(c) }
     }
     when {
         site -> SiteLogin(onDone = { enter(it) }, onCancel = { wipeWeb(); site = false })
         s == null -> LoginForm(notice, onLogin = ::enter, onSite = { wipeWeb(); site = true })
-        else -> Cabinet(s, onExpired = {
+        else -> Cabinet(s, ready && !renewing, onExpired = {
             // сессия ИИС истекла: тихо входим заново сохранённым паролем; не вышло — просим войти
             if (!renewing) {
                 renewing = true
@@ -96,11 +121,11 @@ fun CabinetScreen() {
                     val fresh = withContext(Dispatchers.IO) { by.zaberezh.forma.sys.IisAuth.renew(c) }
                     renewing = false
                     if (fresh != null) session = fresh
-                    else { SecureStore.clear(c); wipeWeb(); session = null; notice = "Сессия закончилась — войди снова" }
+                    else { SecureStore.clear(c); wipeWeb(); CabinetCache.data.clear(); session = null; notice = "Сессия закончилась — войди снова" }
                 }
             }
         },
-            onLogout = { SecureStore.clear(c); wipeWeb(); session = null; notice = null })
+            onLogout = { SecureStore.clear(c); wipeWeb(); CabinetCache.data.clear(); session = null; notice = null })
     }
 }
 
@@ -224,12 +249,13 @@ private fun LoginForm(notice: String?, onLogin: (IisSession, Pair<String, String
 }
 
 @Composable
-private fun Cabinet(session: IisSession, onExpired: () -> Unit, onLogout: () -> Unit) {
+private fun Cabinet(session: IisSession, ready: Boolean, onExpired: () -> Unit, onLogout: () -> Unit) {
     val c = LocalContext.current
     val scope = rememberCoroutineScope()
     var open by remember { mutableStateOf<IisSection?>(null) }
-    val data = remember { mutableStateMapOf<String, Result<CabinetData>>() }
+    val data = CabinetCache.data
     val busy = remember { mutableStateMapOf<String, Boolean>() }
+    val stale = remember { mutableStateMapOf<String, String>() }   // обновить не вышло — показаны прошлые данные
     BackHandler(enabled = open != null) { open = null }
 
     suspend fun fetch(id: String) {
@@ -244,10 +270,23 @@ private fun Cabinet(session: IisSession, onExpired: () -> Unit, onLogout: () -> 
             }
         }
         busy[id] = false
-        if (r.exceptionOrNull() is IisUnauthorized) onExpired() else data[id] = r
+        val e = r.exceptionOrNull()
+        when {
+            e is IisUnauthorized -> onExpired()
+            // свежее не загрузилось, а прошлое есть — оставляем прошлое и говорим об этом, а не меняем данные на ошибку
+            e != null && data[id]?.isSuccess == true -> stale[id] = e.message ?: "ошибка"
+            else -> { data[id] = r; stale.remove(id) }
+        }
     }
-    // всё сразу в фоне: плитки показывают сводку, а раздел открывается мгновенно
-    LaunchedEffect(session) { Iis.SECTIONS.forEach { if (data[it.id]?.isSuccess != true) fetch(it.id) } }
+    // все разделы сразу и параллельно (по 3 запроса, чтобы ИИС не принял за атаку): плитки показывают сводку,
+    // раздел открывается мгновенно; пока идёт проверка сессии — ждём, а не шлём запросы со старой
+    LaunchedEffect(session, ready) {
+        if (!ready) return@LaunchedEffect
+        val gate = kotlinx.coroutines.sync.Semaphore(3)
+        kotlinx.coroutines.coroutineScope {
+            Iis.SECTIONS.forEach { x -> launch { gate.acquire(); try { fetch(x.id) } finally { gate.release() } } }
+        }
+    }
 
     val fromLogin = remember(session) { runCatching { Cabinet.person(null, null, session.profile) }.getOrElse { Cabinet.person(null, null) } }
     val person = data["cv"]?.getOrNull() as? Person ?: fromLogin
@@ -286,7 +325,7 @@ private fun Cabinet(session: IisSession, onExpired: () -> Unit, onLogout: () -> 
                     // одна высота у плиток в ряду (и одинаковая структура у всех — сетка ровная)
                     androidx.compose.foundation.layout.Row(Modifier.height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         row.forEach { x ->
-                            SectionTile(x, tileOf(data[x.id]?.getOrNull()), busy[x.id] == true, data[x.id]?.isFailure == true, Modifier.weight(1f).fillMaxHeight()) { open = x }
+                            SectionTile(x, tileOf(data[x.id]?.getOrNull()), busy[x.id] == true || (!ready && data[x.id] == null), data[x.id]?.isFailure == true, Modifier.weight(1f).fillMaxHeight()) { open = x }
                         }
                         if (row.size == 1) androidx.compose.foundation.layout.Spacer(Modifier.weight(1f))
                     }
@@ -303,9 +342,12 @@ private fun Cabinet(session: IisSession, onExpired: () -> Unit, onLogout: () -> 
             }
             val r = data[sec.id]
             when {
-                r == null -> item { Block { Line { CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp); Muted("Загружаю из ИИС…") } } }
+                r == null -> item { Block { Line { CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp); Muted(if (ready) "Загружаю из ИИС…" else "Вхожу в ИИС…") } } }
                 r.isFailure -> item { Block { Err(r.exceptionOrNull()?.message ?: "Ошибка"); Muted("Попробуй «Обновить» или открой раздел на сайте ИИС.") } }
-                else -> cabinetSection(r.getOrThrow(), person.fio)
+                else -> {
+                    stale[sec.id]?.let { m -> item { Block { Muted("Не обновилось ($m) — показаны данные с прошлой загрузки.") } } }
+                    cabinetSection(r.getOrThrow(), person.fio)
+                }
             }
         }
     }

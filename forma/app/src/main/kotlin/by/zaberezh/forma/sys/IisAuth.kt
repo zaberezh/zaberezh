@@ -23,7 +23,10 @@ object IisAuth {
         val u = SecureStore.get(c, "user") ?: return null
         val p = SecureStore.get(c, "pass") ?: return null
         val s = runCatching { Iis.login(Iis.jdk, u, p) }.getOrNull() ?: return null
-        runCatching { SecureStore.put(c, "cookie", s.cookie); SecureStore.put(c, "profile", s.profile) }
+        runCatching {
+            SecureStore.put(c, "cookie", s.cookie); SecureStore.put(c, "profile", s.profile)
+            SecureStore.put(c, "cookie_at", System.currentTimeMillis().toString())
+        }
         return s
     }
 }

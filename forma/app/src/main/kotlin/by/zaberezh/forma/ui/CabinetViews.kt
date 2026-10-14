@@ -121,7 +121,11 @@ fun tileOf(d: CabinetData?): TileInfo? = when (d) {
         gradeColor(d.average),
     )
     is Markbook -> TileInfo(d.average?.avg(2) ?: "—", if (d.average == null) "оценок пока нет" else "средний балл", gradeColor(d.average))
-    is Omissions -> TileInfo(hours(d.total), if (d.total == 0) "пропусков нет" else "без уважительной причины", if (d.total == 0) C.good else C.warn)
+    is Omissions -> TileInfo(hours(d.total), when {
+        d.total == 0 -> "пропусков нет"
+        d.unexcused.isNotEmpty() -> "без уважительной причины"
+        else -> "пропущено за семестр"
+    }, if (d.total == 0) C.good else C.warn)
     is GroupInfo -> TileInfo("${d.students.size}", plural(d.students.size, "человек", "человека", "человек") + " в группе")
     is Certificates -> TileInfo(
         "${d.items.size}",
@@ -282,8 +286,10 @@ private fun MarkLine(x: MarkRow) = Row(verticalAlignment = Alignment.CenterVerti
 private fun LazyListScope.omissions(o: Omissions) {
     item {
         Block {
-            BigValue("${o.total}", "ч", "без уважительной причины в этом семестре")
+            BigValue("${o.total}", "ч", if (o.unexcused.isNotEmpty() || o.total == 0) "без уважительной причины в этом семестре" else "пропущено в этом семестре")
             if (o.total == 0 && o.unexcused.isEmpty()) Note("Пропусков без уважительной причины нет")
+            // сводка по месяцам ИИС бывает шире (вместе с уважительными) — показываем, если расходится
+            if (o.unexcused.isNotEmpty() && o.monthlyTotal > 0 && o.monthlyTotal != o.total) Muted("Всего по сводке ИИС за семестр: ${hours(o.monthlyTotal)}")
             val max = o.monthly.maxOfOrNull { it.second }?.coerceAtLeast(1) ?: 1
             o.monthly.forEach { (month, n) ->
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
