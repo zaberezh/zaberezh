@@ -19,6 +19,9 @@ import kotlin.math.min
 
 fun e1rm(w: Double, r: Int, bwLoad: Double = 0.0) = (w + bwLoad) * (1 + min(r, 15) / 30.0)
 
+/** Тренировка упражнения: подходы и шло ли оно после другого упражнения на ту же мышцу (тогда вес ниже — сравнивать отдельно). */
+data class ExSession(val ts: Long, val date: LocalDate, val sets: List<SetLog>, val after: Boolean = false)
+
 data class ExTrend(
     val ex: Exercise, val n: Int, val first: Double, val last: Double, val best: Double, val pctWeek: Double?, val status: String,
     val firstSet: SetLog? = null, val lastSet: SetLog? = null,   // лучший подход первой и последней тренировки периода
@@ -75,15 +78,59 @@ object GymModule : Module {
 
     fun resetWeek(ctx: Ctx) = ctx.store.kvPut(planKey(ctx.today.with(DayOfWeek.MONDAY)), null)
 
-    /** Тренировки → по упражнениям: (время, день, подходы) — один проход на все упражнения, пока тренировки не менялись. */
-    private val byExercise = by.zaberezh.forma.core.store.Memo { all: List<Pair<Entry, Workout>> ->
-        val m = HashMap<String, MutableList<Triple<Long, LocalDate, List<SetLog>>>>()
-        all.forEach { (e, w) -> w.sets.groupBy { it.ex }.forEach { (id, l) -> m.getOrPut(id) { mutableListOf() } += Triple(e.ts, e.day, l) } }
+    /**
+     * Тренировки → по упражнениям, один проход на все, пока тренировки и программа не менялись. Для каждой тренировки
+     * упражнения — шло ли оно после другого упражнения на ту же мышцу (2+ подхода раньше: жим гантелей после жима лёжа).
+     */
+    private val byExercise = by.zaberezh.forma.core.store.Memo2 { all: List<Pair<Entry, Workout>>, p: Program ->
+        val m = HashMap<String, MutableList<ExSession>>()
+        all.forEach { (e, w) ->
+            val firstAt = HashMap<String, Int>()
+            w.sets.forEachIndexed { i, st -> firstAt.putIfAbsent(st.ex, i) }
+            w.sets.groupBy { it.ex }.forEach { (id, l) ->
+                val main = p.ex(id)?.let(::mainMuscle)
+                val before = if (main == null) 0 else w.sets.subList(0, firstAt.getValue(id))
+                    .count { st -> st.ex != id && (p.ex(st.ex)?.muscles?.get(main) ?: 0.0) >= 1.0 }
+                m.getOrPut(id) { mutableListOf() } += ExSession(e.ts, e.day, l, before >= 2)
+            }
+        }
         m
     }
 
+    /** Тренировки упражнения до [before], от старых к новым. */
+    fun exSessions(s: Store, exId: String, before: Long = Long.MAX_VALUE): List<ExSession> =
+        byExercise(workouts(s), program(s))[exId].orEmpty().filter { it.ts < before }
+
     fun history(s: Store, exId: String, before: Long = Long.MAX_VALUE): List<Pair<LocalDate, List<SetLog>>> =
-        byExercise(workouts(s))[exId].orEmpty().filter { it.first < before }.map { it.second to it.third }
+        exSessions(s, exId, before).map { it.date to it.sets }
+
+    // ---------- «начать отсчёт заново»: сменил тренажёр, хват или технику — старые веса с новыми не сравнить ----------
+    private fun baseKey(exId: String) = "gym.base.$exId"
+
+    /** С какого дня считать прогресс упражнения (null — со всей истории). */
+    fun progressFrom(s: Store, exId: String): LocalDate? = s.kvGet(baseKey(exId))?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
+
+    fun setProgressFrom(s: Store, exId: String, d: LocalDate?) = s.kvPut(baseKey(exId), d?.toString())
+
+    /** Тренировки упражнения для прогресса: с даты «начать отсчёт заново», если она задана. */
+    fun progressSessions(s: Store, exId: String): List<ExSession> {
+        val base = progressFrom(s, exId)
+        return exSessions(s, exId).filter { base == null || it.date >= base }
+    }
+
+    /** Самая первая тренировка — с неё начинается история (объём «в неделю» не делится на недели, когда ещё не ходил). */
+    fun firstDay(s: Store): LocalDate? = sessions(s).firstOrNull()?.first
+
+    /**
+     * Очерёдность упражнения в плане: идёт ли после другого упражнения на ту же мышцу (2+ подхода раньше) и после какого.
+     * Тогда вес ниже, чем когда оно первое, — цель и сравнение учитывают это.
+     */
+    fun context(p: Program, items: List<PlanItem>, exId: String): Pair<Boolean, String?> {
+        val m = p.ex(exId)?.let(::mainMuscle) ?: return false to null
+        val i = items.indexOfFirst { it.ex == exId }
+        val before = (if (i < 0) items else items.take(i)).filter { it.ex != exId && (p.ex(it.ex)?.muscles?.get(m) ?: 0.0) >= 1.0 }
+        return (before.sumOf { it.sets } >= 2) to before.lastOrNull()?.let { p.ex(it.ex)?.name }
+    }
 
     // ---------- план на дату ----------
     private fun planId(d: LocalDate) = "plan:$d"
@@ -193,13 +240,19 @@ object GymModule : Module {
     fun targets(s: Store, plan: DayPlan, before: Long = Long.MAX_VALUE): List<Target> {
         val p = program(s)
         val date = LocalDate.parse(plan.date)
-        return plan.items.mapNotNull { i -> p.ex(i.ex)?.copy(sets = i.sets) }.map { ex -> target(s, ex, date, before) }
+        return plan.items.mapNotNull { i -> p.ex(i.ex)?.copy(sets = i.sets) }.map { ex ->
+            val (after, name) = context(p, plan.items, ex.id)
+            target(s, ex, date, before, after, name)
+        }
     }
 
-    /** Цель упражнения на дату: по тренировкам до [before] и перерыву с последней из них. */
-    fun target(s: Store, ex: Exercise, date: LocalDate, before: Long = Long.MAX_VALUE): Target {
-        val h = history(s, ex.id, before)
-        return nextTarget(ex, h.map { it.second }, h.lastOrNull()?.let { ChronoUnit.DAYS.between(it.first, date) } ?: 0)
+    /**
+     * Цель упражнения на дату: по тренировкам до [before] в той же очерёдности ([after] — после другого упражнения
+     * на ту же мышцу, [afterName] — какого) и перерыву с последней тренировки.
+     */
+    fun target(s: Store, ex: Exercise, date: LocalDate, before: Long = Long.MAX_VALUE, after: Boolean = false, afterName: String? = null): Target {
+        val h = exSessions(s, ex.id, before)
+        return targetOf(ex, h, after, afterName, h.lastOrNull()?.let { ChronoUnit.DAYS.between(it.date, date) } ?: 0)
     }
 
     /** Текущая сила по упражнению: последний рабочий вес × повторы (или стартовые из базы). */
@@ -215,7 +268,7 @@ object GymModule : Module {
 
     /** Вывод по упражнению за последние [days] дней: растёт / медленно / стоит / падает (см. [verdict]). */
     fun trend(s: Store, ex: Exercise, to: LocalDate, days: Long = TREND_DAYS): ExTrend =
-        trendOf(ex, strengthPoints(ex, history(s, ex.id), latestWeight(s) ?: 70.0).second, to, days,
+        trendOf(ex, comparable(strengthPoints(ex, progressSessions(s, ex.id), latestWeight(s) ?: 70.0).second, to, days), to, days,
             planPace(by.zaberezh.forma.core.SETTINGS.get(s).gymLevel))
 
     /** Подходы на мышцу за период (≥5 повторов; косвенные с коэффициентом). */
@@ -241,6 +294,8 @@ object GymModule : Module {
         val s = ctx.store
         val p = program(s)
         val weeks = (ChronoUnit.DAYS.between(from, to) + 1) / 7.0
+        // объём «в неделю» — по неделям, когда уже ходил: начал неделю назад — не делим на две
+        val volWeeks = (firstDay(s)?.takeIf { it > from }?.let { (ChronoUnit.DAYS.between(it, to) + 1) / 7.0 } ?: weeks).coerceIn(1.0, maxOf(weeks, 1.0))
         val done = trainedDays(ctx, from, to).size
         val plan = (weeks * ctx.settings.sessionsPerWeek).toInt()
         val lines = mutableListOf("Тренировок: $done из $plan")
@@ -267,7 +322,7 @@ object GymModule : Module {
                 "если в норме — разгрузочная неделя: те же веса, −40% подходов."
         else bad.forEach { actions += "${it.ex.name}: ${it.status}. Смени диапазон повторов или вариацию на 4–6 недель." }
 
-        val vol = volume(s, from, to).mapValues { it.value / weeks }
+        val vol = volume(s, from, to).mapValues { it.value / volWeeks }
         val volLine = MUSCLES.keys.mapNotNull { m -> vol[m]?.let { "${MUSCLES[m]} ${it.r1()}" } }
         if (volLine.isNotEmpty()) lines += "Подходов в неделю: " + volLine.joinToString(", ")
         p.volume.forEach { (m, range) ->

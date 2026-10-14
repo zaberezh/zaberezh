@@ -62,4 +62,38 @@ fun nextTarget(ex: Exercise, history: List<List<SetLog>>, restDays: Long = 0): T
     return Target(ex, w, reps, if (loadable) "+1 повтор в подходах, где возможно" else "без веса — прибавляй повторы")
 }
 
+/**
+ * Цель с учётом очерёдности. Упражнение после другого на ту же мышцу (жим гантелей после жима лёжа) слабее, чем первым,
+ * поэтому сравниваем с тренировками в той же очерёдности. Такая была среди последних 4 тренировок упражнения — обычная
+ * двойная прогрессия по ним (и застой ищется тоже только среди них). Не было — от прошлого раза: сегодня после другого,
+ * а тогда первым — на ~10% легче и прошлые повторы; сегодня первым, а тогда после — как обычно, сил будет больше.
+ */
+fun targetOf(ex: Exercise, h: List<ExSession>, after: Boolean, afterName: String? = null, restDays: Long = 0): Target {
+    val what = afterName?.let { "после «$it»" } ?: "после другого упражнения на эту мышцу"
+    val sameAt = h.indexOfLast { it.after == after }
+    if (sameAt >= 0 && h.size - sameAt <= 4) {
+        val t = nextTarget(ex, h.filter { it.after == after }.map { it.sets }, restDays)
+        return if (after && t.weight != null) t.copy(note = "${t.note} · $what") else t
+    }
+    val t = nextTarget(ex, h.map { it.sets }, restDays)
+    val last = h.lastOrNull() ?: return t
+    if (after && !last.after) {
+        val work = workingSets(last.sets)
+        val w = work.first().w
+        val reps = List(ex.sets) { i -> (work.getOrNull(i) ?: work.last()).r.coerceAtLeast(1) }
+        val down = lighter(ex, w)
+        return if (down < w) Target(ex, down, reps, "$what — ~10% легче, чем когда оно первое; дальше вверх как обычно")
+        else Target(ex, w, reps.map { (it - 2).coerceAtLeast(1) }, "$what — повторов меньше, чем когда оно первое")
+    }
+    if (!after && last.after) return t.copy(note = "сегодня первым на эту мышцу — сил больше, чем в прошлый раз (тогда шло после другого)")
+    return t
+}
+
+/** Вес на ~10% легче, кратно шагу; ниже нуля (или до нуля у обычного упражнения) — не опускаем. */
+fun lighter(ex: Exercise, w: Double): Double {
+    if (ex.step <= 0 || w <= 0) return w
+    val down = roundTo(w * 0.9, ex.step).let { if (it < w) it else w - ex.step }
+    return if (down > 0 || ex.bw > 0 && down >= 0) down else w
+}
+
 fun roundTo(v: Double, step: Double): Double = if (step <= 0) v else Math.round(v / step) * step

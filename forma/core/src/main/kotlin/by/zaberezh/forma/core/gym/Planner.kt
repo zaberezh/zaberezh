@@ -476,6 +476,10 @@ object Planner {
             { TAIL[main(ex(it))] ?: 0 },
             { regionRank[region(main(ex(it)))] ?: 0.0 },
             { if (isCompound(ex(it))) 0 else 1 },
+            // внутри мышцы — одна и та же очерёдность каждый раз: штанга раньше гантелей, гантели раньше блоков;
+            // иначе жим гантелей то первый, то после жима лёжа, и вес в нём «скачет» от очерёдности, а не от силы
+            { loadRank(ex(it)) },
+            { p.exercises.indexOfFirst { e -> e.id == it.ex } },
         )).map { it.copy(pair = null) }
         if (blocks.indexOf(Block.PULL) < 2) {
             val (grip, rest) = ordered.partition { main(ex(it)) == "forearms" }
@@ -511,6 +515,17 @@ object Planner {
             label++
         }
         return out
+    }
+
+    /** Тяжелее — раньше: штанга (и свой вес — подтягивания, брусья), потом гантели, потом тренажёры и блоки. */
+    private fun loadRank(e: Exercise): Int {
+        val n = e.name.lowercase().replace('ё', 'е')
+        return when {
+            e.bw > 0 || listOf("штанг", "смит", "гриф").any { it in n } -> 0
+            "гантел" in n -> 1
+            listOf("тренажер", "блок", "кроссовер", "хаммер", "канат", "трос").any { it in n } -> 2
+            else -> 1
+        }
     }
 
     /** Короткое описание дня: что реально тренируется (засчитанные подходы), до 5 мышц — бицепс с 2–3 подходами не теряется. */

@@ -337,7 +337,9 @@ private fun WorkoutScreen(ctx: Ctx, id: String) {
     val targets = remember(e.ts, ids, setsPlanned) {
         ids.mapNotNull(p::ex).associate { ex ->
             val x = ex.copy(sets = setsPlanned[ex.id] ?: ex.sets)
-            ex.id to (x to GymModule.target(s, x, date, e.ts))
+            // после другого упражнения на ту же мышцу (жим гантелей после жима лёжа) цель своя: вес там ниже
+            val (after, name) = GymModule.context(p, plan.items, ex.id)
+            ex.id to (x to GymModule.target(s, x, date, e.ts, after, name))
         }
     }
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }

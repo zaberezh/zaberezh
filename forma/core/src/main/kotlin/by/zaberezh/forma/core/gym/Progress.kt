@@ -22,23 +22,41 @@ fun planPace(level: Int): Double = PACE[level.coerceIn(0, PACE.lastIndex)]
 val GOING = setOf("растёт", "медленно")
 val STUCK = setOf("стоит", "падает")
 
-/** Сила в тренировке: лучший подход и он же, пересчитанный в разовый максимум (у упражнения без веса — повторы). */
-data class StrengthPoint(val date: LocalDate, val value: Double, val best: SetLog, val sets: List<SetLog>)
+/**
+ * Сила в тренировке: лучший подход и он же, пересчитанный в разовый максимум (у упражнения без веса — повторы).
+ * after — упражнение шло после другого на ту же мышцу (вес там ниже — с «первыми» тренировками не сравниваем).
+ */
+data class StrengthPoint(val date: LocalDate, val value: Double, val best: SetLog, val sets: List<SetLog>, val after: Boolean = false)
+
+/** Меньше этого между первой и последней тренировкой — вывода нет: три тренировки за неделю — ещё не темп. */
+const val MIN_SPAN_DAYS = 14L
 
 /**
  * Точки силы по тренировкам: одна на день, от старых к новым. Сила — разовый максимум по Эпли с долей веса тела;
  * у упражнения совсем без веса (подъём ног в висе, планка) — повторы лучшего подхода, тогда first = true.
  */
-fun strengthPoints(ex: Exercise, hist: List<Pair<LocalDate, List<SetLog>>>, bwKg: Double): Pair<Boolean, List<StrengthPoint>> {
+fun strengthPoints(ex: Exercise, hist: List<ExSession>, bwKg: Double): Pair<Boolean, List<StrengthPoint>> {
     val bw = bwKg * ex.bw
-    val loaded = hist.any { (_, sets) -> sets.any { it.w + bw > 0 } }
+    val loaded = hist.any { h -> h.sets.any { it.w + bw > 0 } }
     fun value(x: SetLog) = if (loaded) e1rm(x.w, x.r, bw) else x.r.toDouble()
-    val pts = hist.groupBy({ it.first }, { it.second }).map { (d, l) ->
-        val sets = l.flatten()
+    val pts = hist.groupBy { it.date }.map { (d, l) ->
+        val sets = l.flatMap { it.sets }
         val best = sets.maxBy(::value)
-        StrengthPoint(d, value(best), best, sets)
+        StrengthPoint(d, value(best), best, sets, l.first().after)
     }.filter { it.value > 0 }.sortedBy { it.date }
     return !loaded to pts
+}
+
+/**
+ * Точки, которые можно сравнивать между собой. Если в последние [days] дней упражнение шло то первым на мышцу,
+ * то после другого (жим гантелей после жима лёжа — вес ниже, и это не падение силы), сравниваем тренировки одной
+ * очерёдности — той, что чаще (поровну — «первым»). Очерёдность всегда одна — все точки.
+ */
+fun comparable(all: List<StrengthPoint>, to: LocalDate, days: Long = TREND_DAYS): List<StrengthPoint> {
+    val win = all.filter { it.date > to.minusDays(days) && it.date <= to }
+    if (win.none { it.after } || win.all { it.after }) return all
+    val after = win.count { it.after } > win.count { !it.after }
+    return all.filter { it.after == after }
 }
 
 /**
@@ -51,7 +69,7 @@ fun verdict(pts: List<StrengthPoint>, to: LocalDate, plan: Double = planPace(0))
     val pct = slope(pts.map { ChronoUnit.DAYS.between(to, it.date).toDouble() to it.value })
         ?.takeIf { mean > 0 }?.let { it * 7 / mean * 100 }
     return pct to when {
-        pts.size < 3 || pct == null -> "мало данных"
+        pts.size < 3 || pct == null || ChronoUnit.DAYS.between(pts.first().date, pts.last().date) < MIN_SPAN_DAYS -> "мало данных"
         pct >= plan - 1e-9 -> "растёт"
         pct >= plan * 0.3 -> "медленно"
         pct > -1.0 -> "стоит"
@@ -87,19 +105,26 @@ data class ExProgress(
     val plan: Double = planPace(0),          // плановый рост силы, % в неделю
     val planFrom: StrengthPoint? = null,     // откуда идёт плановая линия: первая тренировка окна вывода (6 недель)
     val bwLoad: Double = 0.0,                // вес тела в нагрузке, кг (подтягивания, брусья)
+    val line: List<StrengthPoint> = points,  // сравнимые тренировки периода — одной очерёдности (см. [comparable])
+    val from: LocalDate? = null,             // «начать отсчёт заново» с этого дня (сменил тренажёр или технику)
 ) {
     val last: LocalDate get() = points.last().date
-    /** Изменение силы за период — от первой тренировки к последней, %. */
-    val change: Double? get() = if (points.size < 2) null else (points.last().value / points.first().value - 1) * 100
+    /** Очерёдность менялась: часть тренировок — после другого упражнения на эту мышцу, их сравниваем отдельно. */
+    val mixed: Boolean get() = line.size < points.size
+    /** Сравниваются тренировки, где упражнение шло после другого (иначе — первым). */
+    val comparedAfter: Boolean get() = line.firstOrNull()?.after == true
+    /** Изменение силы за период — от первой сравнимой тренировки к последней, %. */
+    val change: Double? get() = if (line.size < 2) null else (line.last().value / line.first().value - 1) * 100
 
     /** Сила по плану на дату: от первой тренировки окна плановым темпом. */
     fun planned(d: LocalDate): Double? = planFrom?.let { it.value * (1 + plan / 100).pow(ChronoUnit.DAYS.between(it.date, d) / 7.0) }
 
     /** Насколько последняя тренировка выше (+) или ниже (−) плана, %; нужна хотя бы неделя от начала плановой линии. */
     val vsPlan: Double? get() {
-        val from = planFrom ?: return null
-        if (ChronoUnit.DAYS.between(from.date, last) < 7) return null
-        return planned(last)?.let { (points.last().value / it - 1) * 100 }
+        val start = planFrom ?: return null
+        val end = line.lastOrNull() ?: return null
+        if (ChronoUnit.DAYS.between(start.date, end.date) < 7) return null
+        return planned(end.date)?.let { (end.value / it - 1) * 100 }
     }
 
     /**
@@ -107,7 +132,7 @@ data class ExProgress(
      * +шаг веса. «62.5 кг × 11», «65 кг × 8», «свой вес × 12», «16 повт.».
      */
     fun planGoal(weeks: Int): String {
-        val now = points.last()
+        val now = line.lastOrNull() ?: points.last()
         val v = now.value * (1 + plan / 100).pow(weeks.toDouble())
         if (reps) return "${v.roundToInt().coerceAtLeast(now.best.r)} повт."
         var w = now.best.w
@@ -138,14 +163,16 @@ fun GymModule.progress(ctx: Ctx, from: LocalDate? = null): GymProgress {
     val p = program(s)
     val bwKg = latestWeight(s) ?: 70.0
     val plan = planPace(ctx.settings.gymLevel)
-    class Raw(val ex: Exercise, val reps: Boolean, val all: List<StrengthPoint>, val pts: List<StrengthPoint>, val hist: List<List<SetLog>>) {
-        val trend = trendOf(ex, all, to, plan = plan)
+    class Raw(val ex: Exercise, val reps: Boolean, val all: List<StrengthPoint>, val pts: List<StrengthPoint>, val hist: List<ExSession>, val base: LocalDate?) {
+        val cmp = comparable(all, to)                 // одной очерёдности — их и сравниваем
+        val trend = trendOf(ex, cmp, to, plan = plan)
+        val line = cmp.filter { it.date >= pts.first().date }
     }
     val raw = p.exercises.mapNotNull { ex ->
-        val hist = history(s, ex.id).filter { it.first <= to }.takeIf { it.isNotEmpty() } ?: return@mapNotNull null
+        val hist = progressSessions(s, ex.id).filter { it.date <= to }.takeIf { it.isNotEmpty() } ?: return@mapNotNull null
         val (reps, all) = strengthPoints(ex, hist, bwKg)
         val pts = all.filter { from == null || it.date >= from }
-        if (pts.isEmpty()) null else Raw(ex, reps, all, pts, hist.map { it.second })
+        if (pts.isEmpty()) null else Raw(ex, reps, all, pts, hist, progressFrom(s, ex.id))
     }
     val judged = raw.filter { it.trend.status in GOING + STUCK }
     val bad = judged.filter { it.trend.status in STUCK }
@@ -158,14 +185,17 @@ fun GymModule.progress(ctx: Ctx, from: LocalDate? = null): GymProgress {
     if (cutting && raw.any { it.trend.status in STUCK || it.trend.status == "медленно" })
         notes += "Ты худеешь: на дефиците сила растёт медленнее плана, и удержать её — уже хорошо."
 
-    // подходов на мышцу в неделю за последние 4 недели — проверка «мало объёма» для того, что стоит
-    val weekly = volume(s, to.minusDays(27), to).mapValues { it.value / 4 }
+    // подходов на мышцу в неделю за последние 4 недели — проверка «мало объёма» для того, что стоит; начал ходить
+    // позже — делим на недели, когда уже ходил (иначе первая неделя в приложении выглядит как «мало подходов»)
+    val weeks = (firstDay(s)?.takeIf { it > to.minusDays(27) }?.let { (ChronoUnit.DAYS.between(it, to) + 1) / 7.0 } ?: 4.0).coerceIn(1.0, 4.0)
+    val weekly = volume(s, to.minusDays(27), to).mapValues { it.value / weeks }
     val ranges = DEFAULT_VOLUME + p.volume
     val items = raw.map { r ->
-        val six = r.all.filter { it.date > to.minusDays(TREND_DAYS) }
-        ExProgress(r.ex, r.pts, r.reps, r.trend, nextTarget(r.ex, r.hist, ChronoUnit.DAYS.between(r.all.last().date, to)),
+        val six = r.cmp.filter { it.date > to.minusDays(TREND_DAYS) }
+        val after = r.line.firstOrNull()?.after ?: false
+        ExProgress(r.ex, r.pts, r.reps, r.trend, targetOf(r.ex, exSessions(s, r.ex.id), after, null, ChronoUnit.DAYS.between(r.all.last().date, to)),
             advice(r.ex, r.trend, six, weekly, ranges, systemic),
-            plan, six.firstOrNull(), bwKg * r.ex.bw)
+            plan, six.firstOrNull(), bwKg * r.ex.bw, r.line.ifEmpty { r.pts }, r.base)
     }
     val byMuscle = judged.groupBy { mainMuscle(it.ex) }
     val going = MUSCLES.keys.filter { m -> byMuscle[m]?.any { it.trend.status in GOING } == true }

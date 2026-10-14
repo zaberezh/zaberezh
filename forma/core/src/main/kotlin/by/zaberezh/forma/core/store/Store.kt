@@ -54,6 +54,15 @@ class Memo<K : Any, V>(private val f: (K) -> V) {
     }
 }
 
+/** То же для двух входов (тренировки и программа): пересчёт, только когда сменился хоть один из них. */
+class Memo2<A : Any, B : Any, V>(private val f: (A, B) -> V) {
+    @Volatile private var last: Triple<A, B, V>? = null
+    operator fun invoke(a: A, b: B): V {
+        last?.let { (x, y, v) -> if (x === a && y === b) return v }
+        return f(a, b).also { last = Triple(a, b, it) }
+    }
+}
+
 /** Типизированный доступ к записям одного типа. */
 class Kind<T>(val type: String, private val ser: KSerializer<T>) {
     @Suppress("UNCHECKED_CAST")

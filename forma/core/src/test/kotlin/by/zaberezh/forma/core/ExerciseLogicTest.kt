@@ -150,7 +150,8 @@ class ExerciseLogicTest {
         val (p, plans) = live("ul", 3, 90)
         plans.forEach { pl ->
             pl.items.groupBy { mainMuscle(p.ex(it.ex)!!) }.values.filter { it.size > 1 }.forEach { l ->
-                assertTrue(l.first().sets >= l.last().sets || !by.zaberezh.forma.core.gym.isCompound(p.ex(l.first().ex)!!),
+                val (comp, iso) = l.partition { by.zaberezh.forma.core.gym.isCompound(p.ex(it.ex)!!) }
+                assertTrue(iso.isEmpty() || comp.isEmpty() || comp.minOf { it.sets } >= iso.maxOf { it.sets },
                     "${pl.date}: ${l.map { p.ex(it.ex)!!.name to it.sets }}")
             }
         }

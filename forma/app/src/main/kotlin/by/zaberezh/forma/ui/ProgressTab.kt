@@ -102,12 +102,13 @@ fun ProgressTab(ctx: Ctx) {
             if (pr.stuck.isNotEmpty()) Stat("Не идёт", pr.stuck.joinToString(", ", transform = ::muscle))
             pr.notes.forEach { Callout(it) }
             Muted("Сила — лучший подход тренировки, пересчитанный в разовый максимум: так видно и прибавку веса, и прибавку повторов. " +
-                "Вывод — по темпу за последние 6 недель: растёт — не медленнее плана, медленно — хотя бы треть плана " +
-                "(+${(plan * 0.3).r1()}%), стоит — около нуля, падает — от −1% в неделю.")
+                "Вывод — по темпу за последние 6 недель (нужно 3 тренировки за 2+ недели): растёт — не медленнее плана, " +
+                "медленно — хотя бы треть плана (+${(plan * 0.3).r1()}%), стоит — около нуля, падает — от −1% в неделю. " +
+                "Упражнение после другого на ту же мышцу (жим гантелей после жима лёжа) сравнивается только с такими же тренировками.")
         }
         Group("Не идёт", stuck, null, ctx.today, open) { open = if (open == it) null else it }
         Group("Идёт", going, null, ctx.today, open) { open = if (open == it) null else it }
-        Group("Мало данных", few, "Для вывода нужно 3 тренировки упражнения за 6 недель.", ctx.today, open) { open = if (open == it) null else it }
+        Group("Мало данных", few, "Для вывода нужно 3 тренировки упражнения за 2+ недели.", ctx.today, open) { open = if (open == it) null else it }
     }
 }
 
@@ -152,13 +153,14 @@ private fun ExRow(x: ExProgress, today: LocalDate, open: Boolean, onToggle: () -
             Text(x.ex.name, Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge)
             Pill("${statusIcon(st)} ${if (st == "нет данных") "давно не делал" else st}", statusColor(st))
         }
-        val a = x.points.first(); val b = x.points.last()
+        // было → стало — по сравнимым тренировкам (одной очерёдности), а не «первым» против «после жима лёжа»
+        val a = x.line.first(); val b = x.line.last()
         Line {
-            Text(if (x.points.size > 1) "${setText(x.ex, a.best)} → ${setText(x.ex, b.best)}" else setText(x.ex, b.best),
+            Text(if (x.line.size > 1) "${setText(x.ex, a.best)} → ${setText(x.ex, b.best)}" else setText(x.ex, b.best),
                 Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
             x.change?.let { Text("сила ${it.pct()}", style = MaterialTheme.typography.bodyMedium, color = C.muted) }
         }
-        if (x.points.size > 1) Sparkline(x.points, Modifier.fillMaxWidth().height(32.dp))
+        if (x.line.size > 1) Sparkline(x.line, Modifier.fillMaxWidth().height(32.dp))
         x.trend.pctWeek?.let { Text(paceText(it, x.plan), style = MaterialTheme.typography.bodySmall, color = C.text) }
         val n = x.points.size
         Muted("последняя ${day(x.last, today)} · $n ${plural(n, "тренировка", "тренировки", "тренировок")} за период" +
@@ -190,9 +192,13 @@ private fun Details(x: ExProgress, today: LocalDate) {
         Text("${day(p.date, today)} · ${setText(x.ex, p.best)}" + if (!x.reps) " · сила ≈ ${p.value.r1()} кг" else "",
             style = MaterialTheme.typography.labelLarge, color = C.text)
         StrengthChart(x, sel, { sel = it }, today, Modifier.fillMaxWidth().height(170.dp))
-        if (x.planFrom?.let { it.date < x.last } == true) Legend()
+        if (x.planFrom?.let { it.date < x.last } == true || x.mixed) Legend(plan = x.planFrom?.let { it.date < x.last } == true, other = x.mixed)
         Muted("Нажми или веди пальцем по графику — покажет тренировку." +
             if (banded(x.points, today)) " Светлее — последние 6 недель: по ним вывод и план." else "")
+        // откуда «сила»: разовый максимум по формуле — видно, почему 10 × 8 → 5 × 13 это минус, хоть повторов и больше
+        if (!x.reps && x.line.size > 1) Stat("Разовый максимум (по формуле)", "${x.line.first().value.r1()} → ${x.line.last().value.r1()} кг")
+        if (x.mixed) Muted(if (x.comparedAfter) "Сравниваются тренировки, где оно шло после другого упражнения на эту мышцу; когда шло первым — кружки на графике, там вес выше, это не рост."
+            else "Сравниваются тренировки, где оно шло первым на эту мышцу; после другого упражнения (кружки на графике) вес ниже — это не падение силы.")
         x.trend.pctWeek?.let { Stat("Темп за 6 недель", "${it.pct()} в неделю") }
         Stat("План", "+${x.plan.r1()}% в неделю")
         x.vsPlan?.let { Stat("Сейчас относительно плана", if (abs(it) < 0.5) "в плане" else "${it.pct()}") }
@@ -202,16 +208,39 @@ private fun Details(x: ExProgress, today: LocalDate) {
         x.advice.forEach { Text("• $it", style = MaterialTheme.typography.bodyMedium) }
         Text("Тренировки", style = MaterialTheme.typography.labelLarge, color = C.muted)
         x.points.takeLast(8).reversed().forEach { pt ->
-            Stat(DM.format(pt.date), pt.sets.joinToString("  ") { if (x.reps) "${it.r}" else "${it.w.r1()}×${it.r}" })
+            Stat(DM.format(pt.date) + if (x.mixed && pt.after) " · после" else "", pt.sets.joinToString("  ") { if (x.reps) "${it.r}" else "${it.w.r1()}×${it.r}" })
         }
+        Restart(x)
     }
+}
+
+/**
+ * «Начать отсчёт заново»: сменил тренажёр, хват или технику — старые веса с новыми не сравнить, и прогресс
+ * считается с последней тренировки. Подсказка — когда вес упал больше чем на четверть.
+ */
+@Composable
+private fun Restart(x: ExProgress) {
+    val store = rememberCtx().store
+    val from = x.from
+    if (from != null) {
+        Muted("Прогресс считается с ${DM.format(from)} — раньше был другой тренажёр или техника.")
+        Flat("Вернуть всю историю", { GymModule.setProgressFrom(store, x.ex.id, null) }, C.muted)
+        return
+    }
+    if (x.line.size < 2 && x.points.size < 2) return
+    val maxW = x.points.maxOf { it.best.w }
+    val drop = !x.reps && maxW > 0 && x.points.last().best.w < maxW * 0.75
+    Muted(if (drop) "Вес снизил больше чем на четверть. Если сменил тренажёр, хват или технику — это уже другое упражнение для статистики."
+        else "Сменил тренажёр, хват или технику — старые веса с новыми не сравнить.")
+    Flat("Начать отсчёт заново", { GymModule.setProgressFrom(store, x.ex.id, x.last) }, if (drop) C.accent else C.muted)
 }
 
 /** Легенда графика: две линии — сила и план; подписи обычным цветом, линия рядом — опознавательный знак. */
 @Composable
-private fun Legend() = Line {
+private fun Legend(plan: Boolean, other: Boolean) = Line {
     LegendMark(C.accent, dashed = false); Text("сила", style = MaterialTheme.typography.labelSmall, color = C.muted)
-    LegendMark(C.muted, dashed = true); Text("план", style = MaterialTheme.typography.labelSmall, color = C.muted)
+    if (plan) { LegendMark(C.muted, dashed = true); Text("план", style = MaterialTheme.typography.labelSmall, color = C.muted) }
+    if (other) { Text("○", style = MaterialTheme.typography.labelSmall, color = C.muted); Text("другая очерёдность", style = MaterialTheme.typography.labelSmall, color = C.muted) }
 }
 
 @Composable
@@ -278,8 +307,9 @@ private fun StrengthChart(item: ExProgress, sel: Int, onSelect: (Int) -> Unit, t
     val label = MaterialTheme.typography.labelSmall.copy(color = C.muted)
     val lineC = C.accent; val grid = C.line; val ring = C.card; val band = C.cardHi; val cross = C.muted; val planC = C.muted
     // плановая линия — от первой тренировки окна вывода до последней тренировки (если она в периоде графика)
-    val planFrom = item.planFrom?.takeIf { it.date >= pts.first().date && it.date < pts.last().date }
-    val sc = remember(item) { Scale(pts.map { it.value } + listOfNotNull(planFrom?.let { item.planned(pts.last().date) })) }
+    val planEnd = item.line.lastOrNull()?.date ?: pts.last().date
+    val planFrom = item.planFrom?.takeIf { it.date >= pts.first().date && it.date < planEnd }
+    val sc = remember(item) { Scale(pts.map { it.value } + listOfNotNull(planFrom?.let { item.planned(planEnd) })) }
     val left = 40.dp; val right = 10.dp; val top = 18.dp; val bottom = 22.dp
     fun nearest(px: Float, width: Float, l: Float, r: Float): Int {
         val w = width - l - r
@@ -324,27 +354,33 @@ private fun StrengthChart(item: ExProgress, sel: Int, onSelect: (Int) -> Unit, t
         }
         // план: пунктир, приглушённый — с подписью на конце
         if (planFrom != null) {
-            val end = item.planned(pts.last().date)!!
-            val a = Offset(x(planFrom.date), y(planFrom.value)); val e = Offset(x(pts.last().date), y(end))
+            val end = item.planned(planEnd)!!
+            val a = Offset(x(planFrom.date), y(planFrom.value)); val e = Offset(x(planEnd), y(end))
             drawLine(planC, a, e, strokeWidth = 1.5.dp.toPx(), pathEffect = PathEffect.dashPathEffect(floatArrayOf(5.dp.toPx(), 4.dp.toPx())))
         }
         // выбранная тренировка — вертикальная линия
         val sp = pts[sel.coerceIn(0, pts.lastIndex)]
         drawLine(cross, Offset(x(sp.date), t), Offset(x(sp.date), t + h), strokeWidth = 1.dp.toPx())
-        // линия силы
+        // линия силы — по сравнимым тренировкам; остальные (другая очерёдность) — кружками без линии
+        val line = item.line
         val path = Path()
-        pts.forEachIndexed { i, pt -> if (i == 0) path.moveTo(x(pt.date), y(pt.value)) else path.lineTo(x(pt.date), y(pt.value)) }
+        line.forEachIndexed { i, pt -> if (i == 0) path.moveTo(x(pt.date), y(pt.value)) else path.lineTo(x(pt.date), y(pt.value)) }
         drawPath(path, lineC, style = Stroke(2.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round))
+        pts.filter { it !in line }.forEach { pt ->
+            val o = Offset(x(pt.date), y(pt.value))
+            drawCircle(ring, 5.dp.toPx(), o)
+            drawCircle(cross, 3.5.dp.toPx(), o, style = Stroke(1.5.dp.toPx()))
+        }
         // точки — пока их немного; выбранная и последняя — крупнее, с кольцом цвета фона
-        if (pts.size <= 24) pts.forEach { pt ->
+        if (line.size <= 24) line.forEach { pt ->
             val o = Offset(x(pt.date), y(pt.value))
             drawCircle(ring, 4.5.dp.toPx(), o)
             drawCircle(lineC, 3.dp.toPx(), o)
         }
-        listOf(pts.last(), sp).distinct().forEach { pt ->
+        listOfNotNull(line.lastOrNull(), sp).distinct().forEach { pt ->
             val o = Offset(x(pt.date), y(pt.value))
             drawCircle(ring, 7.dp.toPx(), o)
-            drawCircle(lineC, 5.dp.toPx(), o)
+            drawCircle(if (pt in line) lineC else cross, 5.dp.toPx(), o)
         }
     }
 }
