@@ -16,7 +16,7 @@ class PullupPaceTest {
 
     @Test fun weeklyBestAgainstPlan() {
         val s = store()
-        // каждую неделю один тест (+1 раз в неделю) и подходы не до отказа в другие дни — они максимум не занижают
+        // каждую неделю один тест (+1 раз в неделю); подходы в другие дни на максимум не влияют
         for (w in 0..5) {
             val d = today.minusDays(7L * (5 - w))
             TestModule.record(s, "pullups_max", d, 8.0 + w)
@@ -32,9 +32,12 @@ class PullupPaceTest {
 
     @Test fun stuckMaxAndFewWeeks() {
         val s = store(level = 1)
-        for (w in 0..3) CounterModule.addSet(s, "pullups", today.minusDays(7L * w), 10)
+        for (w in 0..3) TestModule.record(s, "pullups_max", today.minusDays(7L * w), 10.0)
         assertEquals("стоит", TestModule.pace(Ctx(s, today), "pullups_max").status)
-        val one = store(); CounterModule.addSet(one, "pullups", today, 10)
+        // подходы за день без теста в темп не идут
+        for (w in 0..3) CounterModule.addSet(s, "pullups", today.minusDays(7L * w + 1), 15)
+        assertEquals("стоит", TestModule.pace(Ctx(s, today), "pullups_max").status)
+        val one = store(); TestModule.record(one, "pullups_max", today, 10.0)
         assertEquals("мало данных", TestModule.pace(Ctx(one, today), "pullups_max").status)
     }
 

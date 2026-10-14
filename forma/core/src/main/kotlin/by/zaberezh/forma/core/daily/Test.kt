@@ -18,8 +18,7 @@ import java.time.temporal.ChronoUnit
 @Serializable data class TestResult(val test: String, val date: String, val value: Double)
 
 /**
- * Темп роста максимума: лучший результат каждой недели (обычный день с подходами не до отказа максимум не занижает),
- * прирост в неделю по регрессии и план. weeks — конец недели → лучший результат, от старых к новым.
+ * Темп роста максимума: лучший результат каждой недели (по записанным тестам), прирост в неделю по регрессии и план. weeks — конец недели → лучший результат, от старых к новым.
  */
 data class RepsPace(val weeks: List<Pair<LocalDate, Double>>, val perWeek: Double?, val plan: Double, val status: String) {
     /** Где по плану быть через [n] недель от нынешнего лучшего. */
@@ -32,26 +31,15 @@ object TestModule : Module {
     override val id = "tests"
     override val title = "Тесты"
 
-    /** Тест «максимум за подход» ↔ ежедневный счётчик, из подходов которого его можно взять. */
-    private val FROM_COUNTER = mapOf("pullups_max" to "pullups")
+    /** Тесты «раз за подход» (подтягивания): план роста в них считается по формуле Эпли, а не процентом от результата. */
+    private val REPS = setOf("pullups_max")
 
-    /** Только то, что записано как тест (для «пора проверить максимум»). */
+    /** Записанные результаты теста по дням — только то, что ввёл сам (лучший подход дня тестом не считается). */
     fun recorded(s: Store, test: String): List<Pair<LocalDate, Double>> =
         TEST.all(s).filter { it.second.test == test }.map { LocalDate.parse(it.second.date) to it.second.value }.sortedBy { it.first }
 
-    /**
-     * Результаты по дням: записанный тест, а в дни без теста — лучший подход из счётчика за этот день
-     * (максимум подтягиваний за раз, который внёс).
-     */
-    fun results(s: Store, test: String): List<Pair<LocalDate, Double>> {
-        val own = recorded(s, test)
-        val counter = FROM_COUNTER[test] ?: return own
-        val days = own.map { it.first }.toSet()
-        val fromSets = COUNT.all(s).map { it.second }.filter { it.counter == counter }
-            .mapNotNull { d -> (d.sets.maxOrNull() ?: d.n.takeIf { it > 0 })?.let { LocalDate.parse(d.date) to it.toDouble() } }
-            .filter { it.first !in days }
-        return (own + fromSets).sortedBy { it.first }
-    }
+    /** Результаты теста — только введённые вручную. */
+    fun results(s: Store, test: String): List<Pair<LocalDate, Double>> = recorded(s, test)
 
     /** Один результат на день — повторная запись за день заменяет прежнюю. */
     fun record(s: Store, test: String, day: LocalDate, value: Double) {
@@ -99,7 +87,7 @@ object TestModule : Module {
         }
         val cur = best.lastOrNull()?.second ?: return RepsPace(best, null, 0.0, "нет данных")
         val pct = planPace(ctx.settings.gymLevel)
-        val unit = if (test in FROM_COUNTER) (30 + cur) / 100 else cur / 100   // сколько раз — это 1% силы
+        val unit = if (test in REPS) (30 + cur) / 100 else cur / 100   // сколько раз — это 1% силы
         val plan = pct * unit
         val perWeek = slope(best.map { ChronoUnit.DAYS.between(ctx.today, it.first).toDouble() to it.second })?.times(7)
         val status = when {
