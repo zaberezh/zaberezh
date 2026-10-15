@@ -106,6 +106,12 @@ object Planner {
     fun budget(sessionMin: Int) = (sessionMin / 3.6).toInt().coerceIn(12, 30)
     const val MAX_SETS = 5          // подходов в одном упражнении
     const val PER_MUSCLE = 11.0     // подходов на мышцу за сессию
+    /**
+     * Мелкой мышце (руки, дельты, предплечья, икры, пресс) за одну тренировку — не больше 8: дальше подходы почти
+     * ничего не добавляют, а время съедают (10 подходов махов за раз — перебор; лучше 2 раза в неделю по 5–6).
+     */
+    const val PER_SMALL = 8.0
+    private fun cap(m: String) = if (m in SMALL) PER_SMALL else PER_MUSCLE
 
     /** Мышцы, которые почти целиком нагружают базовые (жим → передняя дельта, присед и тяги → ягодицы). */
     private val COVERED = setOf("front_delts", "glutes")
@@ -260,6 +266,14 @@ object Planner {
                 val pool = have.filter { e -> day.none { it.e.id == e.id } }
                 val first = day.firstOrNull { it.m == m }?.e
                 val todayPat = day.filter { it.m == m }.map { pattern(it.e) }.toSet()
+                // у мелкой мышцы второе упражнение того же варианта (две разгибалки на блоке подряд) ничего не даёт —
+                // подходы уходят первому упражнению, а второе вернётся в другой день по очереди
+                if (first != null && m in SMALL && pool.all { pattern(it) in todayPat }) {
+                    day.firstOrNull { it.m == m && it.sets < MAX_SETS }?.let { sl ->
+                        val add = minOf(per, MAX_SETS - sl.sets); sl.sets += add; exSets[sl.e.id] = (exSets[sl.e.id] ?: 0.0) + add
+                    }
+                    return@repeat
+                }
                 // сколько подходов этого варианта движения уже на неделе (сделано + зафиксировано + составлено)
                 fun weekUses(e: Exercise) = have.filter { pattern(it) == pattern(e) }.sumOf { exSets[it.id] ?: 0.0 }
                 val e = pool.minWithOrNull(compareBy<Exercise>(
@@ -315,7 +329,7 @@ object Planner {
                 chosen = cands.filter { home(it, m) }.maxByOrNull { s -> worked[m].orEmpty().minOfOrNull { gap(it, s.date) } ?: 99L }
                     ?.let(::listOf).orEmpty()
             if (chosen.isEmpty()) return
-            val per = (maxOf(rem, 0.0) / chosen.size).coerceIn(2.0, PER_MUSCLE)
+            val per = (maxOf(rem, 0.0) / chosen.size).coerceIn(2.0, cap(m))
             chosen.sortedBy { it.date }.forEach { s ->
                 var v = if (m in focusOf.getValue(s.date)) maxOf(per, 6.0) else per
                 if (spare) v = minOf(v, room(s.date).toDouble())
@@ -364,16 +378,22 @@ object Planner {
             fun sets(m: String) = day.filter { it.m == m }.sumOf { it.sets }
             for (top in listOf(false, true)) while (room(d) >= 1) {
                 fun goal(m: String) = if (top) maxOf(target(m), volume[m]?.getOrNull(1)?.toDouble() ?: 0.0) else target(m)
-                val sl = day.filter { sl -> sl.sets < MAX_SETS && sets(sl.m) < PER_MUSCLE && got(sl.m) < goal(sl.m) - 0.5 }
+                val sl = day.filter { sl -> sl.sets < MAX_SETS && sets(sl.m) < cap(sl.m) && got(sl.m) < goal(sl.m) - 0.5 }
                     .minWithOrNull(compareBy({ got(it.m) / goal(it.m) }, { prio(it.m) }, { it.second }))
                 if (sl != null) { sl.sets++; continue }
                 // упражнение упёрлось в 5 подходов, а мышца ещё не добрала и время есть — второе упражнение
                 // другим вариантом (к приседу — жим ногами или разгибания), а не пустое время в конце тренировки
                 val m = day.map { it.m }.distinct().filter { m ->
-                    room(d) >= 2 && day.size < maxEx && day.count { it.m == m } < 2 && sets(m) + 2 <= PER_MUSCLE &&
-                        got(m) < goal(m) - 1.5 && byMuscle[m].orEmpty().any { e -> day.none { it.e.id == e.id } }
+                    val pats = day.filter { it.m == m }.map { pattern(it.e) }.toSet()
+                    room(d) >= 2 && day.size < maxEx && day.count { it.m == m } < 2 && sets(m) + 2 <= cap(m) &&
+                        got(m) < goal(m) - 1.5 && byMuscle[m].orEmpty().any { e ->
+                            // мелкой мышце — только другой вариант движения (иначе pick ничего не добавит)
+                            day.none { it.e.id == e.id } && (m !in SMALL || pattern(e) !in pats)
+                        }
                 }.minWithOrNull(compareBy({ got(it) / goal(it) }, { prio(it) })) ?: break
+                val was = day.size to day.sumOf { it.sets }
                 pick(d, m, 2.0)
+                if (day.size to day.sumOf { it.sets } == was) break   // добавить нечего — не крутимся впустую
             }
         }
 
