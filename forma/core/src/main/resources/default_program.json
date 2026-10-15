@@ -1,0 +1,72 @@
+{
+  "name": "Моя программа (ждёт упражнений)",
+  "version": 2,
+  "exercises": [],
+  "days": [
+    {
+      "id": "A",
+      "name": "A",
+      "exercises": []
+    },
+    {
+      "id": "B",
+      "name": "B",
+      "exercises": []
+    },
+    {
+      "id": "C",
+      "name": "C",
+      "exercises": []
+    }
+  ],
+  "volume": {
+    "chest": [
+      8,
+      14
+    ],
+    "back": [
+      10,
+      16
+    ],
+    "side_delts": [
+      8,
+      16
+    ],
+    "rear_delts": [
+      4,
+      10
+    ],
+    "biceps": [
+      6,
+      12
+    ],
+    "triceps": [
+      6,
+      12
+    ],
+    "quads": [
+      6,
+      12
+    ],
+    "hams": [
+      4,
+      10
+    ],
+    "glutes": [
+      0,
+      12
+    ],
+    "front_delts": [
+      0,
+      12
+    ],
+    "calves": [
+      0,
+      8
+    ],
+    "abs": [
+      0,
+      8
+    ]
+  }
+}

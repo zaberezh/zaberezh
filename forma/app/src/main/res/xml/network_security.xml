@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Всё — только https. Исключение одно: FatSecret (база КБЖУ) — у fatsecret.ru просрочен сертификат, сайт работает по http.
+     Туда уходит только название еды, приходят только цифры КБЖУ. -->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false" />
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">mobile.fatsecret.ru</domain>
+    </domain-config>
+</network-security-config>
