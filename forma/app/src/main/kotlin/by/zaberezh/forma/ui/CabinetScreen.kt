@@ -88,13 +88,15 @@ fun CabinetScreen() {
     val s = session
     val scope = rememberCoroutineScope()
     var renewing by remember { mutableStateOf(false) }
+    // когда последний раз входили: свежая сессия получила «не авторизован» — второй раз не входим (иначе по кругу)
+    var loggedAt by remember { mutableStateOf(SecureStore.get(c, "cookie_at")?.toLongOrNull() ?: 0L) }
     // проверка возраста сессии при открытии: протухла — сначала новый вход, потом разделы (а не «не загрузилось» на всех)
     var ready by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
         val at = SecureStore.get(c, "cookie_at")?.toLongOrNull() ?: 0L
         if (session != null && by.zaberezh.forma.sys.IisAuth.canRenew(c) && System.currentTimeMillis() - at > STALE_MS) {
             renewing = true
-            withContext(Dispatchers.IO) { by.zaberezh.forma.sys.IisAuth.renew(c) }?.let { session = it }
+            withContext(Dispatchers.IO) { by.zaberezh.forma.sys.IisAuth.renew(c) }?.let { session = it; loggedAt = System.currentTimeMillis() }
             renewing = false
         }
         ready = true
@@ -106,7 +108,7 @@ fun CabinetScreen() {
             SecureStore.put(c, "cookie_at", System.currentTimeMillis().toString())
         }.isSuccess
         runCatching { if (creds != null) by.zaberezh.forma.sys.IisAuth.remember(c, creds.first, creds.second) else by.zaberezh.forma.sys.IisAuth.forget(c) }
-        session = x; site = false; ready = true
+        session = x; site = false; ready = true; loggedAt = System.currentTimeMillis()
         notice = if (saved) null else "Вошёл, но сессию не удалось сохранить — после перезапуска войди снова"
         runCatching { by.zaberezh.forma.sys.IisCheck.loggedIn(c) }
     }
@@ -114,15 +116,20 @@ fun CabinetScreen() {
         site -> SiteLogin(onDone = { enter(it) }, onCancel = { wipeWeb(); site = false })
         s == null -> LoginForm(notice, onLogin = ::enter, onSite = { wipeWeb(); site = true })
         else -> Cabinet(s, ready && !renewing, onExpired = {
-            // сессия ИИС истекла: тихо входим заново сохранённым паролем; не вышло — просим войти
-            if (!renewing) {
-                renewing = true
-                scope.launch {
-                    val fresh = withContext(Dispatchers.IO) { by.zaberezh.forma.sys.IisAuth.renew(c) }
-                    renewing = false
-                    if (fresh != null) session = fresh
-                    else { SecureStore.clear(c); wipeWeb(); CabinetCache.data.clear(); session = null; notice = "Сессия закончилась — войди снова" }
+            // сессия ИИС истекла: тихо входим заново сохранённым паролем; не вышло — просим войти.
+            // Только что входили, а ИИС всё равно не пускает — второй раз не входим: это не сессия, а сам раздел
+            if (System.currentTimeMillis() - loggedAt < 2 * 60_000L) false
+            else {
+                if (!renewing) {
+                    renewing = true
+                    scope.launch {
+                        val fresh = withContext(Dispatchers.IO) { by.zaberezh.forma.sys.IisAuth.renew(c) }
+                        renewing = false
+                        if (fresh != null) { session = fresh; loggedAt = System.currentTimeMillis() }
+                        else { SecureStore.clear(c); wipeWeb(); CabinetCache.data.clear(); session = null; notice = "Сессия закончилась — войди снова" }
+                    }
                 }
+                true
             }
         },
             onLogout = { SecureStore.clear(c); wipeWeb(); CabinetCache.data.clear(); session = null; notice = null })
@@ -249,7 +256,7 @@ private fun LoginForm(notice: String?, onLogin: (IisSession, Pair<String, String
 }
 
 @Composable
-private fun Cabinet(session: IisSession, ready: Boolean, onExpired: () -> Unit, onLogout: () -> Unit) {
+private fun Cabinet(session: IisSession, ready: Boolean, onExpired: () -> Boolean, onLogout: () -> Unit) {
     val c = LocalContext.current
     val scope = rememberCoroutineScope()
     var open by remember { mutableStateOf<IisSection?>(null) }
@@ -260,7 +267,8 @@ private fun Cabinet(session: IisSession, ready: Boolean, onExpired: () -> Unit, 
 
     suspend fun fetch(id: String) {
         busy[id] = true
-        val r = withContext(Dispatchers.IO) {
+        // прервали (вход заново, ушёл с экрана) — «загружаю…» не должно остаться навсегда
+        val r = try { withContext(Dispatchers.IO) {
             runCatching { Cabinet.load(Iis.jdk, session, id) }.onSuccess { d ->
                 // успеваемость: лабы из ИИС — во вкладку «Лабы», отметки — в снимок для фоновых уведомлений
                 // (их сбой не ломает раздел и не роняет приложение)
@@ -268,11 +276,13 @@ private fun Cabinet(session: IisSession, ready: Boolean, onExpired: () -> Unit, 
                     by.zaberezh.forma.sys.IisCheck.apply(d); by.zaberezh.forma.core.study.IisWatch.check(Forma.store, d)
                 }
             }
-        }
-        busy[id] = false
+        } } finally { busy[id] = false }
         val e = r.exceptionOrNull()
         when {
-            e is IisUnauthorized -> onExpired()
+            e is IisUnauthorized && onExpired() -> {}
+            // только что вошли, а раздел всё равно «не авторизован» — показываем ошибку раздела, без входа по кругу
+            e is IisUnauthorized -> if (data[id]?.isSuccess == true) stale[id] = "ИИС не пустил в раздел" else
+                data[id] = Result.failure(by.zaberezh.forma.core.study.IisError("ИИС не пустил в раздел, хотя вход выполнен — попробуй «Обновить» позже или открой сайт ИИС"))
             // свежее не загрузилось, а прошлое есть — оставляем прошлое и говорим об этом, а не меняем данные на ошибку
             e != null && data[id]?.isSuccess == true -> stale[id] = e.message ?: "ошибка"
             else -> { data[id] = r; stale.remove(id) }
@@ -284,7 +294,8 @@ private fun Cabinet(session: IisSession, ready: Boolean, onExpired: () -> Unit, 
         if (!ready) return@LaunchedEffect
         val gate = kotlinx.coroutines.sync.Semaphore(3)
         kotlinx.coroutines.coroutineScope {
-            Iis.SECTIONS.forEach { x -> launch { gate.acquire(); try { fetch(x.id) } finally { gate.release() } } }
+            // в очереди — тоже «загружаю…», а не «—»; прервали — признак снимается
+            Iis.SECTIONS.forEach { x -> busy[x.id] = true; launch { try { gate.acquire(); try { fetch(x.id) } finally { gate.release() } } finally { busy[x.id] = false } } }
         }
     }
 

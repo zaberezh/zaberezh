@@ -150,8 +150,11 @@ class CabinetTest {
     @Test fun expiredSessionIsUnauthorizedNotAnError() {
         val s = IisSession("SESSION=old")
         // ИИС на протухшую сессию отвечает переадресацией или страницей входа — это «войти снова», а не сбой раздела
-        assertFailsWith<IisUnauthorized> { Iis.get({ _, _, _, _ -> HttpResp(302, "") }, s, "/markbook", pause = {}) }
+        assertFailsWith<IisUnauthorized> { Iis.get({ _, _, _, _ -> HttpResp(302, "", location = "https://iis.bsuir.by/login") }, s, "/markbook", pause = {}) }
         assertFailsWith<IisUnauthorized> { Iis.get({ _, _, _, _ -> HttpResp(200, "<!doctype html><html>вход</html>") }, s, "/markbook", pause = {}) }
+        // другая переадресация или страница — ошибка раздела, а не «войти снова» (иначе вход по кругу и вечная загрузка)
+        assertFailsWith<by.zaberezh.forma.core.study.IisError> { Iis.get({ _, _, _, _ -> HttpResp(302, "", location = "https://iis.bsuir.by/api/v1/markbook/") }, s, "/markbook", pause = {}) }
+        assertFailsWith<by.zaberezh.forma.core.study.IisError> { Iis.get({ _, _, _, _ -> HttpResp(200, "<html><body>ошибка</body></html>") }, s, "/markbook", pause = {}) }
         // сбой сети или 503 — одна повторная попытка
         var n = 0
         assertEquals("{}", Iis.get({ _, _, _, _ -> if (n++ == 0) throw java.io.IOException("reset") else HttpResp(200, "{}") }, s, "/x", pause = {}))

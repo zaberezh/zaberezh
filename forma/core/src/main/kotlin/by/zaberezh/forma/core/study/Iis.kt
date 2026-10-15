@@ -10,7 +10,7 @@ import java.net.HttpURLConnection
 import java.net.URL
 
 /** Ответ HTTP: код, тело, значения Set-Cookie. */
-data class HttpResp(val code: Int, val body: String, val cookies: List<String> = emptyList())
+data class HttpResp(val code: Int, val body: String, val cookies: List<String> = emptyList(), val location: String? = null)
 
 fun interface Http { fun send(method: String, url: String, body: String?, headers: Map<String, String>): HttpResp }
 
@@ -106,15 +106,21 @@ object Iis {
         val r = try { once().let { if (it.code in 502..504) { pause(1000); once() } else it } }
             catch (e: java.io.IOException) { pause(1000); try { once() } catch (e2: java.io.IOException) {
                 throw IisError("Нет связи с ИИС — проверь интернет и нажми «Обновить»") } }
+        val html = r.body.trimStart().startsWith("<")
         return when {
-            r.code == 401 || r.code == 403 || r.code in 300..399 -> throw IisUnauthorized()
+            r.code == 401 || r.code == 403 -> throw IisUnauthorized()
+            // переадресация на вход — сессия истекла; любая другая — ошибка раздела, а не повод входить снова
+            r.code in 300..399 -> if (isLogin(r.location.orEmpty())) throw IisUnauthorized() else throw IisError("ИИС не отдал раздел (переадресация ${r.code})")
             r.code == 404 -> throw IisError("Раздел недоступен в ИИС")
             r.code in 500..599 -> throw IisError("ИИС сейчас недоступен (ошибка ${r.code}) — попробуй позже")
             r.code !in 200..299 -> throw IisError("ИИС ответил ошибкой ${r.code}")
-            r.body.trimStart().startsWith("<") -> throw IisUnauthorized()   // HTML страницы входа вместо данных
+            html && isLogin(r.body.take(4000)) -> throw IisUnauthorized()   // страница входа вместо данных
+            html -> throw IisError("ИИС прислал страницу вместо данных — открой раздел на сайте ИИС")
             else -> r.body
         }
     }
+
+    private fun isLogin(text: String) = text.lowercase().let { t -> listOf("login", "/auth", "sign-in", "signin", "password", "вход").any { it in t } }
 
     fun logout(http: Http, session: IisSession) { runCatching { http.send("GET", "$BASE/auth/logout", null, headers(session)) } }
 
@@ -129,7 +135,7 @@ object Iis {
             if (body != null) { c.doOutput = true; c.outputStream.use { it.write(body.toByteArray()) } }
             val code = c.responseCode
             val text = (if (code in 200..399) c.inputStream else c.errorStream)?.bufferedReader()?.use { it.readText() }.orEmpty()
-            HttpResp(code, text, c.headerFields.entries.filter { it.key.equals("Set-Cookie", true) }.flatMap { it.value })
+            HttpResp(code, text, c.headerFields.entries.filter { it.key.equals("Set-Cookie", true) }.flatMap { it.value }, c.getHeaderField("Location"))
         } finally { c.disconnect() }
     }
 
