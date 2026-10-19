@@ -44,6 +44,8 @@ fun nightWindow(day: LocalDate): Pair<Long, Long> =
 fun detectNight(events: List<Pair<Long, Boolean>>, from: Long, to: Long, now: Long = Long.MAX_VALUE): Night? {
     val end = minOf(to, now)
     val ev = events.filter { it.first in from..end }.sortedBy { it.first }
+    // в окне ни одного события — журнал экрана за эти сутки пуст (стёрт или не отдан), а не «спал 22 часа»
+    if (ev.isEmpty()) return null
     // паузы (экран не используется)
     val gaps = mutableListOf<LongArray>()
     var offSince: Long? = if (ev.isEmpty() || ev.first().second) from else null
@@ -68,11 +70,21 @@ fun detectNight(events: List<Pair<Long, Boolean>>, from: Long, to: Long, now: Lo
     val night3 = to - 13 * 60 * MIN; val night6 = to - 10 * 60 * MIN // окно заканчивается в 16:00
     val best = merged.filter { it.s <= night6 && it.e >= night3 }.maxByOrNull { it.e - it.s - it.awake } ?: return null
     if (best.e - best.s - best.awake < 3 * 60 * MIN) return null
+    // дольше 14 ч без телефона — дыра в журнале (выключенный телефон, стёртые записи), а не сон
+    if (best.e - best.s > MAX_NIGHT_MS) return null
+    // начало или конец паузы на краю окна — момента выключения экрана или подъёма не видно: не угадываем
+    if (best.s <= from || best.e >= to) return null
     if (best.e >= end && end < to) return null // ещё спит — не финализируем
     return Night(best.s, best.e, best.wake, (best.awake / MIN).toInt())
 }
 
 fun nightId(day: LocalDate) = "sleep:$day"
+
+/** Длиннее — не сон, а дыра в журнале экрана. */
+const val MAX_NIGHT_MS = 14 * 60 * MIN
+
+/** Убрать уже записанные ложные ночи (22 ч «сна» из пустого журнала): возвращает, сколько удалено. */
+fun dropBogusNights(s: Store): Int = NIGHT.all(s).filter { (_, n) -> n.end - n.start > MAX_NIGHT_MS }.onEach { s.delete(it.first.id) }.size
 
 /** Минуты от полудня — чтобы усреднять время отбоя через полночь. */
 private fun sinceNoon(ms: Long): Int {

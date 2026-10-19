@@ -83,7 +83,7 @@ val PROTEIN_SHAKE = by.zaberezh.forma.core.food.LibFood(
 )
 
 /** Последняя версия схемы настроек (см. миграции ниже). */
-const val SETTINGS_SCHEMA = 8
+const val SETTINGS_SCHEMA = 9
 
 /**
  * Миграция сохранённых настроек при обновлении приложения.
@@ -122,6 +122,10 @@ fun migrateSettings(store: Store) {
         if (store.get(by.zaberezh.forma.core.food.FoodModule.libId(PROTEIN_SHAKE.name)) == null)
             by.zaberezh.forma.core.food.LIB.save(store, PROTEIN_SHAKE, id = by.zaberezh.forma.core.food.FoodModule.libId(PROTEIN_SHAKE.name))
         st = st.copy(schema = 8)
+    }
+    if (st.schema < 9) { // v9: ночи по 22 ч из пустого журнала экрана — удалить
+        by.zaberezh.forma.core.sleep.dropBogusNights(store)
+        st = st.copy(schema = 9)
     }
     SETTINGS.set(store, st)
 }

@@ -41,4 +41,16 @@ class SleepTest {
         val ev = (0 until 44).flatMap { i -> val s = from + i * 30 * 60_000L; listOf(s to true, s + 10 * 60_000L to false) }
         assertNull(detectNight(ev, from, to))
     }
+
+    @Test fun emptyJournalIsNotA22HourNight() {
+        val (from, to) = nightWindow(day)
+        assertNull(detectNight(emptyList(), from, to))                         // было 18:00–16:00 «22 ч»
+        assertNull(detectNight(listOf(t(prev, 19, 0) to false), from, to))     // выключил экран и больше ничего до 16:00
+        // старые ложные ночи удаляются, настоящие остаются
+        val s = by.zaberezh.forma.core.store.MemoryStore()
+        by.zaberezh.forma.core.sleep.NIGHT.save(s, by.zaberezh.forma.core.sleep.Night(from, to), id = "sleep:$day")
+        by.zaberezh.forma.core.sleep.NIGHT.save(s, by.zaberezh.forma.core.sleep.Night(t(prev, 23, 40), t(day, 7, 15)), id = "sleep:$prev")
+        assertEquals(1, by.zaberezh.forma.core.sleep.dropBogusNights(s))
+        assertEquals(1, by.zaberezh.forma.core.sleep.NIGHT.all(s).size)
+    }
 }
