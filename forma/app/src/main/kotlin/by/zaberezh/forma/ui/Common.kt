@@ -100,11 +100,25 @@ fun scheme(accent: Color) = darkColorScheme(
 )
 
 // ---------- данные ----------
-/** Контекст, пересоздаваемый при любом изменении данных. */
+/**
+ * Часы приложения — состояние Compose: пока оно открыто, [MainActivity] сверяет их раз в минуту.
+ * После полуночи экраны сами переходят на новый день, текущая пара и конец учебного дня переключаются без перезахода.
+ */
+object Clock {
+    var day by mutableStateOf(by.zaberezh.forma.core.store.today())
+        private set
+    var now by mutableStateOf(minute())
+        private set
+    private fun minute() = java.time.LocalTime.now(by.zaberezh.forma.core.store.ZONE).truncatedTo(java.time.temporal.ChronoUnit.MINUTES)
+    fun tick() { day = by.zaberezh.forma.core.store.today(); now = minute() }
+}
+
+/** Контекст, пересоздаваемый при любом изменении данных и со сменой дня. */
 @Composable
 fun rememberCtx(): Ctx {
     val v = Forma.store.version.intValue
-    return remember(v) { Ctx(Forma.store) }
+    val day = Clock.day
+    return remember(v, day) { Ctx(Forma.store, day) }
 }
 
 /** Русское окончание по числу: 1 пара, 2 пары, 5 пар, 11 пар, 21 пара. */

@@ -29,7 +29,7 @@ object Water {
 }
 
 class WaterReceiver : BroadcastReceiver() {
-    override fun onReceive(c: Context, i: Intent) {
+    override fun onReceive(c: Context, i: Intent) = inBackground {
         runCatching {
             val s = Forma.store
             val day = today()
@@ -41,13 +41,13 @@ class WaterReceiver : BroadcastReceiver() {
                 listOf("Нажми, когда выпьешь стакан (${WaterLog.GLASS_ML} мл) — засчитаю.", "Сегодня ${WaterLog.ml(s, day)} из ${WaterLog.goalMl(s)} мл · ${WaterLog.percent(s, day)}%"),
                 tap = drank, actions = listOf(android.app.Notification.Action.Builder(null, "Выпил стакан", drank).build()))
         }
-        Water.schedule(c)
+        runCatching { Water.schedule(c) }
     }
 }
 
 /** Нажали на «Попей воды»: +1 стакан и короткое подтверждение с прогрессом. */
 class WaterDrankReceiver : BroadcastReceiver() {
-    override fun onReceive(c: Context, i: Intent) {
+    override fun onReceive(c: Context, i: Intent) = inBackground {
         runCatching {
             val s = Forma.store
             WaterLog.add(s)

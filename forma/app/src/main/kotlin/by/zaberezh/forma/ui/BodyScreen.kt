@@ -60,6 +60,7 @@ fun BodyScreen() {
         item {
             val todayW = weightOn(s, ctx.today)
             var w by remember(todayW) { mutableStateOf(todayW?.r1() ?: "") }
+            var bad by remember(todayW) { mutableStateOf<String?>(null) }
             val all = WEIGHT.all(s)
             val trend = trendWeight(s, ctx.today)
             val streak = by.zaberezh.forma.core.daily.Streaks.weighIns(s, ctx.today)
@@ -68,9 +69,14 @@ fun BodyScreen() {
                 if (trend != null) BigValue(trend.r1(), "кг", "сглаженный · последний замер ${all.last().second.kg.r1()} кг")
                 else Muted("Взвешивайся утром натощак, минимум 4 раза в неделю")
                 Line {
-                    Field("Вес сегодня", w, { w = it }, Modifier.weight(1f), suffix = "кг")
-                    Primary(if (todayW == null) "Сохранить" else "Изменить", { w.num()?.let { saveWeight(s, ctx.today, it) } })
+                    Field("Вес сегодня", w, { w = it; bad = null }, Modifier.weight(1f), suffix = "кг")
+                    // опечатка («7» вместо «75») испортила бы тренд и норму калорий — такое не сохраняем
+                    Primary(if (todayW == null) "Сохранить" else "Изменить", {
+                        val kg = w.num()
+                        if (kg != null && kg in 30.0..250.0) saveWeight(s, ctx.today, kg) else bad = "Вес — число от 30 до 250 кг"
+                    })
                 }
+                Err(bad)
                 if (todayW != null) Muted("Сегодня уже записано ${todayW.r1()} кг — новое значение заменит его.")
                 val days = weightDays(s, 10)
                 if (days.isNotEmpty()) Buttons {
@@ -144,7 +150,7 @@ private fun WeightGoalBlock(ctx: by.zaberezh.forma.core.Ctx) {
     val wg = by.zaberezh.forma.core.body.weightGoal(p, current)
     var start by remember(p) { mutableStateOf(p.startKg?.r1() ?: "") }
     var target by remember(p) { mutableStateOf(p.targetKg?.r1() ?: "") }
-    var msg by remember(p) { mutableStateOf<String?>(null) }
+    var msg by remember { mutableStateOf<String?>(null) }   // не от профиля: сохранение меняет профиль и стёрло бы «Цель сохранена»
     Block("Цель по весу", trailing = { if (wg.targetKg != null) Pill(wg.kind, C.muted) }) {
         val t = wg.targetKg
         if (t == null) Muted("Цели нет — калории на поддержание веса. Укажи целевой вес: больше текущего — набор, меньше — похудение.")

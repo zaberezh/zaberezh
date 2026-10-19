@@ -6,6 +6,7 @@ import by.zaberezh.forma.core.Profile
 import by.zaberezh.forma.core.Section
 import by.zaberezh.forma.core.body.dailyWeights
 import by.zaberezh.forma.core.body.latestWeight
+import by.zaberezh.forma.core.body.trendWeight
 import by.zaberezh.forma.core.body.weightRate
 import by.zaberezh.forma.core.body.weightGoal
 import by.zaberezh.forma.core.i
@@ -81,7 +82,8 @@ object FoodModule : Module {
 
     fun targets(ctx: Ctx): Targets {
         val st = ctx.settings; val p = st.profile
-        val kg = latestWeight(ctx.store) ?: 70.5
+        // сглаженный вес: норма белка и калорий не прыгает от воды и соли после одного взвешивания
+        val kg = trendWeight(ctx.store, ctx.today) ?: latestWeight(ctx.store) ?: 70.5
         val formula = formulaTdee(p, kg)
         val from = ctx.today.minusDays(28); val to = ctx.today.minusDays(1)
         val ad = adaptiveTdee(dailyWeights(ctx.store, from, to), intake(ctx.store, from, to), to)

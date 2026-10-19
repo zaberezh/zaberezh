@@ -61,7 +61,6 @@ private val WEIGH = listOf(
     F("wH", "Взвеситься, будни", "ч"), F("wM", "Будни", "мин"),
     F("weH", "Выходные", "ч"), F("weM", "Выходные", "мин"),
 )
-private val SLEEP = listOf(F("sleepH", "Цель сна", "ч"), F("wakeH", "Подъём", "ч"), F("wakeM", "Подъём", "мин"))
 
 @SuppressLint("MissingPermission")
 /** Экспорт за годы весит единицы мегабайт; файл больше — не читаем: его разбор не поместился бы в память. */
@@ -76,7 +75,10 @@ fun SettingsScreen() {
     val st = ctx.settings
     val p = st.profile
     var refresh by remember { mutableIntStateOf(0) }
-    val f = remember(st) {
+    // поля формы — от сохранённых настроек, кроме тех, что сохраняются сразу (переключатель КБЖУ):
+    // иначе он стирал бы несохранённые правки остальных полей
+    val form = st.copy(advancedMacros = false)
+    val f = remember(form) {
         mutableStateMapOf(
             "age" to p.age.toString(), "height" to p.heightCm.r1(), "activity" to p.activity.toString(),
             "protein" to p.proteinPerKg.toString(), "fat" to p.fatShare.toString(),
@@ -84,20 +86,18 @@ fun SettingsScreen() {
             "hour" to st.morningHour.toString(), "minute" to "%02d".format(st.morningMinute), "checkup" to st.checkupDays.toString(),
             "wH" to st.weighHour.toString(), "wM" to "%02d".format(st.weighMinute),
             "weH" to st.weighWeekendHour.toString(), "weM" to "%02d".format(st.weighWeekendMinute),
-            "sleepH" to st.sleepTargetH.r1(), "wakeH" to st.wakeHour.toString(), "wakeM" to "%02d".format(st.wakeMinute),
         )
     }
-    var key by remember(st) { mutableStateOf(by.zaberezh.forma.sys.Secrets.claudeKey(c)) }
-    var bedReminder by remember(st) { mutableStateOf(st.bedReminder) }
-    var weekends by remember(st) { mutableStateOf(st.gymWeekends) }
-    var split by remember(st) { mutableStateOf(st.split) }
-    var water by remember(st) { mutableStateOf(st.waterReminder) }
-    var iis by remember(st) { mutableStateOf(st.iisWatch) }
-    var eachSet by remember(st) { mutableStateOf(st.logEachSet) }
+    var key by remember(form) { mutableStateOf(by.zaberezh.forma.sys.Secrets.claudeKey(c)) }
+    var weekends by remember(form) { mutableStateOf(st.gymWeekends) }
+    var split by remember(form) { mutableStateOf(st.split) }
+    var water by remember(form) { mutableStateOf(st.waterReminder) }
+    var iis by remember(form) { mutableStateOf(st.iisWatch) }
+    var eachSet by remember(form) { mutableStateOf(st.logEachSet) }
     var adv by remember(st) { mutableStateOf(st.advancedMacros) }
-    var weighOn by remember(st) { mutableStateOf(st.weighReminder) }
-    var url by remember(st) { mutableStateOf(st.apiUrl) }
-    var model by remember(st) { mutableStateOf(st.model) }
+    var weighOn by remember(form) { mutableStateOf(st.weighReminder) }
+    var url by remember(form) { mutableStateOf(st.apiUrl) }
+    var model by remember(form) { mutableStateOf(st.model) }
     var msg by remember { mutableStateOf<String?>(null) }
     var apiMsg by remember { mutableStateOf<String?>(null) }
     var apiErr by remember { mutableStateOf<String?>(null) }
@@ -125,13 +125,16 @@ fun SettingsScreen() {
 
     fun saveAll() {
         by.zaberezh.forma.sys.Secrets.setClaudeKey(c, key)   // ключ — только в сейфе Keystore, не в базе
-        fun d(k: String, def: Double) = f[k]?.num() ?: def
-        SETTINGS.set(s, SETTINGS.get(s).copy(
-            profile = p.copy(
-                age = d("age", 18.0).toInt(), heightCm = d("height", 180.0), activity = d("activity", 1.375),
-                proteinPerKg = d("protein", 2.0), fatShare = d("fat", 0.25),
+        // пусто или опечатка вне разумного («18» в росте) — остаётся прежнее значение, а не портит расчёт калорий
+        fun d(k: String, cur: Double, ok: ClosedRange<Double> = 0.0..1e9) = f[k]?.num()?.takeIf { it in ok } ?: cur
+        val saved = SETTINGS.get(s)
+        SETTINGS.set(s, saved.copy(
+            profile = saved.profile.copy(
+                age = d("age", p.age.toDouble(), 10.0..100.0).toInt(), heightCm = d("height", p.heightCm, 120.0..230.0),
+                activity = d("activity", p.activity, 1.1..2.5),
+                proteinPerKg = d("protein", p.proteinPerKg, 0.8..4.0), fatShare = d("fat", p.fatShare, 0.1..0.6),
             ),
-            kcalOverride = f["kcal"]?.num()?.toInt(),
+            kcalOverride = f["kcal"]?.num()?.toInt()?.takeIf { it in 1000..6000 },
             sessionsPerWeek = d("sessions", 3.0).toInt().coerceIn(1, 5), sessionMin = d("session", 90.0).toInt().coerceIn(40, 150),
             morningHour = d("hour", 8.0).toInt().coerceIn(0, 23), morningMinute = d("minute", 0.0).toInt().coerceIn(0, 59),
             checkupDays = d("checkup", 14.0).toInt().coerceIn(7, 60),

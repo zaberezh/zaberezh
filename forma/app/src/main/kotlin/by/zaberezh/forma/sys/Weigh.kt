@@ -29,11 +29,11 @@ object Weigh {
 }
 
 class WeighReceiver : BroadcastReceiver() {
-    override fun onReceive(c: Context, i: Intent) {
+    override fun onReceive(c: Context, i: Intent) = inBackground {
         runCatching {
             val weighed = WEIGHT.all(Forma.store).lastOrNull()?.first?.day == today()
             if (!weighed) Notify.post(c, 6, "Взвесься", listOf("Натощак, после туалета, до еды и воды. Запиши на «Сегодня»."))
         }
-        Weigh.schedule(c)
+        runCatching { Weigh.schedule(c) }
     }
 }

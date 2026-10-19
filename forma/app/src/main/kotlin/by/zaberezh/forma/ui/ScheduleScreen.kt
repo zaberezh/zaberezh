@@ -127,10 +127,11 @@ fun ScheduleScreen() {
     var pastWeeks by rememberSaveable { mutableIntStateOf(0) }
     val oldest = monday(today).minusWeeks(MAX_PAST_WEEKS.toLong())
     // учебный день закончился (последняя пара прошла или пар нет) — лента начинается с завтра, сегодня уходит в прошедшие
-    val todayOver = run {   // без remember: после конца последней пары лента переключится при следующей перерисовке
+    val now = Clock.now   // минутные часы: после конца последней пары лента переключится сама
+    val todayOver = remember(tt, prefs.subgroup, today, now) {
         val ends = if (tt.lessons.isEmpty()) emptyList() else Bsuir.on(tt, today, prefs.subgroup)
             .mapNotNull { runCatching { java.time.LocalTime.parse(it.end) }.getOrNull() }
-        ends.isEmpty() || java.time.LocalTime.now(by.zaberezh.forma.core.store.ZONE).isAfter(ends.max())
+        ends.isEmpty() || now.isAfter(ends.max())
     }
     val first = if (todayOver) today.plusDays(1) else today
     val start = if (pastWeeks == 0) first else monday(today).minusWeeks(pastWeeks.toLong())
@@ -193,7 +194,7 @@ fun ScheduleScreen() {
                     is Row2.Head -> DayTitle(r.day, today, r.empty, Bsuir.week(tt, r.day))
                     is Row2.Item -> LessonCard(s, tt, r.lesson, r.day, prefs.subgroup)
                     is Row2.Window -> Text(r.gap.label(), Modifier.padding(start = 12.dp), style = MaterialTheme.typography.bodySmall,
-                        color = if (r.day == today && java.time.LocalTime.now(by.zaberezh.forma.core.store.ZONE).isAfter(r.gap.to)) C.line else C.muted)
+                        color = if (r.day == today && now.isAfter(r.gap.to)) C.line else C.muted)
                     // все прошедшие дни разом появляются выше, а лента остаётся на сегодняшнем дне — листай вверх
                     is Row2.More -> Secondary("Показать прошедшие дни", {
                         pending = first; pastWeeks = MAX_PAST_WEEKS

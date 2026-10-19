@@ -46,7 +46,7 @@ private fun Macro.line(adv: Boolean = false) = "${kcal.i()} ккал · Б ${p.i
 fun FoodScreen() {
     val ctx = rememberCtx()
     val s = ctx.store
-    var date by remember { mutableStateOf(ctx.today) }
+    var date by remember(ctx.today) { mutableStateOf(ctx.today) }   // после полуночи — сразу новый день
     var text by FoodSearch.text
     var draft by FoodSearch.draft
     val busy by FoodSearch.busy

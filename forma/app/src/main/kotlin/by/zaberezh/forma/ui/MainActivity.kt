@@ -28,6 +28,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -40,6 +41,7 @@ import androidx.compose.ui.unit.dp
 import by.zaberezh.forma.Forma
 import by.zaberezh.forma.R
 import androidx.compose.runtime.mutableStateOf
+import kotlinx.coroutines.delay
 
 private data class Tab(val title: String, val icon: Int)
 
@@ -68,6 +70,8 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         C.section = Forma.store.kvGet("ui.section")?.toIntOrNull() ?: 0
         setContent {
+            // часы: день и минута для всех экранов (смена дня в полночь, текущая пара)
+            LaunchedEffect(Unit) { while (true) { Clock.tick(); delay(60_000 - System.currentTimeMillis() % 60_000) } }
             MaterialTheme(colorScheme = scheme(C.accent)) {
                 var healthTab by rememberSaveable { mutableIntStateOf(0) }
                 var studyTab by rememberSaveable { mutableIntStateOf(0) }
@@ -154,4 +158,7 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
+
+    // вернулся в приложение утром — сразу сегодняшний день, не ждём следующей минуты
+    override fun onResume() { super.onResume(); Clock.tick() }
 }

@@ -204,7 +204,7 @@ object Bsuir {
     fun parseWeek(body: String): Int? = body.trim().trim('"').toIntOrNull()?.takeIf { it in 1..4 }
 
     /** Скачать расписание и текущую неделю. fetch — HTTP GET (на телефоне — с телефона). */
-    fun download(group: String, fetch: (String) -> String?, today: LocalDate = LocalDate.now()): Timetable {
+    fun download(group: String, fetch: (String) -> String?, today: LocalDate = by.zaberezh.forma.core.store.today()): Timetable {
         val body = fetch(url(group)) ?: error("Не удалось скачать расписание группы $group (нет сети или iis.bsuir.by недоступен)")
         val tt = parse(body, group)
         if (tt.lessons.isEmpty()) error("В ответе ИИС нет пар для группы $group — проверь номер группы")

@@ -102,13 +102,13 @@ object Study {
     }
 
     /** Сдана / не сдана. Сдать можно только сделанную: отметка «сдана» отмечает и все задания. */
-    fun setSubmitted(s: Store, id: String, submitted: Boolean, today: LocalDate = LocalDate.now()) = updateLab(s, id) { l ->
+    fun setSubmitted(s: Store, id: String, submitted: Boolean, today: LocalDate = by.zaberezh.forma.core.store.today()) = updateLab(s, id) { l ->
         if (submitted) l.copy(tasks = l.tasks.map { it.copy(done = true) }, doneManual = true, submitted = true, submittedOn = today.toString())
         else l.copy(submitted = false, submittedOn = null)
     }
 
     /** Следующий шаг по кружку: в работе → сделана → сдана → снова «нужно сдать». */
-    fun advance(s: Store, id: String, today: LocalDate = LocalDate.now()) {
+    fun advance(s: Store, id: String, today: LocalDate = by.zaberezh.forma.core.store.today()) {
         val l = s.get(id)?.let(LAB::decode) ?: return
         when (l.stage) {
             0 -> setLabDone(s, id, true)

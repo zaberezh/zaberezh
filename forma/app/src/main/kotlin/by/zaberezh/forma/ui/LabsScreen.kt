@@ -66,7 +66,7 @@ fun LabsScreen() {
 
     val homework = remember(ctx) { Study.open(s, ctx.today) }
     Screen {
-        item { SessionBlock(s, ctx.today, labs.count { it.second.stage < 2 }) }
+        item { SessionBlock(ctx, labs.count { it.second.stage < 2 }) }
         if (homework.isNotEmpty()) item {
             Block("Домашка", trailing = { Pill("${homework.size}") }) {
                 homework.forEachIndexed { i, (e, hw) ->
@@ -98,15 +98,15 @@ fun LabsScreen() {
         }
         active.groupBy { it.second.subject }.forEach { (subject, list) ->
             item { Text(subject, style = MaterialTheme.typography.labelLarge, color = C.muted, modifier = Modifier.padding(start = 4.dp, top = 4.dp)) }
-            list.forEach { (e, lab) -> item(key = e.id) { LabCard(s, e.id, lab, open[e.id] == true) { open[e.id] = it } } }
+            list.forEach { (e, lab) -> item(key = e.id) { LabCard(s, e.id, lab, ctx.today, open[e.id] == true) { open[e.id] = it } } }
         }
         if (toSubmit.isNotEmpty()) {
             item { Text("Нужно сдать", style = MaterialTheme.typography.labelLarge, color = C.warn, modifier = Modifier.padding(start = 4.dp, top = 4.dp)) }
-            toSubmit.forEach { (e, lab) -> item(key = e.id) { LabCard(s, e.id, lab, open[e.id] == true) { open[e.id] = it } } }
+            toSubmit.forEach { (e, lab) -> item(key = e.id) { LabCard(s, e.id, lab, ctx.today, open[e.id] == true) { open[e.id] = it } } }
         }
         if (done.isNotEmpty()) {
             item { Flat(if (showDone) "Скрыть сданные (${done.size})" else "Сданные (${done.size})", { showDone = !showDone }, C.muted) }
-            if (showDone) done.forEach { (e, lab) -> item(key = e.id) { LabCard(s, e.id, lab, open[e.id] == true) { open[e.id] = it } } }
+            if (showDone) done.forEach { (e, lab) -> item(key = e.id) { LabCard(s, e.id, lab, ctx.today, open[e.id] == true) { open[e.id] = it } } }
         }
     }
 }
@@ -174,7 +174,7 @@ private fun ProgressRing(percent: Int, stage: Int, size: Dp = 40.dp, onClick: ()
 }
 
 @Composable
-private fun LabCard(s: Store, id: String, lab: Lab, expanded: Boolean, setExpanded: (Boolean) -> Unit) {
+private fun LabCard(s: Store, id: String, lab: Lab, today: java.time.LocalDate, expanded: Boolean, setExpanded: (Boolean) -> Unit) {
     var rename by remember { mutableStateOf<Pair<String, (String) -> Unit>?>(null) }
     Block {
         Column(Modifier.animateContentSize(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -189,7 +189,7 @@ private fun LabCard(s: Store, id: String, lab: Lab, expanded: Boolean, setExpand
                             (lab.mark?.let { " · отметка $it" } ?: ""))
                         else -> {
                             val due = lab.due?.let { java.time.LocalDate.parse(it) }
-                            val late = due != null && due.isBefore(java.time.LocalDate.now())
+                            val late = due != null && due.isBefore(today)
                             Text(lab.subject + (if (lab.total > 0) " · ${lab.doneCount}/${lab.total} заданий" else "") +
                                 (due?.let { " · срок ${DM.format(it)}" + if (late) " — просрочена" else "" } ?: ""),
                                 style = MaterialTheme.typography.bodySmall, color = if (late) C.bad else C.muted)
@@ -260,8 +260,10 @@ private val SDAY = DateTimeFormatter.ofPattern("d MMM, EE", RU)
  * и что ещё не сдано из лаб — сдать до сессии.
  */
 @Composable
-private fun SessionBlock(s: Store, today: java.time.LocalDate, labsLeft: Int) {
-    val info = by.zaberezh.forma.core.study.Session.of(TIMETABLE.get(s), today)
+private fun SessionBlock(ctx: by.zaberezh.forma.core.Ctx, labsLeft: Int) {
+    val today = ctx.today
+    // разбор всего расписания — один раз на изменение данных, не на каждую отметку задания
+    val info = remember(ctx) { by.zaberezh.forma.core.study.Session.of(TIMETABLE.get(ctx.store), today) }
     val left = info.daysLeft
     Block("Сессия", trailing = {
         when {

@@ -61,12 +61,19 @@ fun weightRate(s: Store, to: LocalDate, days: Long = 21): Double? {
     return slope(w.map { ChronoUnit.DAYS.between(to, it.first).toDouble() to it.second })?.times(7)
 }
 
-/** Сглаженный вес (EMA, α=0.1 по дням) — убирает шум воды/соли. */
+/**
+ * Сглаженный вес (EMA, α=0.1 за каждый прошедший день) — убирает шум воды/соли.
+ * Вес за пропущенные дни не известен, поэтому после перерыва новый замер весит больше:
+ * месяц без весов — и старый вес почти не тянет тренд назад.
+ */
 fun trendWeight(s: Store, to: LocalDate): Double? {
     val w = dailyWeights(s, to.minusDays(60), to)
     if (w.isEmpty()) return null
     var ema = w.first().second
-    w.drop(1).forEach { ema += 0.1 * (it.second - ema) }
+    for (i in 1 until w.size) {
+        val gap = ChronoUnit.DAYS.between(w[i - 1].first, w[i].first).coerceAtLeast(1)
+        ema += (1 - Math.pow(0.9, gap.toDouble())) * (w[i].second - ema)
+    }
     return ema
 }
 

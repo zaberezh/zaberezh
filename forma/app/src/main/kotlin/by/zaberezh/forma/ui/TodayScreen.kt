@@ -37,7 +37,6 @@ import by.zaberezh.forma.core.r1
 import by.zaberezh.forma.core.report.Checkup
 import by.zaberezh.forma.core.sleep.SleepModule
 import by.zaberezh.forma.core.sleep.dur
-import by.zaberezh.forma.core.store.ZONE
 import by.zaberezh.forma.core.study.Bsuir
 import by.zaberezh.forma.core.study.STUDY_PREFS
 import by.zaberezh.forma.core.study.Study
@@ -167,7 +166,7 @@ private fun StudyToday(ctx: Ctx, onStudy: (Int) -> Unit) {
     val tt = remember(ctx) { TIMETABLE.get(s) }
     val sub = STUDY_PREFS.get(s).subgroup
     val lessons = remember(tt, sub, ctx.today) { Bsuir.on(tt, ctx.today, sub) }
-    val now = LocalTime.now(ZONE)
+    val now = Clock.now
     fun time(x: String) = runCatching { LocalTime.parse(x) }.getOrNull()
     val over = lessons.isNotEmpty() && lessons.all { l -> time(l.end)?.let { now.isAfter(it) } ?: false }
     // следующий день с парами — когда сегодня уже нечего показывать

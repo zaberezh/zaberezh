@@ -96,7 +96,7 @@ fun startWorkout(ctx: Ctx) {
 
 @Composable
 private fun GymHome(ctx: Ctx) {
-    var sel by remember { mutableStateOf(ctx.today) }
+    var sel by remember(ctx.today) { mutableStateOf(ctx.today) }
     var tab by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(0) }
     val s = ctx.store
     Screen {
@@ -334,7 +334,7 @@ private fun WorkoutScreen(ctx: Ctx, id: String) {
     val plan = GymModule.storedPlan(s, date) ?: GymModule.planFor(ctx, date)
     val setsPlanned = plan.items.associate { it.ex to it.sets }
     val ids = (plan.items.map { it.ex } + w.sets.map { it.ex }).distinct()
-    val targets = remember(e.ts, ids, setsPlanned) {
+    val targets = remember(e.ts, ids, setsPlanned, p) {
         ids.mapNotNull(p::ex).associate { ex ->
             val x = ex.copy(sets = setsPlanned[ex.id] ?: ex.sets)
             // после другого упражнения на ту же мышцу (жим гантелей после жима лёжа) цель своя: вес там ниже
@@ -350,7 +350,8 @@ private fun WorkoutScreen(ctx: Ctx, id: String) {
     DisposableEffect(Unit) { view.keepScreenOn = true; onDispose { view.keepScreenOn = false } }
     LaunchedEffect(Unit) { while (true) { now = System.currentTimeMillis(); delay(30_000) } }   // минуты тренировки
 
-    fun save(nw: Workout) = WORKOUT.save(s, nw, ts = e.ts, id = id)
+    // правка — поверх записанного в базе, а не снимка с экрана: два быстрых нажатия не теряют подход
+    fun update(f: (Workout) -> Workout) { s.get(id)?.let(WORKOUT::decode)?.let { WORKOUT.save(s, f(it), ts = e.ts, id = id) } }
     fun addToPlan(exId: String) {
         val cur = GymModule.storedPlan(s, date) ?: plan
         val sets = GymModule.program(s).ex(exId)?.sets ?: 3
@@ -370,7 +371,7 @@ private fun WorkoutScreen(ctx: Ctx, id: String) {
                     Text("${(now - w.start) / 60_000} мин", style = MaterialTheme.typography.titleLarge)
                 }
                 Line {
-                    Primary("Завершить", { save(w.copy(end = System.currentTimeMillis())); s.kvPut(ACTIVE, null) }, Modifier.weight(1f))
+                    Primary("Завершить", { update { it.copy(end = System.currentTimeMillis()) }; s.kvPut(ACTIVE, null) }, Modifier.weight(1f))
                     Flat("Отменить", { cancel = true }, C.muted)
                 }
             }
@@ -382,19 +383,18 @@ private fun WorkoutScreen(ctx: Ctx, id: String) {
             ExerciseCard(pair.first, pair.second, w.sets.filter { it.ex == exId },
                 superset = mate?.let { "${pairLabels(plan.items)[exId]} · суперсет с «$it»: подход → 60–90 с → подход второго" },
                 eachSet = ctx.settings.logEachSet,
-                onAdd = { sets -> save(w.copy(sets = w.sets + sets)) },
+                onAdd = { sets -> update { it.copy(sets = it.sets + sets) } },
                 onUndo = { all ->
-                    if (all) save(w.copy(sets = w.sets.filter { it.ex != exId }))
-                    else {
-                        val i = w.sets.indexOfLast { it.ex == exId }
-                        if (i >= 0) save(w.copy(sets = w.sets.filterIndexed { j, _ -> j != i }))
+                    update { cur ->
+                        val i = cur.sets.indexOfLast { it.ex == exId }
+                        cur.copy(sets = if (all) cur.sets.filter { it.ex != exId } else cur.sets.filterIndexed { j, _ -> j != i })
                     }
                 },
                 onRemove = {
                     // убрать из сегодняшней тренировки: из плана дня и вместе с записанными подходами
                     val cur = GymModule.storedPlan(s, date) ?: plan
                     GymModule.savePlan(s, cur.copy(items = cur.items.filter { it.ex != exId }, source = "edited"))
-                    if (w.sets.any { it.ex == exId }) save(w.copy(sets = w.sets.filter { it.ex != exId }))
+                    if (w.sets.any { it.ex == exId }) update { cur -> cur.copy(sets = cur.sets.filter { it.ex != exId }) }
                 })
         }
         item {

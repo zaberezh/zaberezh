@@ -47,7 +47,7 @@ fun TurnikScreen() {
 @Composable
 private fun SetsBlock(ctx: Ctx, def: CounterDef) {
     val s = ctx.store
-    var day by remember { mutableStateOf(ctx.today) }
+    var day by remember(ctx.today) { mutableStateOf(ctx.today) }
     val d = CounterModule.day(s, def.id, day)
     var reps by remember(day) { mutableStateOf("") }
     var exact by remember(day) { mutableStateOf<String?>(null) }
@@ -76,9 +76,9 @@ private fun SetsBlock(ctx: Ctx, def: CounterDef) {
                 Field("Подход: сколько раз", reps, { reps = it }, Modifier.weight(1f), suffix = def.unit)
                 Primary("Добавить", { reps.num()?.toInt()?.let { CounterModule.addSet(s, def.id, day, it); reps = "" } })
             }
-            // быстрые кнопки — частые размеры подходов
-            val quick = remember(ctx) {
-                by.zaberezh.forma.core.daily.COUNT.all(s).flatMap { it.second.sets }.groupingBy { it }.eachCount()
+            // быстрые кнопки — частые размеры подходов этого счётчика (отжимания не подмешиваются к подтягиваниям)
+            val quick = remember(ctx, def.id) {
+                by.zaberezh.forma.core.daily.COUNT.all(s).filter { it.second.counter == def.id }.flatMap { it.second.sets }.groupingBy { it }.eachCount()
                     .entries.sortedByDescending { it.value }.take(5).map { it.key }.sorted()
             }
             if (quick.isNotEmpty()) Buttons {

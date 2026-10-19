@@ -23,6 +23,15 @@ import java.time.LocalDate
 
 fun Context.granted(p: String) = checkSelfPermission(p) == PackageManager.PERMISSION_GRANTED
 
+/**
+ * Работа приёмника — в фоновом потоке: база, журнал экрана и расчёт плана на главном потоке
+ * подтормаживают открытое приложение. [goAsync] держит процесс живым, пока работа не закончится.
+ */
+fun BroadcastReceiver.inBackground(work: () -> Unit) {
+    val p = goAsync()
+    Thread { try { work() } finally { p.finish() } }.start()
+}
+
 object Notify {
     private const val CH = "main"
 
@@ -82,10 +91,10 @@ object Morning {
 }
 
 class MorningReceiver : BroadcastReceiver() {
-    override fun onReceive(c: Context, i: Intent) {
+    override fun onReceive(c: Context, i: Intent) = inBackground {
+        runCatching { Morning.schedule(c) }   // сначала завтрашний будильник: сбой ниже не оставит без утреннего уведомления
         runCatching { SleepSync.sync(c) }
         runCatching { Notify.post(c, 1, "Сегодня", Checkup.morning(Forma.ctx())) }
-        Morning.schedule(c)
     }
 }
 

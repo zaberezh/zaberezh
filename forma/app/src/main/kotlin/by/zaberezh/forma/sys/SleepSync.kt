@@ -85,13 +85,13 @@ object Evening {
 }
 
 class EveningReceiver : BroadcastReceiver() {
-    override fun onReceive(c: Context, i: Intent) {
+    override fun onReceive(c: Context, i: Intent) = inBackground {
         runCatching {
             val ctx = Forma.ctx()
             val st = ctx.settings
             Notify.post(c, 4, "Отбой в ${SleepModule.bedtime(ctx)}",
                 listOf("Цель ${st.sleepTargetH.r1()} ч сна до подъёма в %02d:%02d.".format(st.wakeHour, st.wakeMinute)))
         }
-        Evening.schedule(c)
+        runCatching { Evening.schedule(c) }
     }
 }

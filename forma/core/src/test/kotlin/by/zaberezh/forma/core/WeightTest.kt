@@ -3,6 +3,7 @@ package by.zaberezh.forma.core
 import by.zaberezh.forma.core.body.WEIGHT
 import by.zaberezh.forma.core.body.Weight
 import by.zaberezh.forma.core.body.saveWeight
+import by.zaberezh.forma.core.body.trendWeight
 import by.zaberezh.forma.core.body.weightDays
 import by.zaberezh.forma.core.body.weightOn
 import by.zaberezh.forma.core.body.weightGoal
@@ -15,6 +16,7 @@ import by.zaberezh.forma.core.store.startMs
 import java.time.LocalDate
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 
 class WeightTest {
     @Test fun oneWeightPerDayEditable() {
@@ -28,6 +30,18 @@ class WeightTest {
         assertEquals(1, WEIGHT.all(s, d.startMs(), d.plusDays(1).startMs() - 1).size)
         assertEquals(69.2, weightOn(s, d))
         assertEquals(listOf(d to 69.2, d.minusDays(2) to 70.5), weightDays(s, 10))
+    }
+
+    @Test fun trendFollowsTheNewWeightAfterABreak() {
+        val s = MemoryStore()
+        val d = LocalDate.of(2026, 10, 1)
+        // ежедневно: шум ±0,5 кг сглаживается — тренд около среднего
+        for (i in 0..13) saveWeight(s, d.minusDays(13L - i), if (i % 2 == 0) 70.5 else 69.5, now = d.minusDays(13L - i).startMs() + 1000)
+        assertEquals(70.0, trendWeight(s, d)!!, 0.4)
+        // месяц без весов, потом 73 — старые 70 почти не тянут назад (раньше тренд показывал ~70,3)
+        val later = d.plusDays(30)
+        saveWeight(s, later, 73.0, now = later.startMs() + 1000)
+        assertTrue(trendWeight(s, later)!! > 72.8, "${trendWeight(s, later)}")
     }
 
     @Test fun targetWeightPicksGainOrLoss() {
