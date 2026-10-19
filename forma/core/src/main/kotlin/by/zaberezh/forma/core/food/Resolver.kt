@@ -15,9 +15,13 @@ internal val COUNT = Regex("^(\\d+(?:[.,]\\d+)?)\\s*(?:шт\\.?|x|х)?\\s+")
  * Возвращает null, если хоть одна часть не найдена (тогда идём к ИИ).
  */
 class LibraryResolver(private val store: Store) : FoodResolver {
+    // словарь библиотеки — один раз на поиск, а не на каждую часть запроса
+    private val lib by lazy {
+        val all = FoodModule.library(store)
+        all.associateBy { norm(it.name) } + all.flatMap { f -> f.aliases.map { norm(it) to f } }
+    }
+
     override fun resolve(text: String): List<FoodItem>? {
-        val lib = FoodModule.library(store).associateBy { norm(it.name) } +
-            FoodModule.library(store).flatMap { f -> f.aliases.map { norm(it) to f } }
         val parts = splitParts(text)
         if (parts.isEmpty()) return null
         return parts.map { part ->
