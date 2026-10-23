@@ -165,7 +165,7 @@ object Bsuir {
     val EXTRA: Map<String, List<Lesson>> = mapOf(
         "653502" to listOf(
             Lesson("Физика", "Консультация по физике", "Конс", "15:00", "16:20", weekday = 4, weeks = listOf(1, 3), rooms = listOf("501-4 к.")),
-            Lesson("МА", "Консультация по математическому анализу", "Конс", "13:35", "14:55", weekday = 4, weeks = listOf(1, 2, 3, 4),
+            Lesson("МА", "Консультация по математическому анализу", "Конс", "13:35", "14:55", weekday = 4, weeks = listOf(2, 4),
                 rooms = listOf("315-4 к.")),
         ),
     )

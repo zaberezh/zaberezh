@@ -120,13 +120,16 @@ class StudyTest {
     }
 
     @Test fun groupConsultationsAddedToSchedule() {
-        // неделя 1 — с 1 сентября 2026 (вторник), четверг 3.09 — неделя 1, 10.09 — неделя 2, 17.09 — неделя 3
+        // неделя 1 — с 1 сентября 2026 (вторник), четверг 3.09 — неделя 1, 10.09 — 2, 17.09 — 3, 24.09 — 4
         val tt = by.zaberezh.forma.core.study.Timetable("653502", start = "2026-09-01", end = "2026-12-31")
         fun thu(d: Int) = by.zaberezh.forma.core.study.Bsuir.on(tt, java.time.LocalDate.of(2026, 9, d)).map { it.start to it.title }
-        assertEquals(listOf("13:35" to "Консультация по математическому анализу", "15:00" to "Консультация по физике"), thu(3))
-        assertEquals(listOf("13:35" to "Консультация по математическому анализу"), thu(10))
-        assertEquals(listOf("315-4 к."), by.zaberezh.forma.core.study.Bsuir.on(tt, java.time.LocalDate.of(2026, 9, 3)).first { it.subject == "МА" && it.type == "Конс" }.rooms)
-        assertEquals(2, thu(17).size)
+        val ma = "13:35" to "Консультация по математическому анализу"; val phys = "15:00" to "Консультация по физике"
+        // физика — по нечётным неделям, матанализ — по чётным
+        assertEquals(listOf(phys), thu(3))
+        assertEquals(listOf(ma), thu(10))
+        assertEquals(listOf(phys), thu(17))
+        assertEquals(listOf(ma), thu(24))
+        assertEquals(listOf("315-4 к."), by.zaberezh.forma.core.study.Bsuir.on(tt, java.time.LocalDate.of(2026, 9, 10)).first { it.subject == "МА" && it.type == "Конс" }.rooms)
         assertTrue(by.zaberezh.forma.core.study.Bsuir.on(tt.copy(group = "421701"), java.time.LocalDate.of(2026, 9, 3)).isEmpty())
     }
 
