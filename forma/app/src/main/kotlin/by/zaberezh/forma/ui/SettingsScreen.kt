@@ -229,7 +229,7 @@ fun SettingsScreen() {
                 }
                 Line {
                     Muted(if (tt.fetchedAt > 0) "Расписание ${tt.group}: обновлено ${java.time.format.DateTimeFormatter.ofPattern("d MMM, HH:mm", RU)
-                        .format(java.time.Instant.ofEpochMilli(tt.fetchedAt).atZone(java.time.ZoneId.systemDefault()))}" else "Расписание не загружено",
+                        .format(java.time.Instant.ofEpochMilli(tt.fetchedAt).atZone(by.zaberezh.forma.core.store.ZONE))}" else "Расписание не загружено",
                         Modifier.weight(1f))
                     if (loadingTt) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
                     else Flat("Обновить", {
