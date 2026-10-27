@@ -105,6 +105,7 @@ fun ScheduleScreen() {
     // расписание из базы декодируется один раз на изменение данных, а не на каждую прокрутку дня
     val tt = remember(ctx) { TIMETABLE.get(s) }
     val prefs = remember(ctx) { STUDY_PREFS.get(s) }
+    val rooms = remember(ctx) { by.zaberezh.forma.core.study.ROOMS.get(s) }   // свои аудитории консультаций
     val today = ctx.today
     var loading by remember { mutableStateOf(false) }
     var err by remember { mutableStateOf<String?>(null) }
@@ -136,10 +137,10 @@ fun ScheduleScreen() {
     val first = if (todayOver) today.plusDays(1) else today
     val start = if (pastWeeks == 0) first else monday(today).minusWeeks(pastWeeks.toLong())
     val end = monday(today).plusWeeks(10).plusDays(6)
-    val rows = remember(tt, prefs.subgroup, start) {
+    val rows = remember(tt, prefs.subgroup, start, rooms) {
         val days = generateSequence(start) { it.plusDays(1) }.takeWhile { !it.isAfter(end) }.toList()
         (if (start > oldest) listOf<Row2>(Row2.More(start)) else emptyList()) + days.flatMap { d ->
-            val ls = if (tt.lessons.isEmpty()) emptyList() else Bsuir.on(tt, d, prefs.subgroup)
+            val ls = if (tt.lessons.isEmpty()) emptyList() else Bsuir.on(tt, d, prefs.subgroup, rooms)
             listOf<Row2>(Row2.Head(d, ls.isEmpty())) + ls.flatMapIndexed { i, l ->
                 listOf<Row2>(Row2.Item(d, l, i))
             }
@@ -312,7 +313,8 @@ private fun LessonDetails(s: Store, tt: Timetable, l: Lesson, date: LocalDate, s
     HorizontalDivider(color = C.line)
     Stat("Занятие", l.typeFull.ifBlank { "—" })
     Stat("Недели", if (l.weeks.isEmpty() || l.weeks.size == 4) "каждую" else l.weeks.joinToString(", "))
-    if (l.rooms.isNotEmpty()) Stat("Аудитория", l.rooms.joinToString(", "))
+    if (by.zaberezh.forma.core.study.Rooms.editable(l)) RoomEdit(s, l)
+    else if (l.rooms.isNotEmpty()) Stat("Аудитория", l.rooms.joinToString(", "))
     if (l.subgroup > 0) Stat("Подгруппа", "${l.subgroup}-я")
     if (l.note.isNotBlank()) Muted(l.note)
     l.teachers.forEachIndexed { i, short ->
@@ -347,4 +349,28 @@ private fun LessonDetails(s: Store, tt: Timetable, l: Lesson, date: LocalDate, s
     val next = Bsuir.next(tt, l.subject, l.type, date, subgroup)
     Primary(if (next != null) "Записать — появится ${DM.format(next)}" else "Записать ДЗ",
         { Study.addHomework(s, tt, l, date, text, subgroup); text = "" }, Modifier.fillMaxWidth(), enabled = text.isNotBlank())
+}
+
+/** Аудитория консультации — можно поправить руками (в ИИС её часто нет или она другая); действует на все такие консультации. */
+@Composable
+private fun RoomEdit(s: Store, l: Lesson) {
+    val edited = by.zaberezh.forma.core.study.Rooms.edited(by.zaberezh.forma.core.study.ROOMS.get(s), l)
+    var editing by remember(l) { mutableStateOf(false) }
+    if (!editing) Line {
+        Text("Аудитория", Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium, color = C.muted)
+        Text(l.rooms.joinToString(", ").ifBlank { "не указана" }, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium,
+            color = if (l.rooms.isEmpty()) C.muted else C.text)
+        Flat("Изменить", { editing = true })
+    } else {
+        var v by remember(l) { mutableStateOf(l.rooms.joinToString(", ")) }
+        Line {
+            Field("Аудитория", v, { v = it }, Modifier.weight(1f), number = false)
+            Secondary("Сохранить", { by.zaberezh.forma.core.study.Rooms.set(s, l, v); editing = false }, enabled = v.isNotBlank())
+        }
+        Buttons {
+            if (edited) Flat("Как в расписании", { by.zaberezh.forma.core.study.Rooms.set(s, l, null); editing = false }, C.muted)
+            Flat("Отмена", { editing = false }, C.muted)
+        }
+        Muted("Например «315-4 к.». Сменится у этой консультации на всех неделях.")
+    }
 }

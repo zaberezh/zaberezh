@@ -165,14 +165,15 @@ private fun StudyToday(ctx: Ctx, onStudy: (Int) -> Unit) {
     val s = ctx.store
     val tt = remember(ctx) { TIMETABLE.get(s) }
     val sub = STUDY_PREFS.get(s).subgroup
-    val lessons = remember(tt, sub, ctx.today) { Bsuir.on(tt, ctx.today, sub) }
+    val rooms = by.zaberezh.forma.core.study.ROOMS.get(s)   // свои аудитории консультаций
+    val lessons = remember(tt, sub, ctx.today, rooms) { Bsuir.on(tt, ctx.today, sub, rooms) }
     val now = Clock.now
     fun time(x: String) = runCatching { LocalTime.parse(x) }.getOrNull()
     val over = lessons.isNotEmpty() && lessons.all { l -> time(l.end)?.let { now.isAfter(it) } ?: false }
     // следующий день с парами — когда сегодня уже нечего показывать
-    val next = remember(tt, sub, ctx.today, over) {
+    val next = remember(tt, sub, ctx.today, over, rooms) {
         if (lessons.isNotEmpty() && !over) null
-        else (1L..7L).map { ctx.today.plusDays(it) }.firstNotNullOfOrNull { d -> Bsuir.on(tt, d, sub).takeIf { it.isNotEmpty() }?.let { d to it } }
+        else (1L..7L).map { ctx.today.plusDays(it) }.firstNotNullOfOrNull { d -> Bsuir.on(tt, d, sub, rooms).takeIf { it.isNotEmpty() }?.let { d to it } }
     }
     val nextName = next?.first?.let { d ->
         if (d == ctx.today.plusDays(1)) "завтра" else d.dayOfWeek.getDisplayName(TextStyle.SHORT, RU) + ", " + d.dayOfMonth + " " +

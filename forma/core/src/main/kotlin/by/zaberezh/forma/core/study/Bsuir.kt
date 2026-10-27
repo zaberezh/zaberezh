@@ -170,16 +170,16 @@ object Bsuir {
         ),
     )
 
-    /** Пары на дату для подгруппы (0 — все), по времени. */
-    fun on(tt: Timetable, day: LocalDate, subgroup: Int = 0): List<Lesson> {
+    /** Пары на дату для подгруппы (0 — все), по времени; [rooms] — свои аудитории консультаций. */
+    fun on(tt: Timetable, day: LocalDate, subgroup: Int = 0, rooms: RoomEdits = RoomEdits()): List<Lesson> {
         val iso = day.toString()
         val w = week(tt, day)
-        return (tt.lessons + EXTRA[tt.group].orEmpty()).filter { l ->
+        return Rooms.apply(rooms, (tt.lessons + EXTRA[tt.group].orEmpty()).filter { l ->
             (subgroup == 0 || l.subgroup == 0 || l.subgroup == subgroup) &&
                 if (l.date != null) l.date == iso
                 else l.weekday == day.dayOfWeek.value && (l.weeks.isEmpty() || w in l.weeks) &&
                     (l.from ?: tt.start).let { it == null || iso >= it } && (l.to ?: tt.end).let { it == null || iso <= it }
-        }.sortedBy { it.start }
+        }.sortedBy { it.start })
     }
 
     /** Следующее занятие по предмету после даты: сначала того же типа (ПЗ → ПЗ), иначе любое. */

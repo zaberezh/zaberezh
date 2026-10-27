@@ -22,8 +22,8 @@ data class SessionInfo(val start: LocalDate?, val end: LocalDate?, val items: Li
 }
 
 object Session {
-    fun of(tt: Timetable, today: LocalDate): SessionInfo {
-        val items = tt.lessons.filter { it.date != null }
+    fun of(tt: Timetable, today: LocalDate, rooms: RoomEdits = RoomEdits()): SessionInfo {
+        val items = Rooms.apply(rooms, tt.lessons.filter { it.date != null })
             .mapNotNull { l -> runCatching { SessionItem(LocalDate.parse(l.date), l) }.getOrNull() }
             .sortedWith(compareBy({ it.day }, { it.lesson.start }))
         return SessionInfo(tt.examsStart?.let(LocalDate::parse), tt.examsEnd?.let(LocalDate::parse), items, today)

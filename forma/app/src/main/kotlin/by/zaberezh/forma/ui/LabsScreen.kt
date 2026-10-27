@@ -263,7 +263,7 @@ private val SDAY = DateTimeFormatter.ofPattern("d MMM, EE", RU)
 private fun SessionBlock(ctx: by.zaberezh.forma.core.Ctx, labsLeft: Int) {
     val today = ctx.today
     // разбор всего расписания — один раз на изменение данных, не на каждую отметку задания
-    val info = remember(ctx) { by.zaberezh.forma.core.study.Session.of(TIMETABLE.get(ctx.store), today) }
+    val info = remember(ctx) { by.zaberezh.forma.core.study.Session.of(TIMETABLE.get(ctx.store), today, by.zaberezh.forma.core.study.ROOMS.get(ctx.store)) }
     val left = info.daysLeft
     Block("Сессия", trailing = {
         when {

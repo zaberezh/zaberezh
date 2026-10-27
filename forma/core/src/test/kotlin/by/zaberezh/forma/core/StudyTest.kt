@@ -133,6 +133,23 @@ class StudyTest {
         assertTrue(by.zaberezh.forma.core.study.Bsuir.on(tt.copy(group = "421701"), java.time.LocalDate.of(2026, 9, 3)).isEmpty())
     }
 
+    @Test fun consultationRoomCanBeEdited() {
+        val s = by.zaberezh.forma.core.store.MemoryStore()
+        val tt = by.zaberezh.forma.core.study.Timetable("653502", start = "2026-09-01", end = "2026-12-31")
+        val R = by.zaberezh.forma.core.study.Rooms
+        fun ma(d: Int) = by.zaberezh.forma.core.study.Bsuir.on(tt, java.time.LocalDate.of(2026, 9, d), rooms = by.zaberezh.forma.core.study.ROOMS.get(s))
+            .single { it.subject == "МА" }
+        assertTrue(R.editable(ma(10)))
+        R.set(s, ma(10), " 410-5 к. ;  ")
+        assertEquals(listOf("410-5 к."), ma(10).rooms)
+        assertEquals(listOf("410-5 к."), ma(24).rooms)                     // та же консультация на другой неделе
+        // обновление расписания с сервера аудиторию не стирает: она хранится отдельно
+        by.zaberezh.forma.core.study.TIMETABLE.set(s, tt.copy(fetchedAt = 1)); assertEquals(listOf("410-5 к."), ma(10).rooms)
+        R.set(s, ma(10), null)                                               // «как в расписании»
+        assertEquals(listOf("315-4 к."), ma(10).rooms)
+        assertFalse(R.editable(by.zaberezh.forma.core.study.Lesson("МА", type = "ЛК")))
+    }
+
     @Test fun waterGlassesAndGoal() {
         val s = by.zaberezh.forma.core.store.MemoryStore()
         val day = LocalDate.of(2026, 10, 2)
